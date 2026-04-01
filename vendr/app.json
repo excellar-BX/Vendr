@@ -1,0 +1,93 @@
+{
+  "expo": {
+    "name": "Vendr",
+    "slug": "vendr",
+    "scheme": "vendr",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "bundleIdentifier": "com.vendr.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vendr needs camera access to share photos in chats.",
+        "NSPhotoLibraryUsageDescription": "Vendr needs photo library access to share images in chats.",
+        "NSLocationWhenInUseUsageDescription": "Vendr uses your location to show nearby vendors.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "package": "com.vendr.app",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "vendr"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      "expo-splash-screen",
+      "expo-video",
+      "expo-maps",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Vendr needs photo library access to share images in chats.",
+          "cameraPermission": "Vendr needs camera access to share photos in chats."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#E8521A",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "react-native",
+          "organization": "vendr-vr"
+        }
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "387863147372",
+    "project_id": "vendr-e29d6",
+    "storage_bucket": "vendr-e29d6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:387863147372:android:4ca130a5c50a6074437949",
+        "android_client_info": {
+          "package_name": "com.vendr.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0q7yJrChDDRPwuU8zgHjBeB_wt2MBAxA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

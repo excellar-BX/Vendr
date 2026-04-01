@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  password       String?
+  full_name      String?
+  avatar_url     String?
+  phone          String?
+  google_id      String?  @unique
+  is_verified    Boolean  @default(false)
+  is_deleted     Boolean  @default(false)
+  deleted_at     DateTime?
+  notifications_enabled Boolean @default(true)
+  location_enabled Boolean @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  refresh_tokens             RefreshToken[]
+  email_verification_tokens  EmailVerificationToken[]
+  password_reset_tokens      PasswordResetToken[]
+  vendor                     Vendor?
+  orders                     Order[]
+  reviews                    Review[]
+  savedVendors               SavedVendor[]
+  notifications              Notification[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  user_id    String
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  user_id    String
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  user_id    String
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+model Vendor {
+  id          String   @id @default(uuid())
+  user_id     String   @unique
+  shop_name   String
+  description String?
+  category    String?
+  city        String?
+  address     String?
+  logo_url    String?
+  lat         Float?
+  lng         Float?
+  is_verified Boolean  @default(true)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  products Product[]
+  orders   Order[]
+  reviews  Review[]
+  savedBy  SavedVendor[]
+
+  @@map("vendors")
+}
+
+model Order {
+  id        String   @id @default(uuid())
+  buyer_id  String
+  vendor_id String
+  total     Float
+  status    String   @default("pending")
+  created_at DateTime @default(now())
+
+  buyer  User   @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("orders")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  user_id   String
+  vendor_id String
+  rating    Int
+  comment   String?
+  created_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
+
+model SavedVendor {
+  id        String   @id @default(uuid())
+  user_id   String
+  vendor_id String
+  created_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, vendor_id])
+  @@map("saved_vendors")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  user_id   String
+  title     String
+  body      String
+  type      String?
+  data      Json?
+  is_read   Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  vendor_id   String
+  name        String
+  description String?
+  price       Float
+  image_url   String?
+  in_stock    Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("products")
+}
