@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store'
+import { useAuthStore } from '../stores/authStore'
 
-const BASE_URL = "http://172.23.64.1:3000/api" //'https://vendr-backend-unlt.onrender.com/api'
+
+const BASE_URL = "http://10.161.22.15:3000/api" //'https://vendr-backend-unlt.onrender.com/api'
 console.log(BASE_URL)
 // ─── Token storage ────────────────────────────────────────────────────────────
 
@@ -26,7 +28,12 @@ export async function clearTokens() {
 
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = await getRefreshToken()
-  if (!refreshToken) return null
+  if (!refreshToken) {
+    // No refresh token means user is not logged in
+    await clearTokens()
+    useAuthStore.getState().clear()
+    return null
+  }
 
   const res = await fetch(`${BASE_URL}/auth/refresh`, {
     method: 'POST',
@@ -35,7 +42,9 @@ async function refreshAccessToken(): Promise<string | null> {
   })
 
   if (!res.ok) {
+    // Refresh token expired or invalid - user must log in again
     await clearTokens()
+    useAuthStore.getState().clear()
     return null
   }
 
@@ -70,8 +79,8 @@ export async function apiFetch(
     if (newToken) {
       return apiFetch(path, options, false)
     }
-    // Refresh failed — token store cleared, caller handles redirect
-    throw { statusCode: 401, message: 'Session expired' }
+    // Refresh failed — user must log in again
+    throw { statusCode: 401, message: 'Your session has expired. Please log in again.' }
   }
 
   const data = await res.json()

@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { authRoutes } from './services/auth/auth.routes'
 import { userRoutes } from './services/user/user.routes'
+import { storageRoutes } from './services/storage/storage.routes'
 
 export async function buildServer() {
   const app = Fastify({
@@ -18,6 +19,7 @@ export async function buildServer() {
   // ─── Routes ───────────────────────────────────────────────────────────────
   await app.register(authRoutes, { prefix: '/api' })
   await app.register(userRoutes, { prefix: '/api' })
+  await app.register(storageRoutes, { prefix: '/api' })
 
   // ─── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

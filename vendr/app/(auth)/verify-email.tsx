@@ -5,9 +5,13 @@ import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { Text } from '../../components/ui/StyledText'
 import { apiFetch } from '../../lib/api'
+import { useAuthStore } from '../../stores/authStore'
 
 export default function VerifyEmailScreen() {
-  const { email } = useLocalSearchParams<{ email: string }>()
+  const { email: paramEmail } = useLocalSearchParams<{ email: string }>()
+  const { user } = useAuthStore()
+  // Use param email if provided (from register), otherwise fall back to logged-in user's email
+  const email = paramEmail || user?.email || ''
   const [resending, setResending] = useState(false)
   const [resent, setResent] = useState(false)
   const [error, setError] = useState('')

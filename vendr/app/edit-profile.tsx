@@ -11,20 +11,20 @@ import { Button } from '../components/ui/Button';
 import { uploadFile } from '../lib/storage';
 import { useVendrAlert } from '../components/ui/VendrAlert';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 export default function EditProfileScreen() {
-  const { session, profile, setProfile } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const { alert, alertElement } = useVendrAlert();
 
-  const [name, setName] = useState(profile?.name ?? '');
-  const [phone, setPhone] = useState(profile?.phone ?? '');
-  const [avatarUri, setAvatarUri] = useState<string | null>(profile?.avatar_url ?? null);
+  const [name, setName] = useState(user?.full_name ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar_url ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const initials = (name || profile?.name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+  const initials = (name || user?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
   const pickAvatar = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -71,10 +71,10 @@ export default function EditProfileScreen() {
   };
 
   const uploadAvatar = async (uri: string) => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     setUploadingAvatar(true);
     try {
-      const path = `${session.user.id}_${Date.now()}.jpg`;
+      const path = `${user.id}_${Date.now()}.jpg`;
       const publicUrl = await uploadFile({
         bucket: 'avatars',
         path,
@@ -82,16 +82,21 @@ export default function EditProfileScreen() {
         contentType: 'image/jpeg',
       });
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', session.user.id)
-        .select('*')
-        .single();
+      const response = await apiFetch('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ avatar_url: publicUrl }),
+      });
 
-      if (error) throw error;
       setAvatarUri(publicUrl);
-      setProfile(data);
+      // Update auth store with full response data
+      setUser({
+        ...user,
+        ...response.data,
+        // Map backend field names to frontend for consistency
+        full_name: response.data.full_name,
+        phone: response.data.phone,
+        avatar_url: response.data.avatar_url,
+      });
     } catch (e: any) {
       alert('Upload failed', e.message ?? 'Could not upload photo', undefined, { type: 'danger' });
     } finally {
@@ -104,27 +109,35 @@ export default function EditProfileScreen() {
       alert('Missing info', 'Please enter your name', undefined, { type: 'warning' });
       return;
     }
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ name: name.trim(), phone: phone.trim(), avatar_url: avatarUri })
-      .eq('id', session.user.id)
-      .select('*')
-      .single();
+    try {
+      const response = await apiFetch('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          full_name: name.trim(),
+          phone: phone.trim(),
+          avatar_url: avatarUri,
+        }),
+      });
 
-    if (error) {
-      alert('Error', error.message, undefined, { type: 'danger' });
+      // Update auth store with full response data
+      setUser({
+        ...user,
+        ...response.data,
+        full_name: response.data.full_name,
+        phone: response.data.phone,
+        avatar_url: response.data.avatar_url,
+      });
+      alert('Saved!', 'Your profile has been updated.', [
+        { text: 'OK', onPress: () => router.back() },
+      ], { type: 'success' });
+    } catch (e: any) {
+      alert('Error', e.message ?? 'Failed to update profile', undefined, { type: 'danger' });
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setProfile(data);
-    alert('Saved!', 'Your profile has been updated.', [
-      { text: 'OK', onPress: () => router.back() },
-    ], { type: 'success' });
-    setLoading(false);
   };
 
   return (
@@ -188,7 +201,7 @@ export default function EditProfileScreen() {
           <View>
             <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Email</Text>
             <View className="bg-dark-2 border border-faint rounded-2xl px-4 h-14 justify-center opacity-50">
-              <Text className="text-muted text-base">{session?.user?.email}</Text>
+              <Text className="text-muted text-base">{user?.email}</Text>
             </View>
             <Text className="text-muted text-xs mt-1.5 px-1">Email cannot be changed</Text>
           </View>

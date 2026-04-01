@@ -7,6 +7,14 @@ export const updatePreferencesSchema = z.object({
 
 export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>
 
+export const updateMyProfileSchema = z.object({
+  full_name: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  avatar_url: z.string().url().optional().nullable(),
+})
+
+export type UpdateMyProfileInput = z.infer<typeof updateMyProfileSchema>
+
 export const getMyProfileOutputSchema = z.object({
   id: z.string(),
   email: z.string(),

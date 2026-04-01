@@ -1,5 +1,5 @@
 import prisma from '../../lib/prisma'
-import type { GetMyProfileOutput, UpdatePreferencesInput } from './user.schema'
+import type { GetMyProfileOutput, UpdatePreferencesInput, UpdateMyProfileInput } from './user.schema'
 
 export async function getMyProfile(userId: string): Promise<GetMyProfileOutput> {
   const user = await prisma.user.findUnique({
@@ -67,6 +67,37 @@ export async function updatePreferences(userId: string, input: UpdatePreferences
   })
 
   return user
+}
+
+export async function updateMyProfile(userId: string, input: UpdateMyProfileInput) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(input.full_name !== undefined && { full_name: input.full_name }),
+      ...(input.phone !== undefined && { phone: input.phone }),
+      ...(input.avatar_url !== undefined && { avatar_url: input.avatar_url }),
+    },
+    select: {
+      id: true,
+      email: true,
+      full_name: true,
+      avatar_url: true,
+      phone: true,
+      is_verified: true,
+      notifications_enabled: true,
+      location_enabled: true,
+      created_at: true,
+      vendor: {
+        select: { id: true, shop_name: true, is_active: true }
+      }
+    }
+  })
+
+  // Convert Date to ISO string for JSON serialization
+  return {
+    ...user,
+    created_at: user.created_at.toISOString()
+  }
 }
 
 export async function deleteMyAccount(userId: string) {

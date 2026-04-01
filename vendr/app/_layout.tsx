@@ -127,8 +127,15 @@ function RootLayout() {
   // 4. Routing Logic
   useEffect(() => {
     if (!showSplash && appReady) {
-      if (user) router.replace('/(tabs)');
-      else router.replace('/(auth)/welcome');
+      if (user) {
+        if (user.is_verified) {
+          router.replace('/(tabs)');
+        } else {
+          router.replace('/(auth)/verify-email');
+        }
+      } else {
+        router.replace('/(auth)/welcome');
+      }
     }
   }, [showSplash, appReady, user]);
 

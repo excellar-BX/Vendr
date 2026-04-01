@@ -67,8 +67,7 @@ export default function RegisterScreen() {
       })
       await saveTokens(data.data.accessToken, data.data.refreshToken)
       setUser(data.data.user)
-      // Go to verify-email screen — user needs to verify before using app
-      router.replace({ pathname: '/(auth)/verify-email', params: { email } })
+      // Automatic redirect handled by layout guard based on is_verified status
     } catch (err: any) {
       showAlert({ title: 'Sign up failed', message: err.message, type: 'danger' })
     } finally {
