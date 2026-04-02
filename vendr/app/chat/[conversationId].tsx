@@ -9,7 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase } from '../../lib/supabase';
+import { chatApi, searchApi, storageApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
 
@@ -24,6 +24,7 @@ interface Message {
   type: 'text' | 'image' | 'payment_request';
   is_read: boolean;
   delivered: boolean;
+  edited: boolean;
   created_at: string;
 }
 
@@ -31,9 +32,9 @@ interface PaymentRequest {
   id: string;
   vendor_id: string;
   buyer_id: string;
-  conversation_id: string;
+  conversation_id: string | null;
   amount: number;
-  description: string;
+  description: string | null;
   status: 'pending' | 'paid' | 'cancelled';
   paid_at?: string;
   created_at: string;
@@ -247,10 +248,9 @@ export default function ChatScreen() {
     productPrice?: string;
   }>();
 
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const { showAlert: vendrAlert, alertElement } = useVendrAlert();
   const flatListRef = useRef<FlatList>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -285,164 +285,74 @@ export default function ChatScreen() {
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     initChat();
   }, []);
 
   const initChat = async () => {
-    const userId = session!.user.id;
+    const userId = user!.id;
     setError(null);
 
     try {
+      // Determine conversation ID
+      let cid: string | null = null;
       const isValidUUID = (s?: string) => !!s && s !== '[conversationId]' && s.includes('-');
-      let cid = isValidUUID(conversationId) ? conversationId! : null;
-
-      if (!cid && vendorId) {
-        const { data: existing } = await supabase
-          .from('conversations')
-          .select('id')
-          .eq('buyer_id', userId)
-          .eq('vendor_id', vendorId)
-          .maybeSingle();
-
-        if (existing?.id) {
-          cid = existing.id;
-        } else {
-          const { data: created, error: createErr } = await supabase
-            .from('conversations')
-            .insert({ buyer_id: userId, vendor_id: vendorId })
-            .select('id')
-            .maybeSingle();
-          if (createErr) throw new Error('Could not start conversation: ' + createErr.message);
-          if (!created?.id) throw new Error('Could not create conversation');
-          cid = created.id;
-        }
+      if (isValidUUID(conversationId)) {
+        cid = conversationId!;
+      } else if (vendorId) {
+        // Create or get conversation via API
+        const { data, error } = await chatApi.createConversation(vendorId);
+        if (error) throw new Error('Could not start conversation: ' + (error as any).message);
+        cid = data.id;
       }
 
       if (!cid) throw new Error('No conversation ID');
       setConvId(cid);
 
-      const { data: conv, error: convErr } = await supabase
-        .from('conversations')
-        .select('id, buyer_id, vendor_id')
-        .eq('id', cid)
-        .single();
-      if (convErr) throw new Error('Could not load conversation: ' + convErr.message);
+      // Get conversation details
+      const { data: convData } = await chatApi.getConversation(cid);
+      const { conversation, vendor, buyer, actingAsVendor } = convData;
 
-      setBuyerId(conv.buyer_id);
-
-      const { data: vendorData } = await supabase
-        .from('vendors')
-        .select('id, business_name, is_verified, user_id')
-        .eq('id', conv.vendor_id)
-        .single();
-
-      const actingAsVendor = vendorData?.user_id === userId;
+      setBuyerId(conversation.buyer_id);
       setActingAsVendor(actingAsVendor);
-      setVendorDbId(conv.vendor_id);
-      setVendorUserId(vendorData?.user_id ?? '');
+      setVendorDbId(conversation.vendor_id);
+      setVendorUserId(vendor?.user_id ?? '');
 
-      if (!actingAsVendor && vendorData?.user_id === userId) {
+      if (!actingAsVendor && vendor?.user_id === userId) {
         throw new Error('You cannot chat with your own store.');
       }
 
       if (actingAsVendor) {
-        const { data: buyerData } = await supabase
-          .from('profiles')
-          .select('id, name')
-          .eq('id', conv.buyer_id)
-          .single();
-        setVendorName(buyerData?.name ?? 'Unknown Buyer');
+        setVendorName(buyer?.name ?? 'Unknown Buyer');
       } else {
-        setVendorName(vendorData?.business_name ?? 'Vendor');
-        setVendorActualId(vendorData?.id ?? '');
-        setIsVerified(vendorData?.is_verified ?? false);
+        setVendorName(vendor?.business_name ?? 'Vendor');
+        setVendorActualId(vendor?.id ?? '');
+        setIsVerified(vendor?.is_verified ?? false);
       }
 
-      const { data: msgs, error: msgsErr } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', cid)
-        .order('created_at', { ascending: true });
-      if (msgsErr) throw new Error('Could not load messages: ' + msgsErr.message);
-
+      // Load messages
+      const { data: msgs } = await chatApi.getMessages(cid, { limit: 100 });
       setMessages(msgs ?? []);
 
-      // Load payment requests for this conversation
-      const prMsgIds = (msgs ?? [])
-        .filter(m => m.type === 'payment_request' && m.content)
-        .map(m => m.content);
+      // Mark messages as delivered/read and reset unread count
+      const unreadField = actingAsVendor ? 'vendor_unread' : 'buyer_unread';
+      await chatApi.resetUnread(cid, unreadField);
 
-      if (prMsgIds.length > 0) {
-        const { data: prs } = await supabase
-          .from('payment_requests')
-          .select('*')
-          .in('id', prMsgIds);
-        if (prs) {
-          const map: Record<string, PaymentRequest> = {};
-          prs.forEach(pr => { map[pr.id] = pr; });
-          setPaymentRequests(map);
+      // Set presence
+      await chatApi.setPresence(true);
+
+      // Get other user's presence
+      const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
+      if (otherUserId) {
+        try {
+          const { data: presenceData } = await chatApi.getPresence([otherUserId]);
+          setOtherOnline(presenceData[otherUserId] ?? false);
+        } catch (e) {
+          setOtherOnline(false);
         }
       }
 
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
-
-      // Realtime — messages
-      const channel = supabase
-        .channel(`chat-${cid}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-          const newMsg = payload.new as Message;
-          if (newMsg.conversation_id !== cid) return;
-          setMessages(prev => {
-            if (prev.find(m => m.id === newMsg.id)) return prev;
-            return [...prev, newMsg];
-          });
-          // If it's a payment request, load the PR data
-          if (newMsg.type === 'payment_request' && newMsg.content) {
-            supabase.from('payment_requests').select('*').eq('id', newMsg.content).maybeSingle()
-              .then(({ data }) => {
-                if (data) setPaymentRequests(prev => ({ ...prev, [data.id]: data }));
-              });
-          }
-          if (newMsg.sender_id !== session?.user?.id) {
-            supabase.from('messages').update({ delivered: true, is_read: true }).eq('id', newMsg.id);
-          }
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-        })
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
-          if ((payload.new as any).conversation_id !== cid) return;
-          setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m));
-        })
-        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
-          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
-        })
-        // Realtime on payment_requests table
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_requests' }, (payload) => {
-          const updated = payload.new as PaymentRequest;
-          setPaymentRequests(prev => ({ ...prev, [updated.id]: updated }));
-        })
-        .subscribe();
-
-      channelRef.current = channel;
-
-      await supabase.from('messages').update({ delivered: true, is_read: true })
-        .eq('conversation_id', cid).neq('sender_id', userId);
-      await supabase.from('messages').update({ delivered: true })
-        .eq('conversation_id', cid).eq('sender_id', userId);
-
-      const unreadField = actingAsVendor ? 'vendor_unread' : 'buyer_unread';
-      await supabase.from('conversations').update({ [unreadField]: 0 }).eq('id', cid);
-
-      await supabase.from('user_presence').upsert({
-        user_id: userId, is_online: true, last_seen: new Date().toISOString(),
-      });
-
-      const otherUserId = actingAsVendor ? conv.buyer_id : vendorData?.user_id;
-      if (otherUserId) {
-        const { data: presence } = await supabase
-          .from('user_presence').select('is_online').eq('user_id', otherUserId).maybeSingle();
-        setOtherOnline(presence?.is_online ?? false);
-      }
 
       setLoading(false);
 
@@ -459,11 +369,9 @@ export default function ChatScreen() {
 
   useEffect(() => {
     return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      if (session?.user?.id) {
-        supabase.from('user_presence').upsert({
-          user_id: session.user.id, is_online: false, last_seen: new Date().toISOString(),
-        });
+      // Set user as offline when leaving chat
+      if (user?.id) {
+        chatApi.setPresence(false).catch(console.error); 
       }
     };
   }, []);
@@ -488,52 +396,57 @@ export default function ChatScreen() {
   };
 
   const uploadAndSendImage = async (uri: string) => {
-    if (!convId || !session?.user?.id) return;
+    if (!convId || !user?.id) return;
     setUploadingImage(true);
     const tempId = `temp-img-${Date.now()}`;
 
     try {
       const tempMsg: Message = {
-        id: tempId, conversation_id: convId, sender_id: session.user.id,
+        id: tempId, conversation_id: convId, sender_id: user!.id,
         content: 'Sending image...', image_url: null, type: 'text',
-        is_read: false, delivered: false, created_at: new Date().toISOString(),
+        is_read: false, delivered: false, edited: false, created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, tempMsg]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
 
-      const fileName = `${convId}/${Date.now()}.jpg`;
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (!currentSession?.access_token) throw new Error('Not authenticated');
+      // Generate a unique filename
+      const fileName = `chat/${convId}/${Date.now()}.jpg`;
 
-      const publicUrl = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `https://mbdojwirmtknzpwccthb.supabase.co/storage/v1/object/chat-images/${fileName}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${currentSession.access_token}`);
-        xhr.setRequestHeader('x-upsert', 'true');
-        xhr.setRequestHeader('Content-Type', 'image/jpeg');
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            const { data } = supabase.storage.from('chat-images').getPublicUrl(fileName);
-            resolve(data.publicUrl);
-          } else {
-            reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Network error during upload'));
-        xhr.send({ uri, type: 'image/jpeg', name: 'photo.jpg' } as any);
+      // Get signed upload URL from backend
+      const { data: signData } = await storageApi.signUpload(fileName, 'image/jpeg');
+      const { uploadUrl, publicUrl } = signData;
+
+      // Upload the image to R2 using the signed URL
+      const formData = new FormData();
+      // @ts-ignore: Expo's ImagePicker result
+      formData.append('file', {
+        uri,
+        type: 'image/jpeg',
+        name: 'photo.jpg',
+      } as any);
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: formData,
+        headers: {
+          'Content-Type': 'image/jpeg',
+        },
       });
 
-      const { data: inserted, error: insertErr } = await supabase.from('messages').insert({
-        conversation_id: convId, sender_id: session.user.id,
-        image_url: publicUrl, type: 'image', is_read: false, delivered: false,
-      }).select().single();
-      if (insertErr) throw new Error(insertErr.message);
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed (${uploadResponse.status})`);
+      }
 
-      await supabase.from('messages').update({ delivered: true }).eq('id', inserted.id);
+      // Send image message via API
+      const { data: inserted } = await chatApi.sendMessage({
+        conversation_id: convId,
+        content: '',
+        type: 'image',
+        image_url: publicUrl,
+      });
+
+      // Replace temp message with real one
       setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: true } : m));
-      await supabase.from('conversations').update({
-        last_message: 'Image', last_message_at: new Date().toISOString(),
-      }).eq('id', convId);
 
     } catch (e: any) {
       console.error('Upload error:', e.message);
@@ -558,29 +471,31 @@ export default function ChatScreen() {
 
   const editMessage = async () => {
     const newContent = text.trim();
-    if (!newContent || !editingMsg) return;
+    if (!newContent || !editingMsg || !convId) return;
     setSending(true);
     setText('');
-    setMessages(prev => prev.map(m => m.id === editingMsg.id ? { ...m, content: newContent, edited: true } as any : m));
+    // Optimistic update
+    setMessages(prev => prev.map(m => m.id === editingMsg.id ? { ...m, content: newContent, edited: true } : m));
     setEditingMsg(null);
-    const { error } = await supabase.from('messages').update({ content: newContent, edited: true }).eq('id', editingMsg.id);
-    if (error) {
-      vendrAlert({ title: 'Error', message: 'Could not edit message', type: 'danger' });
+
+    try {
+      const { data: updated } = await chatApi.updateMessage(editingMsg.id, newContent);
+
+      // If edited message is the last message, update conversation (API already does that)
+      setMessages(prev => prev.map(m => m.id === editingMsg.id ? updated : m));
+    } catch (error: any) {
+      vendrAlert({ title: 'Error', message: 'Could not edit message: ' + (error.message || 'Unknown error'), type: 'danger' });
+      // Revert optimistic update
       setMessages(prev => prev.map(m => m.id === editingMsg.id ? editingMsg : m));
       setSending(false);
       return;
     }
-    const { data: latest } = await supabase
-      .from('messages').select('id').eq('conversation_id', convId)
-      .order('created_at', { ascending: false }).limit(1).single();
-    if (latest?.id === editingMsg.id) {
-      await supabase.from('conversations').update({ last_message: newContent }).eq('id', convId);
-    }
+
     setSending(false);
   };
 
   const deleteMessage = async () => {
-    if (!selectedMsg) return;
+    if (!selectedMsg || !convId) return;
     setShowActions(false);
     vendrAlert({
       title: 'Delete Message?',
@@ -589,178 +504,114 @@ export default function ChatScreen() {
       buttons: [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: async () => {
-          setMessages(prev => prev.filter(m => m.id !== selectedMsg.id));
-          const { error } = await supabase.from('messages').delete().eq('id', selectedMsg.id);
-          if (error) {
-            vendrAlert({ title: 'Error', message: 'Could not delete message', type: 'danger' });
-            setMessages(prev => [...prev, selectedMsg].sort(
+          // Optimistic delete
+          const deletedMsg = selectedMsg;
+          setMessages(prev => prev.filter(m => m.id !== deletedMsg.id));
+
+          try {
+            await chatApi.deleteMessage(deletedMsg.id);
+
+            // The backend will update conversation last_message automatically
+          } catch (error: any) {
+            vendrAlert({ title: 'Error', message: 'Could not delete message: ' + (error.message || 'Unknown error'), type: 'danger' });
+            // Restore the message on error
+            setMessages(prev => [...prev, deletedMsg].sort(
               (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             ));
-            return;
           }
-          const { data: latest } = await supabase.from('messages').select('content, type, created_at')
-            .eq('conversation_id', convId).order('created_at', { ascending: false }).limit(1).single();
-          await supabase.from('conversations').update({
-            last_message: latest ? (latest.type === 'image' ? 'Image' : latest.content) : null,
-            last_message_at: latest?.created_at ?? new Date().toISOString(),
-          }).eq('id', convId);
         }},
       ],
     });
   };
 
   const sendEnquiry = async () => {
-    if (!convId || !session?.user?.id || !productName) return;
+    if (!convId || !user?.id || !productName) return;
     setShowProductEnquiry(false);
     const msg = `Hi! I'm interested in your product: *${productName}*${productPrice ? ` (${productPrice})` : ''}. Is it still available?`;
     setText(msg);
     setSending(true);
-    const { data: inserted, error: insertErr } = await supabase.from('messages').insert({
-      conversation_id: convId, sender_id: session.user.id, content: msg, type: 'text', is_read: false,
-    }).select().single();
-    if (!insertErr && inserted) {
-      await supabase.from('messages').update({ delivered: true }).eq('id', inserted.id);
+
+    try {
+      const { data: inserted } = await chatApi.sendMessage({
+        conversation_id: convId,
+        content: msg,
+        type: 'text',
+      });
+
       setMessages(prev => [...prev, { ...inserted, delivered: true }]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-      const unreadField = actingAsVendor ? 'buyer_unread' : 'vendor_unread';
-      await supabase.rpc('increment_unread', { conv_id: convId, field: unreadField });
-      await supabase.from('conversations').update({ last_message: msg, last_message_at: new Date().toISOString() }).eq('id', convId);
+    } catch (error: any) {
+      vendrAlert({ title: 'Error', message: 'Could not send message: ' + error.message, type: 'danger' });
+      setText(msg); // restore message on error
+      setSending(false);
+      return;
     }
+
     setText('');
     setSending(false);
   };
 
   // ─── Payment Request ───────────────────────────────────────────────────────
   const sendPaymentRequest = async () => {
-    if (!convId || !session?.user?.id) return;
+    if (!convId || !user?.id) return;
     const amount = parseFloat(payAmount.replace(/[^0-9.]/g, ''));
     if (!amount || amount <= 0) {
       vendrAlert({ title: 'Invalid Amount', message: 'Please enter a valid amount to request.', type: 'warning' });
       return;
     }
-    if (!vendorDbId || !buyerId) {
-      vendrAlert({ title: 'Error', message: 'Conversation not fully loaded. Please go back and try again.', type: 'danger' });
-      return;
-    }
 
     setSendingPaymentRequest(true);
     try {
-      // Create payment_request row
-      const { data: pr, error: prErr } = await supabase
-        .from('payment_requests')
-        .insert({
-          vendor_id: vendorDbId,
-          buyer_id: buyerId,
-          conversation_id: convId,
-          amount,
-          description: payDescription.trim(),
-          status: 'pending',
-          vendor_user_id: vendorUserId,
-        })
-        .select()
-        .single();
+      // Create payment request via chat API
+      // This creates both the payment_request record and the message
+      const { data: msg } = await chatApi.createPaymentRequest(convId, amount, payDescription.trim());
 
-      if (prErr) throw new Error(prErr.message);
-
-      // Store PR in local map immediately
-      setPaymentRequests(prev => ({ ...prev, [pr.id]: pr }));
-
-      // Insert special message — content = payment_request id, type = 'payment_request'
-      const { data: msg, error: msgErr } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: convId,
-          sender_id: session.user.id,
-          content: pr.id,
-          type: 'payment_request',
-          is_read: false,
-        })
-        .select()
-        .single();
-
-      if (msgErr) throw new Error(msgErr.message);
-
+      // Add message to list
       setMessages(prev => [...prev, msg]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
 
-      await supabase.from('conversations').update({
-        last_message: `Payment request: ${formatAmount(amount)}`,
-        last_message_at: new Date().toISOString(),
-      }).eq('id', convId);
-      await supabase.rpc('increment_unread', { conv_id: convId, field: 'buyer_unread' });
-
+      // Clear form
       setShowPaymentSheet(false);
       setPayAmount('');
       setPayDescription('');
     } catch (e: any) {
-      vendrAlert({ title: 'Error', message: e.message, type: 'danger' });
+      vendrAlert({ title: 'Error', message: e.message || 'Failed to send payment request', type: 'danger' });
     } finally {
       setSendingPaymentRequest(false);
     }
   };
 
   const handlePayNow = async (pr: PaymentRequest) => {
-    if (!session?.user?.id) return;
+    if (!user?.id || !convId) return;
     setPaying(pr.id);
     try {
-      // Check buyer balance first
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('available_balance')
-        .eq('user_id', session.user.id)
-        .maybeSingle();
-
-      if (!wallet || wallet.available_balance < pr.amount) {
-        setPaying(null);
-        vendrAlert({
-          title: 'Insufficient Balance',
-          message: `You need ${formatAmount(pr.amount)} but only have ${formatAmount(wallet?.available_balance ?? 0)} in your wallet.`,
-          type: 'warning',
-          buttons: [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Fund Wallet', style: 'default', onPress: () => router.push('/fund-wallet') },
-          ],
-        });
-        return;
+      // Process payment via chat API (this updates payment_request status to paid)
+      const { data: payResult } = await chatApi.payPaymentRequest(pr.id);
+      if (!payResult?.success) {
+        throw new Error('Payment failed');
       }
 
-      // Call process_payment Postgres function
-      const { error: payErr } = await supabase.rpc('process_payment', {
-        p_buyer_id: session.user.id,
-        p_vendor_id: pr.vendor_id,   // vendors.id — resolved by process_payment() SQL function
-        p_amount: pr.amount,
-        p_payment_request_id: pr.id,
-        p_description: pr.description || `Payment to vendor`,
-      });
-
-      if (payErr) throw new Error(payErr.message);
-
-      // Mark payment_request as paid
-      const { data: updatedPr } = await supabase
-        .from('payment_requests')
-        .update({ status: 'paid', paid_at: new Date().toISOString() })
-        .eq('id', pr.id)
-        .select()
-        .single();
-
-      if (updatedPr) setPaymentRequests(prev => ({ ...prev, [pr.id]: updatedPr }));
+      // Update local payment request state
+      setPaymentRequests(prev => ({
+        ...prev,
+        [pr.id]: { ...pr, status: 'paid', paid_at: new Date().toISOString() }
+      }));
 
       // Send confirmation message
-      await supabase.from('messages').insert({
+      await chatApi.sendMessage({
         conversation_id: convId,
-        sender_id: session.user.id,
         content: `Payment of ${formatAmount(pr.amount)} sent successfully.`,
         type: 'text',
-        is_read: false,
       });
 
-      await supabase.from('conversations').update({
-        last_message: `Paid ${formatAmount(pr.amount)}`,
-        last_message_at: new Date().toISOString(),
-      }).eq('id', convId);
+      vendrAlert({
+        title: 'Payment Successful',
+        message: `You paid ${formatAmount(pr.amount)}`,
+        type: 'success',
+      });
 
     } catch (e: any) {
-      vendrAlert({ title: 'Payment Failed', message: e.message, type: 'danger' });
+      vendrAlert({ title: 'Payment Failed', message: e.message || 'Payment processing failed', type: 'danger' });
     } finally {
       setPaying(null);
     }
@@ -774,13 +625,17 @@ export default function ChatScreen() {
       buttons: [
         { text: 'Keep', style: 'cancel' },
         { text: 'Cancel Request', style: 'destructive', onPress: async () => {
-          const { data: updated } = await supabase
-            .from('payment_requests')
-            .update({ status: 'cancelled' })
-            .eq('id', pr.id)
-            .select()
-            .single();
-          if (updated) setPaymentRequests(prev => ({ ...prev, [pr.id]: updated }));
+          try {
+            await chatApi.cancelPaymentRequest(pr.id);
+            // Update local state optimistically
+            setPaymentRequests(prev => ({ ...prev, [pr.id]: { ...pr, status: 'cancelled' as const } }));
+          } catch (error: any) {
+            vendrAlert({
+              title: 'Error',
+              message: 'Could not cancel payment request: ' + (error.message || 'Unknown error'),
+              type: 'danger'
+            });
+          }
         }},
       ],
     });
@@ -789,39 +644,35 @@ export default function ChatScreen() {
   const sendMessage = async () => {
     if (editingMsg) { editMessage(); return; }
     const content = text.trim();
-    if (!content || !convId || !session?.user?.id || sending) return;
+    if (!content || !convId || !user?.id || sending) return;
     setText('');
     setSending(true);
 
     const tempId = `temp-${Date.now()}`;
     const tempMsg: Message = {
-      id: tempId, conversation_id: convId, sender_id: session.user.id,
+      id: tempId, conversation_id: convId, sender_id: user!.id,
       content, image_url: null, type: 'text',
-      is_read: false, delivered: false, created_at: new Date().toISOString(),
+      is_read: false, delivered: false, edited: false, created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, tempMsg]);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
 
-    const { data: inserted, error: insertErr } = await supabase.from('messages').insert({
-      conversation_id: convId, sender_id: session.user.id, content, type: 'text', is_read: false,
-    }).select().single();
+    try {
+      const { data: inserted } = await chatApi.sendMessage({
+        conversation_id: convId,
+        content,
+        type: 'text',
+      });
 
-    if (insertErr) {
-      vendrAlert({ title: 'Send Failed', message: 'Could not send message: ' + insertErr.message, type: 'danger' });
+      // Replace temp message with real one
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: true } : m));
+    } catch (error: any) {
+      vendrAlert({ title: 'Send Failed', message: error.message || 'Could not send message', type: 'danger' });
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setText(content);
       setSending(false);
       return;
     }
-
-    await supabase.from('messages').update({ delivered: true }).eq('id', inserted.id);
-    setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: true } : m));
-
-    const unreadField = actingAsVendor ? 'buyer_unread' : 'vendor_unread';
-    await supabase.rpc('increment_unread', { conv_id: convId, field: unreadField });
-    await supabase.from('conversations').update({
-      last_message: content, last_message_at: new Date().toISOString(),
-    }).eq('id', convId);
 
     setSending(false);
   };
@@ -924,7 +775,7 @@ export default function ChatScreen() {
               return (
                 <PaymentRequestBubble
                   msg={item}
-                  isMine={item.sender_id === session?.user?.id}
+                  isMine={item.sender_id === user?.id}
                   paymentRequest={pr}
                   onPay={handlePayNow}
                   onCancel={handleCancelRequest}
@@ -935,7 +786,7 @@ export default function ChatScreen() {
             return (
               <MessageBubble
                 msg={item}
-                isMine={item.sender_id === session?.user?.id}
+                isMine={item.sender_id === user?.id}
                 onLongPress={handleLongPress}
                 onImagePress={setViewingImage}
               />

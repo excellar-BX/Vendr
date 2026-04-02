@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../../config/env';
 
@@ -60,3 +60,23 @@ export async function signUploadUrl(params: SignUploadRequest): Promise<SignUplo
     publicUrl,
   };
 }
+
+/**
+ * Delete files from R2 (server-side, no signed URL)
+ * For security, only backend should have direct delete access
+ */
+export async function deleteFiles(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+
+  // Delete each file individually (could batch with DeleteObjectsCommand for efficiency)
+  const promises = keys.map(key =>
+    s3Client.send(new DeleteObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: key,
+    }))
+  )
+
+  await Promise.all(promises)
+  console.log(`[Storage] Deleted ${keys.length} files from R2`)
+}
+

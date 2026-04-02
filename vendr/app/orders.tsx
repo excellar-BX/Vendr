@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { orderApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -146,66 +146,42 @@ function OrderCard({ order, mode, onOpenChat }: {
 }
 
 export default function OrdersScreen() {
-  const { session, profile, isVendor } = useAuthStore();
+  const { user, isVendor } = useAuthStore();
   const [tab, setTab] = useState<OrderTab>('bought');
   const [boughtOrders, setBoughtOrders] = useState<Order[]>([]);
   const [soldOrders, setSoldOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const userId = session?.user?.id;
+  const userId = user?.id;
 
   const showTabs = isVendor;
 
   const fetchOrders = useCallback(async () => {
     if (!userId) return;
 
-    // Fetch bought orders
-    const { data: bought } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('buyer_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      // Fetch bought orders
+      const boughtRes = await orderApi.getOrders('bought');
+      const bought = boughtRes.data || [];
+      setBoughtOrders(bought);
 
-    if (bought?.length) {
-      // Fetch vendor names
-      const vendorIds = [...new Set(bought.map(o => o.vendor_id))];
-      const { data: vendors } = await supabase
-        .from('vendors')
-        .select('id, business_name')
-        .in('id', vendorIds);
-
-      const vendorMap = Object.fromEntries((vendors ?? []).map(v => [v.id, v.business_name]));
-      setBoughtOrders(bought.map(o => ({ ...o, vendor_name: vendorMap[o.vendor_id] ?? 'Vendor' })));
-    } else {
-      setBoughtOrders([]);
-    }
-
-    // Fetch sold orders (only if vendor)
-    if (isVendor) {
-      const { data: sold } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('vendor_user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (sold?.length) {
-        // Fetch buyer names
-        const buyerIds = [...new Set(sold.map(o => o.buyer_id))];
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, name')
-          .in('id', buyerIds);
-
-        const buyerMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p.name]));
-        setSoldOrders(sold.map(o => ({ ...o, buyer_name: buyerMap[o.buyer_id] ?? 'A buyer' })));
+      // Fetch sold orders if vendor
+      if (isVendor) {
+        const soldRes = await orderApi.getOrders('sold');
+        const sold = soldRes.data || [];
+        setSoldOrders(sold);
       } else {
         setSoldOrders([]);
       }
+    } catch (error) {
+      console.error('Failed to fetch orders:', error);
+      setBoughtOrders([]);
+      setSoldOrders([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-
-    setLoading(false);
-    setRefreshing(false);
   }, [userId, isVendor]);
 
   useFocusEffect(useCallback(() => {

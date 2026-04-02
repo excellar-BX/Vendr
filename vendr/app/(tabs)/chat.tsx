@@ -7,7 +7,7 @@ import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
-import { supabase } from '../../lib/supabase';
+import { chatApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 
 interface Conversation {
@@ -129,122 +129,31 @@ function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) 
 }
 
 export default function ChatListScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchConversations = async () => {
-    if (!session?.user?.id) return;
-    const userId = session.user.id;
+    if (!user?.id) return;
+    setLoading(true);
+    setRefreshing(true);
 
-    // Find vendor records owned by this user (could be multiple)
-    const { data: myVendors } = await supabase
-      .from('vendors')
-      .select('id')
-      .eq('user_id', userId);
-    const myVendorIds = (myVendors ?? []).map(v => v.id);
-
-    // Fetch ALL conversations where user is buyer OR vendor owner
-    // We do two queries and merge
-    const [buyerRes, vendorRes] = await Promise.all([
-      supabase
-        .from('conversations')
-        .select('id, buyer_id, vendor_id, last_message, last_message_at, buyer_unread, vendor_unread')
-        .eq('buyer_id', userId)
-        .order('last_message_at', { ascending: false }),
-      myVendorIds.length > 0
-        ? supabase
-            .from('conversations')
-            .select('id, buyer_id, vendor_id, last_message, last_message_at, buyer_unread, vendor_unread')
-            .in('vendor_id', myVendorIds)
-            .order('last_message_at', { ascending: false })
-        : Promise.resolve({ data: [] }),
-    ]);
-
-    // Merge and deduplicate, tagging each with role
-    const buyerConvs = (buyerRes.data ?? []).map(c => ({ ...c, iAmVendor: false }));
-    const vendorConvs = (vendorRes.data ?? []).map(c => ({ ...c, iAmVendor: true }));
-
-    // Deduplicate by id (a dual-role user could theoretically appear in both)
-    const seenIds = new Set<string>();
-    const allConvs = [...vendorConvs, ...buyerConvs].filter(c => {
-      if (seenIds.has(c.id)) return false;
-      seenIds.add(c.id);
-      return true;
-    });
-
-    if (allConvs.length === 0) {
-      setConversations([]);
+    try {
+      const { data } = await chatApi.getConversations();
+      setConversations(data || []);
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error);
+    } finally {
       setLoading(false);
       setRefreshing(false);
-      return;
     }
-
-    // Sort merged list by last_message_at
-    allConvs.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
-
-    const vendorIds = [...new Set(allConvs.map(c => c.vendor_id))];
-    const buyerIds = [...new Set(allConvs.map(c => c.buyer_id))];
-
-    const [{ data: vendors }, { data: buyers }] = await Promise.all([
-      supabase.from('vendors').select('id, business_name, is_verified, user_id').in('id', vendorIds),
-      supabase.from('profiles').select('id, name, avatar_url').in('id', buyerIds),
-    ]);
-
-    const vendorMap = Object.fromEntries((vendors ?? []).map(v => [v.id, v]));
-    const buyerMap = Object.fromEntries((buyers ?? []).map(b => [b.id, b]));
-
-    // Presence — other user per conversation
-    const otherUserIds = allConvs.map(c =>
-      c.iAmVendor ? c.buyer_id : vendorMap[c.vendor_id]?.user_id
-    ).filter(Boolean) as string[];
-
-    const { data: presenceData } = await supabase
-      .from('user_presence').select('user_id, is_online').in('user_id', [...new Set(otherUserIds)]);
-    const onlineMap = Object.fromEntries((presenceData ?? []).map(p => [p.user_id, p.is_online]));
-
-    // Last message status
-    const { data: lastMsgs } = await supabase
-      .from('messages')
-      .select('conversation_id, sender_id, delivered, is_read, created_at')
-      .in('conversation_id', allConvs.map(c => c.id))
-      .order('created_at', { ascending: false });
-
-    const lastMsgMap: Record<string, any> = {};
-    (lastMsgs ?? []).forEach(m => {
-      if (!lastMsgMap[m.conversation_id]) lastMsgMap[m.conversation_id] = m;
-    });
-
-    const enriched: Conversation[] = allConvs.map(c => {
-      const lastMsg = lastMsgMap[c.id];
-      const otherUserId = c.iAmVendor ? c.buyer_id : vendorMap[c.vendor_id]?.user_id;
-      return {
-        ...c,
-        vendor: vendorMap[c.vendor_id] ?? null,
-        buyer: buyerMap[c.buyer_id] ?? null,
-        other_online: onlineMap[otherUserId] ?? false,
-        last_message_mine: lastMsg?.sender_id === userId,
-        last_message_delivered: lastMsg?.delivered ?? false,
-        last_message_read: lastMsg?.is_read ?? false,
-      };
-    });
-
-    setConversations(enriched);
-    setLoading(false);
-    setRefreshing(false);
   };
 
-  useFocusEffect(useCallback(() => { fetchConversations(); }, [session]));
+  useFocusEffect(useCallback(() => { fetchConversations(); }, [user]));
 
-  useEffect(() => {
-    if (!session?.user?.id) return;
-    const channel = supabase
-      .channel('conversation-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => fetchConversations())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session]);
+  // Real-time updates not yet implemented - refresh on focus
+  // TODO: Add WebSocket or polling for real-time updates
 
   const totalUnread = conversations.reduce((sum, c) =>
     sum + (c.iAmVendor ? c.vendor_unread : c.buyer_unread), 0
@@ -287,7 +196,7 @@ export default function ChatListScreen() {
           data={conversations}
           keyExtractor={c => c.id}
           renderItem={({ item }) => (
-            <ConversationItem conv={item} myId={session?.user?.id ?? ''} />
+            <ConversationItem conv={item} myId={user?.id ?? ''} />
           )}
           refreshControl={
             <RefreshControl

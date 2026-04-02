@@ -7,7 +7,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { userApi, orderApi, reviewApi, savedVendorApi, vendorApi, reelApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 const { width: SW } = Dimensions.get('window');
@@ -61,8 +61,8 @@ function ReelGrid({ reels, vendorId, onDelete }: { reels: ReelThumb[]; vendorId:
 }
 
 export default function ProfileViewScreen() {
-  const { session, profile: storeProfile } = useAuthStore();
-  const [profile, setProfile] = useState<any>(storeProfile ?? null);
+  const { user } = useAuthStore();
+  const [profile, setProfile] = useState<any>(null);
   const [reels, setReels] = useState<ReelThumb[]>([]);
   const [savedReels, setSavedReels] = useState<ReelThumb[]>([]);
   const [vendorId, setVendorId] = useState<string | null>(null);
@@ -78,85 +78,68 @@ export default function ProfileViewScreen() {
         onPress: async () => {
           setReels(prev => prev.filter(r => r.id !== reel.id));
           try {
-            const videoPath = reel.video_url.split('/reels/')[1];
-            if (videoPath) await supabase.storage.from('reels').remove([videoPath]);
-            if (reel.thumbnail_url) {
-              const thumbPath = reel.thumbnail_url.split('/reels/')[1];
-              if (thumbPath) await supabase.storage.from('reels').remove([thumbPath]);
-            }
-            await supabase.from('reels').delete().eq('id', reel.id);
-          } catch (_) {}
+            // Backend will handle both DB deletion and storage cleanup
+            await reelApi.deleteReel(reel.id);
+          } catch (error) {
+            console.error('Failed to delete reel:', error);
+            // Optionally refresh reels list on error or show toast
+          }
         },
       },
     ]);
   };
 
-  const userId = session?.user?.id;
-  const name = profile?.name ?? session?.user?.user_metadata?.full_name ?? 'Vendr User';
+  const userId = user?.id;
+  const name = profile?.full_name ?? user?.full_name ?? 'Vendr User';
   const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
-  const isVendor = profile?.is_vendor === true;
+  const isVendor = !!vendorId; // Set after fetch based on vendorId
 
   useFocusEffect(useCallback(() => {
     if (!userId) return;
     const fetchAll = async () => {
       setLoading(true);
-      const [
-        { data: profileData },
-        { count: orders },
-        { count: reviews },
-        { count: saved },
-      ] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', userId).single(),
-        supabase.from('orders').select('*', { count: 'exact', head: true }).eq('buyer_id', userId),
-        supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-        supabase.from('saved_vendors').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-      ]);
+      try {
+        // Get user profile with stats
+        const profileRes = await userApi.getProfile();
+        const profileData = profileRes.data;
+        if (profileData) setProfile(profileData);
 
-      if (profileData) setProfile(profileData);
+        // Determine if vendor
+        const isVendor = !!profileData?.vendor?.id;
+        const vendorId = profileData?.vendor?.id || null;
+        setVendorId(vendorId);
 
-      // If vendor — fetch their vendor id and reels
-      if (profileData?.is_vendor) {
-        const { data: vendorData } = await supabase
-          .from('vendors')
-          .select('id')
-          .eq('user_id', userId)
-          .limit(1)
-          .single();
+        // Stats from profile
+        const stats = profileData?.stats || { orders: 0, reviews: 0, saved: 0 };
 
-        if (vendorData) {
-          setVendorId(vendorData.id);
-          const { data: reelsData, count: reelsCount } = await supabase
-            .from('reels')
-            .select('id, thumbnail_url, video_url, like_count, view_count, caption', { count: 'exact' })
-            .eq('vendor_id', vendorData.id)
-            .eq('is_active', true)
-            .order('created_at', { ascending: false });
+        let reelsList: ReelThumb[] = [];
+        let savedList: ReelThumb[] = [];
 
-          setReels(reelsData ?? []);
+        // If vendor — fetch reels and saved reels
+        if (vendorId) {
+          const [reelsRes, savedReelsRes] = await Promise.all([
+            reelApi.getReels(vendorId),
+            reelApi.getSavedReels(),
+          ]);
 
-          // Fetch saved reels for this user
-          const { data: savedReelsData } = await supabase
-            .from('reel_saves')
-            .select('reel_id, reels(id, thumbnail_url, video_url, like_count, view_count, caption, vendor_id)')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
-
-          const shapedSaved: ReelThumb[] = (savedReelsData ?? [])
-            .map((s: any) => s.reels)
-            .filter(Boolean)
-            .map((r: any) => Array.isArray(r) ? r[0] : r)
-            .filter(Boolean);
-          setSavedReels(shapedSaved);
-
-          setStats({ orders: orders ?? 0, reviews: reviews ?? 0, saved: saved ?? 0, reels: reelsCount ?? 0 });
-        } else {
-          setStats({ orders: orders ?? 0, reviews: reviews ?? 0, saved: saved ?? 0, reels: 0 });
+          reelsList = reelsRes.data || [];
+          savedList = savedReelsRes.data || [];
+          setReels(reelsList);
+          setSavedReels(savedList);
         }
-      } else {
-        setStats({ orders: orders ?? 0, reviews: reviews ?? 0, saved: saved ?? 0, reels: 0 });
-      }
 
-      setLoading(false);
+        // Set stats with reels count
+        setStats({
+          orders: stats.orders,
+          reviews: stats.reviews,
+          saved: stats.saved,
+          reels: reelsList.length,
+        });
+      } catch (error) {
+        console.error('Failed to fetch profile data:', error);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchAll();
   }, [userId]));
@@ -211,7 +194,7 @@ export default function ProfileViewScreen() {
 
           <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', marginBottom: 4 }}>{name}</Text>
           <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', marginBottom: 12 }}>
-            {session?.user?.email}
+            {user?.email}
           </Text>
 
           {/* Role badge */}

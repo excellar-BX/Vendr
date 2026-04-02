@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
 import {
   View, ScrollView, TouchableOpacity, KeyboardAvoidingView,
-  Platform, ActivityIndicator, Alert, Animated, TextInput, Image, Modal,
+  Platform, ActivityIndicator, Alert, Animated, Image, Modal,
 } from 'react-native';
 import { uploadFile } from '../lib/storage';
+import { apiFetch } from '../lib/api';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +14,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Text } from '../components/ui/StyledText';
 import { StyledInput } from '../components/ui/StyledInput';
 import { Button } from '../components/ui/Button';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
 import { useLocation } from '../hooks/useLocation';
 import { Category } from '../types';
@@ -267,7 +267,7 @@ function LeafletMap({ lat, lng, onPin }: {
 }
 
 export default function BecomeVendorScreen() {
-  const { session, setProfile } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const location = useLocation();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -324,7 +324,7 @@ export default function BecomeVendorScreen() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo access to upload images.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.8,
       aspect: type === 'banner' ? [16, 9] : [1, 1],
       allowsEditing: true,
@@ -369,45 +369,51 @@ export default function BecomeVendorScreen() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const userId = session?.user?.id;
-      if (!userId) throw new Error('Not logged in');
+      if (!user?.id) throw new Error('Not logged in');
 
       // Upload images if provided
       let logoUrl: string | null = null;
       let bannerUrl: string | null = null;
-      if (form.logo_uri) logoUrl = await uploadImage(form.logo_uri, `${userId}/logo_${Date.now()}.jpg`);
-      if (form.banner_uri) bannerUrl = await uploadImage(form.banner_uri, `${userId}/banner_${Date.now()}.jpg`);
+      if (form.logo_uri) {
+        logoUrl = await uploadImage(form.logo_uri, `${user.id}/logo_${Date.now()}.jpg`);
+        if (!logoUrl) throw new Error('Failed to upload logo');
+      }
+      if (form.banner_uri) {
+        bannerUrl = await uploadImage(form.banner_uri, `${user.id}/banner_${Date.now()}.jpg`);
+        if (!bannerUrl) throw new Error('Failed to upload banner');
+      }
 
       const vendorLat = form.use_current_location ? location.lat : (pinCoords?.lat ?? null);
       const vendorLng = form.use_current_location ? location.lng : (pinCoords?.lng ?? null);
       const vendorAddress = form.use_current_location ? location.address : form.address;
 
-      const { error: vendorError } = await supabase.from('vendors').insert({
-        user_id: userId,
-        business_name: form.business_name.trim(),
-        category: form.category,
-        description: form.description.trim(),
-        address: vendorAddress,
-        lat: vendorLat ?? 6.5244,
-        lng: vendorLng ?? 3.3792,
-        is_active: true,
-        is_verified: false,
-        rating: 0,
-        review_count: 0,
-        logo_url: logoUrl,
-        banner_url: bannerUrl,
+      // Create vendor via backend API
+      const { data: vendor } = await apiFetch('/vendors', {
+        method: 'POST',
+        body: JSON.stringify({
+          business_name: form.business_name.trim(),
+          category: form.category,
+          description: form.description.trim(),
+          address: vendorAddress,
+          lat: vendorLat ?? 6.5244,
+          lng: vendorLng ?? 3.3792,
+          phone: form.phone.trim(),
+          whatsapp: form.whatsapp?.trim() || undefined,
+          instagram: form.instagram?.trim() || undefined,
+          twitter: form.twitter?.trim() || undefined,
+          open_days: form.open_days,
+          open_time: form.open_time,
+          close_time: form.close_time,
+          logo_url: logoUrl,
+          banner_url: bannerUrl,
+        }),
       });
 
-      if (vendorError) throw vendorError;
-
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ is_vendor: true, phone: form.phone.trim() })
-        .eq('id', userId);
-      if (profileError) throw profileError;
-
-      const { data: freshProfile } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      setProfile(freshProfile);
+      // Update user in auth store with is_vendor flag
+      setUser({
+        ...user,
+        is_vendor: true,
+      });
 
       Alert.alert(
         'Welcome to Vendr!',

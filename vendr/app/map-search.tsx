@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { vendorApi } from '../lib/api';
 import { useLocation } from '../hooks/useLocation';
 import { calcDistance } from '../lib/utils';
 import { Vendor, Category } from '../types';
@@ -148,14 +148,14 @@ function VendorMapCard({ vendor, userLat, userLng, onClose, onOpen }: {
         }}>
           {vendor.logo_url
             ? <Image source={{ uri: vendor.logo_url }} style={{ width: 60, height: 60 }} resizeMode="cover" />
-            : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#E8521A' }}>{vendor.business_name[0]}</Text>
+            : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#E8521A' }}>{vendor.shop_name[0]}</Text>
           }
         </View>
 
         <View style={{ flex: 1, gap: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>
-              {vendor.business_name}
+              {vendor.shop_name}
             </Text>
             {vendor.is_verified && <Ionicons name="checkmark-circle" size={14} color="#F5A623" />}
           </View>
@@ -217,13 +217,17 @@ export default function MapSearchScreen() {
   useEffect(() => { fetchVendors(); }, []);
 
   const fetchVendors = async () => {
-    let q = supabase.from('vendors').select('*').eq('is_active', true)
-      .not('lat', 'is', null).not('lng', 'is', null);
-    if (isSearchMode && passedIds.length > 0) {
-      q = q.in('id', passedIds);
+    try {
+      const { data } = await vendorApi.getVendors({
+        is_active: true,
+        has_location: true,
+        ids: isSearchMode && passedIds.length > 0 ? passedIds : undefined,
+      });
+      setAllVendors(data ?? []);
+    } catch (error) {
+      console.error('Failed to fetch vendors:', error);
+      setAllVendors([]);
     }
-    const { data } = await q;
-    setAllVendors(data ?? []);
   };
 
   // Apply category filter client-side

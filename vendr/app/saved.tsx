@@ -5,59 +5,46 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { VendorCard } from '../components/vendor/VendorCard';
-import { supabase } from '../lib/supabase';
+import { savedVendorApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import { Vendor } from '../types';
 
 export default function SavedVendorsScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(useCallback(() => {
     const fetchSaved = async () => {
-      if (!session?.user?.id) return;
+      if (!user?.id) return;
       setLoading(true);
 
-      // Step 1: get saved vendor IDs
-      const { data: saved, error } = await supabase
-        .from('saved_vendors')
-        .select('vendor_id, created_at')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
+      try {
+        const res = await savedVendorApi.getSavedVendors();
+        const data = res.data || [];
 
-      if (error || !saved?.length) {
+        // Backend returns saved vendors with full vendor details already
+        // Map to Vendor[] and preserve order (backend already orders by created_at desc)
+        const vendors: Vendor[] = (data as any[]).map(item => item.vendor);
+        setVendors(vendors);
+      } catch (error) {
+        console.error('Failed to fetch saved vendors:', error);
         setVendors([]);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      // Step 2: fetch vendor details
-      const ids = saved.map(s => s.vendor_id);
-      const { data: vendorData } = await supabase
-        .from('vendors')
-        .select('*')
-        .in('id', ids);
-
-      // Preserve save order
-      const ordered = ids
-        .map(id => vendorData?.find(v => v.id === id))
-        .filter(Boolean) as Vendor[];
-
-      setVendors(ordered);
-      setLoading(false);
     };
     fetchSaved();
-  }, [session?.user?.id]));
+  }, [user?.id]));
 
   const handleUnsave = async (vendorId: string) => {
-    if (!session?.user?.id) return;
-    await supabase
-      .from('saved_vendors')
-      .delete()
-      .eq('user_id', session.user.id)
-      .eq('vendor_id', vendorId);
-    setVendors(prev => prev.filter(v => v.id !== vendorId));
+    if (!user?.id) return;
+    try {
+      await savedVendorApi.unsaveVendor(vendorId);
+      setVendors(prev => prev.filter(v => v.id !== vendorId));
+    } catch (error) {
+      console.error('Failed to unsave vendor:', error);
+    }
   };
 
   return (

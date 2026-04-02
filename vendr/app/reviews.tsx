@@ -7,7 +7,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { reviewApi, vendorApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 interface ReviewLeft {
@@ -164,7 +164,7 @@ function ReviewReceivedCard({ item }: { item: ReviewReceived }) {
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
 export default function MyReviewsScreen() {
-  const { session, profile, isVendor } = useAuthStore();
+  const { user, isVendor } = useAuthStore();
 
   const [tab, setTab] = useState<'left' | 'received'>('left');
   const [reviewsLeft, setReviewsLeft] = useState<ReviewLeft[]>([]);
@@ -174,73 +174,55 @@ export default function MyReviewsScreen() {
 
   useFocusEffect(useCallback(() => {
     const fetchAll = async () => {
-      if (!session?.user?.id) return;
+      if (!user?.id) return;
       setLoading(true);
 
-      // Always fetch reviews I left
-      const { data: leftData } = await supabase
-        .from('reviews')
-        .select('id, rating, comment, created_at, vendor_id')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
+      try {
+        // Fetch reviews I left (with vendor details)
+        const leftRes = await reviewApi.getMyReviews();
+        const leftData = leftRes.data || [];
+        setReviewsLeft(leftData);
 
-      if (leftData?.length) {
-        const vendorIds = leftData.map(r => r.vendor_id);
-        const { data: vendors } = await supabase
-          .from('vendors')
-          .select('id, business_name')
-          .in('id', vendorIds);
-        const vendorMap = Object.fromEntries((vendors ?? []).map(v => [v.id, v.business_name]));
-        setReviewsLeft(leftData.map(r => ({ ...r, vendor_name: vendorMap[r.vendor_id] ?? 'Unknown store' })));
-      } else {
-        setReviewsLeft([]);
-      }
+        // If vendor — fetch reviews received for their store
+        if (isVendor) {
+          const vendorRes = await vendorApi.getMyVendor();
+          const vendorId = vendorRes.data?.id;
 
-      // If vendor — also fetch reviews received for their store
-      if (isVendor) {
-        const { data: vendorData } = await supabase
-          .from('vendors')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .single();
+          if (vendorId) {
+            const receivedRes = await reviewApi.getVendorReviews(vendorId);
+            const receivedData = receivedRes.data || [];
 
-        if (vendorData) {
-          const { data: receivedData } = await supabase
-            .from('reviews')
-            .select('id, rating, comment, created_at, user_id')
-            .eq('vendor_id', vendorData.id)
-            .order('created_at', { ascending: false });
-
-          if (receivedData?.length) {
-            const userIds = receivedData.map(r => r.user_id);
-            const { data: profiles } = await supabase
-              .from('profiles')
-              .select('id, name, avatar_url')
-              .in('id', userIds);
-            const profileMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p]));
-
-            const shaped: ReviewReceived[] = receivedData.map(r => ({
+            // Transform to ReviewReceived format
+            const shaped: ReviewReceived[] = (receivedData as any[]).map(r => ({
               id: r.id,
               rating: r.rating,
               comment: r.comment,
               created_at: r.created_at,
-              reviewer_name: profileMap[r.user_id]?.name ?? 'Anonymous',
-              reviewer_avatar: profileMap[r.user_id]?.avatar_url ?? null,
+              reviewer_name: r.reviewer_name ?? 'Anonymous',
+              reviewer_avatar: r.reviewer_avatar ?? null,
             }));
             setReviewsReceived(shaped);
 
-            const avg = shaped.reduce((sum, r) => sum + r.rating, 0) / shaped.length;
-            setAvgRating(Math.round(avg * 10) / 10);
+            if (shaped.length > 0) {
+              const avg = shaped.reduce((sum, r) => sum + r.rating, 0) / shaped.length;
+              setAvgRating(Math.round(avg * 10) / 10);
+            } else {
+              setAvgRating(0);
+            }
           } else {
             setReviewsReceived([]);
+            setAvgRating(0);
           }
         }
+      } catch (error) {
+        console.error('Failed to fetch reviews:', error);
+        // Optionally show error toast
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
     fetchAll();
-  }, [session?.user?.id, isVendor]));
+  }, [user?.id, isVendor]));
 
   const totalLeft = reviewsLeft.length;
   const totalReceived = reviewsReceived.length;

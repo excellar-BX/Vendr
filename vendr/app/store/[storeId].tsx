@@ -1,52 +1,77 @@
 import { useState, useCallback } from 'react';
 import {
   View, ScrollView, TouchableOpacity, Alert,
-  ActivityIndicator, TextInput, Switch, Modal, Image, Dimensions, FlatList,
+  ActivityIndicator, TextInput, Switch, Modal, Image, Dimensions,
 } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { uploadFile } from '../../lib/storage';
+import { uploadFile, deleteFiles } from '../../lib/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Text } from '../../components/ui/StyledText';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../stores/authStore';
+import { apiFetch } from '../../lib/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_H = 160;
-const SUPABASE_URL = 'https://mbdojwirmtknzpwccthb.supabase.co';
 const REEL_SIZE = (SCREEN_WIDTH - 48) / 3;
 
 interface Product {
   id: string;
+  vendor_id: string; 
   name: string;
-  description: string;
+  description?: string | null;
   price: number;
+  image_url?: string | null;
   is_available: boolean;
-  image_url?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface Store {
   id: string;
-  business_name: string;
+  user_id: string;
+  shop_name: string;
   category: string;
-  description: string;
+  description?: string | null;
   address: string;
+  lat?: number | null;
+  lng?: number | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  instagram?: string | null;
+  twitter?: string | null;
+  open_days: string[];
+  open_time: string;
+  close_time: string;
+  logo_url?: string | null;
+  banner_url?: string | null;
   is_active: boolean;
   is_verified: boolean;
   rating: number;
   review_count: number;
-  logo_url?: string;
-  banner_url?: string;
+  product_count?: number;
+  created_at: string;
+  updated_at: string;
+  user: {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+  };
 }
 
 interface ReelThumb {
   id: string;
-  thumbnail_url: string | null;
-  video_url: string;
-  view_count: number;
-  caption: string | null;
   vendor_id: string;
+  user_id: string;
+  video_url: string;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  product_id?: string | null;
+  view_count: number;
+  like_count: number;
+  save_count: number;
+  is_active: boolean;
+  created_at: string;
 }
 
 function formatPrice(n: number) {
@@ -91,7 +116,6 @@ async function pickImage() {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function StoreDashboardScreen() {
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
-  const { session } = useAuthStore();
 
   const [store, setStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -123,15 +147,22 @@ export default function StoreDashboardScreen() {
     if (!storeId) return;
     const fetch = async () => {
       setLoading(true);
-      const [{ data: storeData }, { data: productData }, { data: reelData }] = await Promise.all([
-        supabase.from('vendors').select('*').eq('id', storeId).single(),
-        supabase.from('products').select('*').eq('vendor_id', storeId).order('created_at', { ascending: false }),
-        supabase.from('reels').select('id, thumbnail_url, video_url, view_count, caption, vendor_id').eq('vendor_id', storeId).order('created_at', { ascending: false }),
-      ]);
-      setStore(storeData);
-      setProducts(productData ?? []);
-      setReels(reelData ?? []);
-      setLoading(false);
+      try {
+        // Fetch vendor, products, and reels in parallel
+        const [vendorRes, productsRes, reelsRes] = await Promise.all([
+          apiFetch(`/vendors/${storeId}`),
+          apiFetch(`/products?vendor_id=${storeId}&include_all=true`), // include all products for vendor management
+          apiFetch(`/reels?vendor_id=${storeId}`),
+        ]);
+
+        setStore(vendorRes.data);
+        setProducts(productsRes.data);
+        setReels(reelsRes.data);
+      } catch (error: any) {
+        Alert.alert('Error', error.message ?? 'Failed to load store data');
+      } finally {
+        setLoading(false);
+      }
     };
     fetch();
   }, [storeId]));
@@ -142,9 +173,12 @@ export default function StoreDashboardScreen() {
     if (!uri) return;
     try {
       setUploadingBanner(true);
-      const path = `${storeId}/banner_${Date.now()}.jpg`;
+      const path = `stores/${storeId}/banner_${Date.now()}.jpg`;
       const url = await uploadImage('vendor-images', path, uri);
-      await supabase.from('vendors').update({ banner_url: url }).eq('id', storeId);
+      await apiFetch(`/vendors/me`, {
+        method: 'PATCH',
+        body: JSON.stringify({ banner_url: url }),
+      });
       setStore(prev => prev ? { ...prev, banner_url: url } : null);
     } catch (e: any) {
       Alert.alert('Upload failed', e.message);
@@ -159,9 +193,12 @@ export default function StoreDashboardScreen() {
     if (!uri) return;
     try {
       setUploadingLogo(true);
-      const path = `${storeId}/logo_${Date.now()}.jpg`;
+      const path = `stores/${storeId}/logo_${Date.now()}.jpg`;
       const url = await uploadImage('vendor-images', path, uri);
-      await supabase.from('vendors').update({ logo_url: url }).eq('id', storeId);
+      await apiFetch(`/vendors/me`, {
+        method: 'PATCH',
+        body: JSON.stringify({ logo_url: url }),
+      });
       setStore(prev => prev ? { ...prev, logo_url: url } : null);
     } catch (e: any) {
       Alert.alert('Upload failed', e.message);
@@ -209,7 +246,7 @@ export default function StoreDashboardScreen() {
       try {
         setUploadingProductImg(true);
         const pid = editingProduct?.id ?? `new_${Date.now()}`;
-        const path = `${storeId}/product_${pid}_${Date.now()}.jpg`;
+        const path = `stores/${storeId}/products/${pid}_${Date.now()}.jpg`;
         finalImageUrl = await uploadImage('vendor-images', path, pImageUri);
         setUploadingProductImg(false);
       } catch (e: any) {
@@ -222,26 +259,32 @@ export default function StoreDashboardScreen() {
 
     const payload = {
       name: pName.trim(),
-      description: pDesc.trim(),
+      description: pDesc.trim() || null,
       price,
       is_available: pAvailable,
       image_url: finalImageUrl ?? null,
     };
 
-    if (editingProduct) {
-      const { data, error } = await supabase
-        .from('products').update(payload).eq('id', editingProduct.id).select().single();
-      if (error) { Alert.alert('Error', error.message); setSaving(false); return; }
-      setProducts(prev => prev.map(p => p.id === editingProduct.id ? data : p));
-    } else {
-      const { data, error } = await supabase
-        .from('products').insert({ vendor_id: storeId, ...payload }).select().single();
-      if (error) { Alert.alert('Error', error.message); setSaving(false); return; }
-      setProducts(prev => [data, ...prev]);
+    try {
+      if (editingProduct) {
+        const res = await apiFetch(`/products/${editingProduct.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setProducts(prev => prev.map(p => p.id === editingProduct.id ? res.data : p));
+      } else {
+        const res = await apiFetch(`/products`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setProducts(prev => [res.data, ...prev]);
+      }
+      setSaving(false);
+      setShowAddProduct(false);
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+      setSaving(false);
     }
-
-    setSaving(false);
-    setShowAddProduct(false);
   };
 
   const deleteProduct = (p: Product) => {
@@ -251,7 +294,7 @@ export default function StoreDashboardScreen() {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
           setProducts(prev => prev.filter(x => x.id !== p.id));
-          await supabase.from('products').delete().eq('id', p.id);
+          await apiFetch(`/products/${p.id}`, { method: 'DELETE' });
         },
       },
     ]);
@@ -268,16 +311,26 @@ export default function StoreDashboardScreen() {
           setReels(prev => prev.filter(r => r.id !== reel.id));
           setDeletingReelId(reel.id);
           try {
-            // Extract storage path from URL and delete file
+            // Extract storage paths and delete files from R2
+            const keysToDelete: string[] = [];
             const videoPath = reel.video_url.split('/reels/')[1];
             if (videoPath) {
-              await supabase.storage.from('reels').remove([videoPath]);
+              keysToDelete.push(`reels/${videoPath}`);
             }
             if (reel.thumbnail_url) {
               const thumbPath = reel.thumbnail_url.split('/reels/')[1];
-              if (thumbPath) await supabase.storage.from('reels').remove([thumbPath]);
+              if (thumbPath) keysToDelete.push(`reels/${thumbPath}`);
             }
-            await supabase.from('reels').delete().eq('id', reel.id);
+
+            if (keysToDelete.length > 0) {
+              await apiFetch('/storage/files', {
+                method: 'DELETE',
+                body: JSON.stringify({ keys: keysToDelete }),
+              });
+            }
+
+            // Delete reel record from backend
+            await apiFetch(`/reels/${reel.id}`, { method: 'DELETE' });
           } catch (e: any) {
             Alert.alert('Error', 'Could not fully delete reel files.');
           } finally {
@@ -292,22 +345,28 @@ export default function StoreDashboardScreen() {
     if (!store) return;
     const newVal = !store.is_active;
     setStore(prev => prev ? { ...prev, is_active: newVal } : null);
-    await supabase.from('vendors').update({ is_active: newVal }).eq('id', storeId);
+    await apiFetch(`/vendors/me`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: newVal }),
+    });
   };
 
   const toggleProductAvailable = async (p: Product) => {
     const newVal = !p.is_available;
     setProducts(prev => prev.map(x => x.id === p.id ? { ...x, is_available: newVal } : x));
-    await supabase.from('products').update({ is_available: newVal }).eq('id', p.id);
+    await apiFetch(`/products/${p.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_available: newVal }),
+    });
   };
 
   const handleDeleteStore = async () => {
-    if (deleteConfirmText.trim().toLowerCase() !== store?.business_name.toLowerCase()) return;
+    if (!store) return;
+    if (deleteConfirmText.trim().toLowerCase() !== store.shop_name.toLowerCase()) return;
     try {
       setDeletingStore(true);
-      await supabase.from('products').delete().eq('vendor_id', storeId);
-      await supabase.from('conversations').delete().eq('vendor_id', storeId);
-      await supabase.from('vendors').delete().eq('id', storeId);
+      // Backend handles cascade deactivation or deletion
+      await apiFetch(`/vendors/me`, { method: 'DELETE' });
       setShowDeleteStore(false);
       router.replace('/my-stores');
     } catch (e: any) {
@@ -319,7 +378,10 @@ export default function StoreDashboardScreen() {
   const handleChangeCategory = async (cat: string) => {
     try {
       setSavingCategory(true);
-      await supabase.from('vendors').update({ category: cat }).eq('id', storeId);
+      await apiFetch(`/vendors/me`, {
+        method: 'PATCH',
+        body: JSON.stringify({ category: cat }),
+      });
       setStore(prev => prev ? { ...prev, category: cat } : null);
       setShowCategoryPicker(false);
     } catch (e: any) {
@@ -359,7 +421,7 @@ export default function StoreDashboardScreen() {
           <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
         </TouchableOpacity>
         <View className="flex-1">
-          <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{store?.business_name}</Text>
+          <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{store?.shop_name}</Text>
           <Text className="text-muted text-xs">{store?.category}</Text>
         </View>
         <TouchableOpacity
@@ -714,32 +776,32 @@ export default function StoreDashboardScreen() {
             </View>
             <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 8 }}>Delete Store?</Text>
             <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
-              This will permanently delete <Text style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_600SemiBold' }}>{store?.business_name}</Text>, all its products, and conversation history.
+              This will permanently delete <Text style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_600SemiBold' }}>{store?.shop_name}</Text>, all its products, and conversation history.
             </Text>
 
             <View style={{ marginBottom: 20 }}>
               <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#6B5E50', marginBottom: 8 }}>
-                Type <Text style={{ color: '#FDF6EC' }}>{store?.business_name}</Text> to confirm:
+                Type <Text style={{ color: '#FDF6EC' }}>{store?.shop_name}</Text> to confirm:
               </Text>
               <TextInput
                 value={deleteConfirmText}
                 onChangeText={setDeleteConfirmText}
-                placeholder={store?.business_name}
+                placeholder={store?.shop_name}
                 placeholderTextColor="#3D3026"
                 autoCapitalize="none"
-                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#0F0A06', borderWidth: 1, borderColor: deleteConfirmText.trim().toLowerCase() === store?.business_name.toLowerCase() ? '#E85555' : '#3D3026', borderRadius: 14, paddingHorizontal: 16, height: 52 }}
+                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#0F0A06', borderWidth: 1, borderColor: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? '#E85555' : '#3D3026', borderRadius: 14, paddingHorizontal: 16, height: 52 }}
               />
             </View>
 
             <View style={{ gap: 10 }}>
               <TouchableOpacity
                 onPress={handleDeleteStore}
-                disabled={deletingStore || deleteConfirmText.trim().toLowerCase() !== store?.business_name.toLowerCase()}
-                style={{ backgroundColor: deleteConfirmText.trim().toLowerCase() === store?.business_name.toLowerCase() ? '#E85555' : '#2A1F14', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' }}
+                disabled={deletingStore || deleteConfirmText.trim().toLowerCase() !== store?.shop_name.toLowerCase()}
+                style={{ backgroundColor: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? '#E85555' : '#2A1F14', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' }}
               >
                 {deletingStore
                   ? <ActivityIndicator size="small" color="white" />
-                  : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: deleteConfirmText.trim().toLowerCase() === store?.business_name.toLowerCase() ? 'white' : '#6B5E50' }}>Delete Store</Text>
+                  : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? 'white' : '#6B5E50' }}>Delete Store</Text>
                 }
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowDeleteStore(false)} style={{ backgroundColor: '#0F0A06', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2A1F14' }}>

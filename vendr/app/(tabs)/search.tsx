@@ -9,11 +9,12 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/ui/StyledText';
-import { supabase } from '../../lib/supabase';
+import { searchApi, vendorApi } from '../../lib/api';
 import { useLocation } from '../../hooks/useLocation';
 import { calcDistance, formatPrice, formatDistance } from '../../lib/utils';
 import { Vendor, Product, Category } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
+import { useVendrAlert } from '../../components/ui/VendrAlert';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 type FilterTab = 'all' | 'vendors' | 'products';
@@ -86,7 +87,7 @@ function VendorGridCard({ vendor }: { vendor: Vendor }) {
         )}
       </View>
       <View style={{ padding: 10, paddingTop: vendor.logo_url ? 22 : 10, gap: 4 }}>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }} numberOfLines={1}>{vendor.business_name}</Text>
+        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }} numberOfLines={1}>{vendor.shop_name}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Ionicons name={cfg.icon} size={10} color={cfg.color} />
           <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }} numberOfLines={1}>{vendor.category}</Text>
@@ -158,7 +159,8 @@ function SectionHeader({ title, count }: { title: string; count: number }) {
 
 export default function SearchScreen() {
   const { lat, lng } = useLocation();
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
+  const { showAlert: vendrAlert } = useVendrAlert();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<RNTextInput>(null);
   const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -184,75 +186,71 @@ export default function SearchScreen() {
   const DROPDOWN_TOP = insets.top + 56 + 40 + 52 + 10;
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-    supabase.from('vendors').select('id').eq('user_id', session.user.id).then(({ data }) => {
-      if (data) setMyVendorIds(data.map((v: any) => v.id));
-    });
+    if (!user?.id) return;
+    loadMyVendors();
     loadHistory();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
-  useFocusEffect(useCallback(() => { loadHistory(); }, [session?.user?.id]));
+  useFocusEffect(useCallback(() => { loadHistory(); }, [user?.id]));
 
-  const loadHistory = () => {
-    if (!session?.user?.id) return;
-    supabase
-      .from('search_history').select('query')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false }).limit(10)
-      .then(({ data }) => {
-        if (data) setRecentSearches([...new Set(data.map((r: any) => r.query as string))]);
-      });
+  const loadHistory = async () => {
+    if (!user?.id) return;
+    try {
+      const { data } = await searchApi.getHistory();
+      if (data) setRecentSearches(data);
+    } catch (error) {
+      console.error('Failed to load search history:', error);
+    }
   };
 
-  // Suggestions — direct queries, no RPC dependency
+  const loadMyVendors = async () => {
+    if (!user?.id) return;
+    try {
+      const { data } = await vendorApi.getMyVendor();
+      if (data) {
+        setMyVendorIds(data ? [data.id] : []);
+      }
+    } catch (error) {
+      // Not an error if user is not a vendor - just keep empty array
+      setMyVendorIds([]);
+    }
+  };
+
+  // Suggestions — API call
   useEffect(() => {
     if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
     if (query.length < 1) { setSuggestions([]); return; }
 
     suggestTimerRef.current = setTimeout(async () => {
-      const term = extractSearchTerm(query);
-      const t = `%${term}%`;
+      try {
+        const { data } = await searchApi.suggestions({ q: query, limit: 5 });
+        const results: Suggestion[] = [];
 
-      const [productRes, vendorRes] = await Promise.all([
-        supabase
-          .from('products')
-          .select('id, name, price, image_url, vendor_id, vendors(rating)')
-          .eq('is_available', true)
-          .ilike('name', t)
-          .order('name')
-          .limit(2),
-        supabase
-          .from('vendors')
-          .select('id, business_name, category, logo_url, rating')
-          .eq('is_active', true)
-          .ilike('business_name', t)
-          .order('rating', { ascending: false })
-          .limit(1),
-      ]);
-
-      const results: Suggestion[] = [];
-
-      (productRes.data ?? []).forEach((p: any) => {
-        results.push({
-          suggestion: p.name,
-          source: 'product',
-          subtitle: formatPrice(p.price),
-          image_url: p.image_url ?? undefined,
-          rating: p.vendors?.rating ?? 0,
+        (data?.products ?? []).forEach((p: any) => {
+          results.push({
+            suggestion: p.name,
+            source: 'product',
+            subtitle: formatPrice(p.price),
+            image_url: p.image_url ?? undefined,
+            rating: 0,
+          });
         });
-      });
 
-      (vendorRes.data ?? []).forEach((v: any) => {
-        results.push({
-          suggestion: v.business_name,
-          source: 'vendor',
-          subtitle: v.category,
-          image_url: v.logo_url ?? undefined,
-          rating: v.rating ?? 0,
+        (data?.vendors ?? []).forEach((v: any) => {
+          results.push({
+            suggestion: v.business_name,
+            source: 'vendor',
+            subtitle: v.category,
+            image_url: v.logo_url ?? undefined,
+            rating: v.rating ?? 0,
+          });
         });
-      });
 
-      setSuggestions(results);
+        setSuggestions(results);
+      } catch (error) {
+        console.error('Suggestion fetch error:', error);
+        setSuggestions([]);
+      }
     }, 200);
   }, [query]);
 
@@ -283,35 +281,81 @@ export default function SearchScreen() {
     setHasSearched(true);
 
     // Persist original query to history
-    if (session?.user?.id) {
-      supabase.from('search_history').insert({ user_id: session.user.id, query: q.trim() }).then(() => {});
+    if (user?.id) {
+      await searchApi.saveHistory(q.trim());
       setRecentSearches(prev => [q, ...prev.filter(s => s !== q)].slice(0, 10));
     }
 
-    // Extract real search term by stripping filler words
-    const term = extractSearchTerm(q);
-    const t = `%${term}%`;
-    console.log('[Search] raw:', q, '→ extracted:', term);
-    let vq = supabase.from('vendors').select('*').eq('is_active', true)
-      .or(`business_name.ilike.${t},description.ilike.${t},category.ilike.${t}`);
-    if (activeCategory !== 'All') vq = vq.eq('category', activeCategory);
-    if (verifiedOnly) vq = vq.eq('is_verified', true);
-    if (minRating > 0) vq = vq.gte('rating', minRating);
+    // Perform search via API
+    try {
+      const { data } = await searchApi.search({
+        q,
+        category: activeCategory !== 'All' ? activeCategory : undefined,
+        verified_only: verifiedOnly,
+        min_rating: minRating > 0 ? minRating : undefined,
+        lat: lat ?? undefined,
+        lng: lng ?? undefined,
+        limit: 50,
+      });
 
-    const pq = supabase.from('products').select('*, vendors(business_name)')
-      .eq('is_available', true).or(`name.ilike.${t},description.ilike.${t}`);
+      // Transform vendor data to match expected format
+      const vList: Vendor[] = (data?.vendors ?? []).map((v: any) => ({
+        id: v.id,
+        user_id: v.user_id,
+        shop_name: v.shop_name,
+        description: v.description,
+        category: v.category,
+        address: v.address,
+        lat: v.lat,
+        lng: v.lng,
+        phone: v.phone,
+        whatsapp: v.whatsapp,
+        instagram: v.instagram,
+        twitter: v.twitter,
+        open_days: v.open_days,
+        open_time: v.open_time,
+        close_time: v.close_time,
+        logo_url: v.logo_url,
+        banner_url: v.banner_url,
+        is_verified: v.is_verified,
+        is_active: v.is_active,
+        rating: v.rating,
+        review_count: v.review_count,
+        created_at: v.created_at,
+        updated_at: v.updated_at,
+        user: v.user,
+        distance: v.distance,
+      }));
 
-    const [vr, pr] = await Promise.all([vq, pq]);
+      // Sort by distance if lat/lng available
+      if (lat && lng) {
+        vList.forEach(v => {
+          v.distance = (v.lat != null && v.lng != null) ? calcDistance(lat, lng, v.lat!, v.lng!) : undefined;
+        });
+        vList.sort((a, b) => (a.distance ?? 99) - (b.distance ?? 99));
+      }
 
-    let vList: Vendor[] = vr.data ?? [];
-    if (lat && lng) {
-      vList = vList
-        .map(v => ({ ...v, distance: calcDistance(lat, lng, v.lat, v.lng) }))
-        .sort((a, b) => (a.distance ?? 99) - (b.distance ?? 99));
+      setVendors(vList);
+
+      // Transform product data
+      setProducts((data?.products ?? []).map((p: any) => ({
+        id: p.id,
+        vendor_id: p.vendor_id,
+        name: p.name,
+        description: p.description,
+        price: p.price,
+        image_url: p.image_url,
+        is_available: p.is_available,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        vendor_name: p.vendor_name,
+      })));
+    } catch (error: any) {
+      console.error('Search error:', error);
+      vendrAlert({ title: 'Search Failed', message: error.message || 'Something went wrong', type: 'danger' });
+    } finally {
+      setLoading(false);
     }
-    setVendors(vList);
-    setProducts((pr.data ?? []).map((p: any) => ({ ...p, vendor_name: p.vendors?.business_name })));
-    setLoading(false);
   };
 
   const clearSearch = () => {
@@ -326,14 +370,19 @@ export default function SearchScreen() {
   };
 
   const clearHistory = async () => {
-    setRecentSearches([]);
-    if (session?.user?.id) await supabase.from('search_history').delete().eq('user_id', session.user.id);
+    try {
+      await searchApi.clearHistory();
+      setRecentSearches([]);
+    } catch (error) {
+      console.error('Failed to clear search history:', error);
+    }
   };
 
   const removeHistoryItem = async (item: string) => {
+    // The backend doesn't have an endpoint to delete individual items yet
+    // For now, just clear all and re-add the filtered list
     setRecentSearches(prev => prev.filter(s => s !== item));
-    if (session?.user?.id)
-      await supabase.from('search_history').delete().eq('user_id', session.user.id).eq('query', item);
+    // TODO: Add backend endpoint to delete single search history item if needed
   };
 
   const filteredVendors  = activeFilter === 'products' ? [] : vendors;

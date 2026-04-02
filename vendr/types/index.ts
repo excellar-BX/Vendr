@@ -10,20 +10,34 @@ export type Category =
 export interface Vendor {
   id: string;
   user_id: string;
-  business_name: string;
-  description?: string;
+  shop_name: string;
+  description?: string | null;
   category: Category | string;
-  lat: number;
-  lng: number;
-  address?: string;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  instagram?: string | null;
+  twitter?: string | null;
+  open_days: string[];
+  open_time: string;
+  close_time: string;
+  logo_url?: string | null;
+  banner_url?: string | null;
   is_verified: boolean;
   is_active: boolean;
-  avatar_url?: string;
-  banner_url?: string;
-  logo_url?: string;
   rating: number;
   review_count: number;
+  product_count?: number;
   created_at: string;
+  updated_at: string;
+  user: {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+    created_at: string;
+  };
   // computed client-side
   distance?: number;
 }
@@ -32,11 +46,12 @@ export interface Product {
   id: string;
   vendor_id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   price: number;
-  image_url?: string;
+  image_url?: string | null;
   is_available: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Order {

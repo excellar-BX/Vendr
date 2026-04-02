@@ -7,21 +7,31 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// USER & AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  password       String?
-  full_name      String?
-  avatar_url     String?
-  phone          String?
-  google_id      String?  @unique
-  is_verified    Boolean  @default(false)
-  is_deleted     Boolean  @default(false)
-  deleted_at     DateTime?
-  notifications_enabled Boolean @default(true)
-  location_enabled Boolean @default(true)
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+  id                         String            @id @default(uuid())
+  email                      String            @unique
+  password                   String?
+  full_name                  String?
+  avatar_url                 String?
+  phone                      String?
+  google_id                  String?           @unique
+  is_verified                Boolean           @default(false)
+  is_buyer                   Boolean           @default(true)
+  is_vendor                  Boolean           @default(false)
+  is_deleted                 Boolean           @default(false)
+  deleted_at                 DateTime?
+  notifications_enabled      Boolean           @default(true)
+  location_enabled           Boolean           @default(true)
+  language                   String            @default("English")
+  font_size                  String            @default("Normal")
+  push_token                 String?
+  role                       String            @default("buyer")
+  created_at                 DateTime          @default(now())
+  updated_at                 DateTime          @updatedAt
 
   refresh_tokens             RefreshToken[]
   email_verification_tokens  EmailVerificationToken[]
@@ -31,6 +41,19 @@ model User {
   reviews                    Review[]
   savedVendors               SavedVendor[]
   notifications              Notification[]
+  transactions               Transaction[] @relation("UserTransactions")
+  counterpartyTransactions   Transaction[] @relation("CounterpartyTransactions")
+  userPresence               UserPresence?
+  bankAccounts               BankAccount[]
+  virtualAccount             VirtualAccount?
+  wallet                     Wallet?
+  paymentRequests            PaymentRequest[]
+  searchHistories            SearchHistory[]
+  reelsPosted                Reel[]
+  reelLikes                  ReelLike[]
+  reelSaves                  ReelSave[]
+  messages                   Message[]
+  conversations              Conversation[] @relation("ConversationParticipants")
 
   @@map("users")
 }
@@ -72,58 +95,273 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-model Vendor {
-  id          String   @id @default(uuid())
-  user_id     String   @unique
-  shop_name   String
-  description String?
-  category    String?
-  city        String?
-  address     String?
-  logo_url    String?
-  lat         Float?
-  lng         Float?
-  is_verified Boolean  @default(true)
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+// ─────────────────────────────────────────────────────────────────────────────
+// VENDOR & PRODUCTS
+// ─────────────────────────────────────────────────────────────────────────────
 
-  user     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  products Product[]
-  orders   Order[]
-  reviews  Review[]
-  savedBy  SavedVendor[]
+model Vendor {
+  id                 String   @id @default(uuid())
+  user_id            String   @unique
+  shop_name          String
+  description        String?
+  category           String?
+  city               String?
+  address            String?
+  logo_url           String?
+  banner_url         String?
+  avatar_url         String?  // Store profile picture (different from logo)
+  lat                Float?
+  lng                Float?
+  phone              String?
+  whatsapp           String?
+  instagram          String?
+  twitter            String?
+  open_days          String[] @default(["Mon", "Tue", "Wed", "Thu", "Fri"])
+  open_time          String   @default("08:00")
+  close_time         String   @default("20:00")
+  is_verified        Boolean  @default(false)
+  is_active          Boolean  @default(true)
+  rating             Float    @default(0)
+  review_count       Int      @default(0)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  user              User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  products          Product[]
+  orders            Order[]
+  reviews           Review[]
+  savedBy           SavedVendor[]
+  conversations     Conversation[]
+  reels             Reel[]
+  paymentRequests   PaymentRequest[]
 
   @@map("vendors")
 }
 
-model Order {
-  id        String   @id @default(uuid())
-  buyer_id  String
-  vendor_id String
-  total     Float
-  status    String   @default("pending")
-  created_at DateTime @default(now())
+model Product {
+  id             String   @id @default(uuid())
+  vendor_id      String
+  name           String
+  description    String?
+  price          Float
+  image_url      String?
+  is_available   Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
-  buyer  User   @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
   vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  reels Reel[]
+
+  @@map("products")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORDERS & PAYMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Order {
+  id               String   @id @default(uuid())
+  buyer_id         String
+  vendor_id        String
+  vendor_user_id   String  // Denormalized for quick access to vendor's user record
+  payment_request_id String?
+  conversation_id  String?
+  amount           Float
+  description      String?
+  status           String   @default("completed") // completed, refunded, disputed
+  created_at       DateTime @default(now())
+
+  buyer   User      @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  vendor  Vendor    @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
+  paymentRequest PaymentRequest? @relation(fields: [payment_request_id], references: [id], onDelete: SetNull)
 
   @@map("orders")
 }
 
-model Review {
-  id        String   @id @default(uuid())
-  user_id   String
-  vendor_id String
-  rating    Int
-  comment   String?
+model PaymentRequest {
+  id               String   @id @default(uuid())
+  vendor_id        String
+  buyer_id         String
+  conversation_id  String?  @unique
+  amount           Float
+  description      String?
+  status           String   @default("pending") // pending, paid, cancelled, expired
+  paid_at          DateTime?
+  created_at       DateTime @default(now())
+  vendor_user_id   String?  // Denormalized
+
+  buyer   User      @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  vendor  Vendor    @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(name: "ConversationPaymentRequest", fields: [conversation_id], references: [id], onDelete: SetNull)
+  orders Order[]
+
+  @@map("payment_requests")
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  user_id         String
+  type            String   // credit, debit, withdrawal, payment_sent, payment_received, refund
+  amount          Float
+  status          String   @default("success") // pending, success, failed
+  reference       String?  @unique
+  description     String?
+  counterparty_id String?
+  metadata        Json?    @default("{}")
+  created_at      DateTime @default(now())
+  provider        String   @default("monnify")
+
+  user User @relation(name: "UserTransactions", fields: [user_id], references: [id], onDelete: Cascade)
+  counterparty User? @relation(name: "CounterpartyTransactions", fields: [counterparty_id], references: [id], onDelete: SetNull)
+
+  @@map("transactions")
+}
+
+model Wallet {
+  id              String   @id @default(uuid())
+  user_id         String   @unique
+  available_balance Float  @default(0)
+  frozen_balance   Float  @default(0)
+  currency        String   @default("NGN")
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model BankAccount {
+  id            String   @id @default(uuid())
+  user_id       String
+  account_number String
+  account_name  String
+  bank_name     String
+  bank_code     String
+  recipient_code String?
+  is_default    Boolean  @default(false)
+  created_at    DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("bank_accounts")
+}
+
+model VirtualAccount {
+  id              String   @id @default(uuid())
+  user_id         String   @unique
+  account_number  String
+  account_name    String
+  bank_name       String
+  provider_reference String?
+  created_at      DateTime @default(now())
+  provider        String   @default("monnify")
+  reference       String?  @unique
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("virtual_accounts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAT & CONVERSATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id                String   @id @default(uuid())
+  buyer_id          String
+  vendor_id         String
+  last_message      String?
+  last_message_at   DateTime @default(now())
+  buyer_unread      Int      @default(0)
+  vendor_unread     Int      @default(0)
+  created_at        DateTime @default(now())
+
+  buyer   User    @relation("ConversationParticipants", fields: [buyer_id], references: [id], onDelete: Cascade)
+  vendor  Vendor  @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  messages Message[]
+  paymentRequest PaymentRequest? @relation(name: "ConversationPaymentRequest")
+  orders Order[]
+
+  @@unique([buyer_id, vendor_id])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversation_id String
+  sender_id      String
+  content        String?
+  image_url      String?
+  type           String   @default("text") // text, image, payment_request, system
+  is_read        Boolean  @default(false)
+  delivered      Boolean  @default(false)
+  edited         Boolean  @default(false)
+  created_at     DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTENT & ENGAGEMENT (REELS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Reel {
+  id            String   @id @default(uuid())
+  vendor_id     String
+  user_id       String  // Who posted the reel (can be vendor or buyer?)
+  video_url     String
+  thumbnail_url String?
+  caption       String?
+  product_id    String?
+  view_count    Int      @default(0)
+  like_count    Int      @default(0)
+  save_count    Int      @default(0)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+
+  vendor  Vendor       @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  product Product?     @relation(fields: [product_id], references: [id], onDelete: SetNull)
+  likes   ReelLike[]
+  saves   ReelSave[]
+
+  @@map("reels")
+}
+
+model ReelLike {
+  id      String   @id @default(uuid())
+  reel_id String
+  user_id String
   created_at DateTime @default(now())
 
-  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  reel  Reel @relation(fields: [reel_id], references: [id], onDelete: Cascade)
+  user  User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@map("reviews")
+  @@unique([user_id, reel_id])
+  @@map("reel_likes")
 }
+
+model ReelSave {
+  id      String   @id @default(uuid())
+  reel_id String
+  user_id String
+  created_at DateTime @default(now())
+
+  reel  Reel @relation(fields: [reel_id], references: [id], onDelete: Cascade)
+  user  User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, reel_id])
+  @@map("reel_saves")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SOCIAL & INTERACTIONS
+// ─────────────────────────────────────────────────────────────────────────────
 
 model SavedVendor {
   id        String   @id @default(uuid())
@@ -131,21 +369,40 @@ model SavedVendor {
   vendor_id String
   created_at DateTime @default(now())
 
-  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user  User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
   vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
 
   @@unique([user_id, vendor_id])
   @@map("saved_vendors")
 }
 
+model Review {
+  id        String   @id @default(uuid())
+  vendor_id String
+  user_id   String
+  rating    Int      // 1-5
+  comment   String?
+  created_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, vendor_id]) // One review per user per vendor
+  @@map("reviews")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS & UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 model Notification {
   id        String   @id @default(uuid())
   user_id   String
+  type      String?
   title     String
   body      String
-  type      String?
-  data      Json?
   is_read   Boolean  @default(false)
+  data      Json?    @default("{}")
   created_at DateTime @default(now())
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -153,18 +410,33 @@ model Notification {
   @@map("notifications")
 }
 
-model Product {
-  id          String   @id @default(uuid())
-  vendor_id   String
-  name        String
-  description String?
-  price       Float
-  image_url   String?
-  in_stock    Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+model SearchHistory {
+  id        String   @id @default(uuid())
+  user_id   String
+  query     String
+  created_at DateTime @default(now())
 
-  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@map("products")
+  @@map("search_history")
+}
+
+model UserPresence {
+  user_id    String   @id
+  is_online  Boolean  @default(false)
+  last_seen  DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("user_presence")
+}
+
+model Waitlist {
+  id        String   @id @default(uuid())
+  name      String?
+  email     String   @unique
+  type      String?
+  created_at DateTime @default(now())
+
+  @@map("waitlist")
 }

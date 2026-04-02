@@ -6,7 +6,6 @@ import {
   updatePreferencesController,
   deleteMyAccountController
 } from './user.controller'
-import { getVendorsController } from './vendors.controller'
 
 export async function userRoutes(app: FastifyInstance) {
   // Protected - Profile
@@ -14,7 +13,4 @@ export async function userRoutes(app: FastifyInstance) {
   app.patch('/users/me', { preHandler: authenticate }, updateMyProfileController)
   app.patch('/users/me/preferences', { preHandler: authenticate }, updatePreferencesController)
   app.delete('/users/me', { preHandler: authenticate }, deleteMyAccountController)
-
-  // Public - Vendors
-  app.get('/vendors', getVendorsController)
 }

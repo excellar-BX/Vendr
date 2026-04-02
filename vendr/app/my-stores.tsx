@@ -4,7 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 interface Store {
@@ -18,24 +18,41 @@ interface Store {
 }
 
 export default function MyStoresScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(useCallback(() => {
     const fetch = async () => {
-      if (!session?.user?.id) return;
+      if (!user?.id) return;
       setLoading(true);
-      const { data } = await supabase
-        .from('vendors')
-        .select('id, business_name, category, is_active, is_verified, rating, review_count')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
-      setStores(data ?? []);
-      setLoading(false);
+      try {
+        const response = await apiFetch('/vendors/me', { method: 'GET' });
+        // The backend returns a single vendor object (not an array)
+        // For now, we'll wrap it in an array for the UI
+        const vendor = response.data;
+        if (vendor) {
+          setStores([{
+            id: vendor.id,
+            business_name: vendor.shop_name,
+            category: vendor.category,
+            is_active: vendor.is_active,
+            is_verified: vendor.is_verified,
+            rating: vendor.rating,
+            review_count: vendor.review_count,
+          }]);
+        } else {
+          setStores([]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch stores:', err);
+        setStores([]);
+      } finally {
+        setLoading(false);
+      }
     };
     fetch();
-  }, [session]));
+  }, [user]));
 
   return (
     <View className="flex-1 bg-dark">

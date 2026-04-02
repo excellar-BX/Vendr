@@ -21,6 +21,16 @@ export async function uploadFile(params: {
   return uploadToR2({ bucket, path, uri, contentType });
 }
 
+// ── Delete files from R2 ───────────────────────────────────────────────────────
+export async function deleteFiles(keys: string[]): Promise<void> {
+  // Get signed delete? Actually backend endpoint handles deletion server-side.
+  // This function is client-side convenience that calls backend.
+  await apiFetch('/storage/files', {
+    method: 'DELETE',
+    body: JSON.stringify({ keys }),
+  });
+}
+
 // ── Get public URL for a stored file ─────────────────────────────────────────
 export function getPublicUrl(bucket: StorageBucket, path: string): string {
   return `${R2_PUBLIC_URL}/${bucket}/${path}`;

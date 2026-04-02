@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, ScrollView, TouchableOpacity, Image, Modal,
-  Share, Animated, Dimensions, ActivityIndicator,
+  Share, Animated, Dimensions, ActivityIndicator, Alert,
   TextInput as RNTextInput, Linking,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -10,10 +10,10 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
-import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { formatDistance, formatPrice } from '../../lib/utils';
 import { Vendor, Product } from '../../types';
+import { apiFetch } from '../../lib/api';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -303,7 +303,7 @@ function InfoRow({ icon, label, value, iconColor = '#9A8570' }: {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function VendorProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const { showAlert: vendrAlert, alertElement } = useVendrAlert();
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -311,7 +311,6 @@ export default function VendorProfileScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
-  const [ownerProfile, setOwnerProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [savingLoading, setSavingLoading] = useState(false);
@@ -321,73 +320,47 @@ export default function VendorProfileScreen() {
 
   useEffect(() => {
     const fetchAll = async () => {
-      const [vendorRes, productsRes, reelsRes] = await Promise.all([
-        supabase.from('vendors').select('*').eq('id', id).single(),
-        supabase.from('products').select('*').eq('vendor_id', id).eq('is_available', true),
-        supabase.from('reels').select('id, thumbnail_url, video_url, view_count, caption, vendor_id').eq('vendor_id', id).order('created_at', { ascending: false }),
-      ]);
+      try {
+        const [vendorRes, productsRes, reelsRes, reviewsRes] = await Promise.all([
+          apiFetch(`/vendors/${id}`),
+          apiFetch(`/products?vendor_id=${id}`), // backend returns only available products by default (non-auth) or all with include_all
+          apiFetch(`/reels?vendor_id=${id}`),
+          apiFetch(`/reviews?vendor_id=${id}`),
+        ]);
 
-      // Fetch reviews separately — join profiles by user_id manually to avoid FK hint issues
-      const { data: reviewsRaw, error: reviewsErr } = await supabase
-        .from('reviews')
-        .select('id, rating, comment, created_at, user_id')
-        .eq('vendor_id', id)
-        .order('created_at', { ascending: false });
-
-      if (reviewsErr) console.warn('Reviews fetch error:', reviewsErr.message);
-
-      if (reviewsRaw && reviewsRaw.length > 0) {
-        // Fetch reviewer names in one query
-        const userIds = [...new Set(reviewsRaw.map((r: any) => r.user_id))];
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, name')
-          .in('id', userIds);
-        const nameMap: Record<string, string> = {};
-        (profilesData ?? []).forEach((p: any) => { nameMap[p.id] = p.name; });
-
-        const flat = reviewsRaw.map((r: any) => ({
-          ...r,
-          reviewer_name: nameMap[r.user_id] ?? 'Anonymous',
-        }));
-        setReviews(flat);
-        if (session?.user?.id) {
-          setMyReview(flat.find((r: any) => r.user_id === session.user.id) ?? null);
-        }
-      }
-
-      if (vendorRes.data) {
         setVendor(vendorRes.data);
-        // Fetch owner profile using vendor.user_id
-        const { data: ownerData } = await supabase
-          .from('profiles')
-          .select('id, name, avatar_url, created_at')
-          .eq('id', vendorRes.data.user_id)
-          .single();
-        if (ownerData) setOwnerProfile(ownerData);
-      }
-      if (productsRes.data) setProducts(productsRes.data);
-      if (reelsRes.data) setReels(reelsRes.data);
+        setProducts(productsRes.data);
+        setReels(reelsRes.data);
+        setReviews(reviewsRes.data);
 
-      // Check if current user has saved this vendor
-      if (session?.user?.id) {
-        const { data: savedData } = await supabase
-          .from('saved_vendors')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .eq('vendor_id', id)
-          .maybeSingle();
-        setSaved(!!savedData);
-      }
+        // Find current user's review if logged in
+        if (user?.id) {
+          setMyReview(reviewsRes.data.find((r: any) => r.user_id === user.id) ?? null);
 
-      setLoading(false);
+          // Check if vendor is saved
+          try {
+            const savedRes = await apiFetch(`/saved-vendors/${id}/check`);
+            setSaved(savedRes.data.is_saved);
+          } catch (error: any) {
+            // If not found or error, assume not saved
+            if (error.statusCode !== 404) {
+              console.warn('Saved check error:', error.message);
+            }
+            setSaved(false);
+          }
+        }
+      } catch (error: any) {
+        Alert.alert('Error', error.message ?? 'Failed to load vendor data');
+      } finally {
+        setLoading(false);
+      }
     };
     fetchAll();
   }, [id]);
 
   const handleShare = async () => {
     await Share.share({
-      message: `Check out ${vendor?.business_name} on Vendr! vendr://vendor/${id}`,
+      message: `Check out ${vendor?.shop_name} on Vendr! vendr://vendor/${id}`,
     });
   };
 
@@ -412,29 +385,24 @@ export default function VendorProfileScreen() {
   };
 
   const handleToggleSave = async () => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       vendrAlert({ title: 'Sign in required', message: 'You need to be logged in to save vendors.', type: 'warning' });
       return;
     }
     if (!vendor) return;
     // Don't allow owners to save their own store
-    if (vendor.user_id === session.user.id) return;
+    if (vendor.user_id === user.id) return;
 
     setSavingLoading(true);
     try {
       if (saved) {
-        const { error } = await supabase
-          .from('saved_vendors')
-          .delete()
-          .eq('user_id', session.user.id)
-          .eq('vendor_id', vendor.id);
-        if (error) throw error;
+        await apiFetch(`/saved-vendors/${vendor.id}`, { method: 'DELETE' });
         setSaved(false);
       } else {
-        const { error } = await supabase
-          .from('saved_vendors')
-          .insert({ user_id: session.user.id, vendor_id: vendor.id });
-        if (error) throw error;
+        await apiFetch('/saved-vendors', {
+          method: 'POST',
+          body: JSON.stringify({ vendor_id: vendor.id }),
+        });
         setSaved(true);
       }
     } catch (e: any) {
@@ -445,21 +413,26 @@ export default function VendorProfileScreen() {
   };
 
   // Owner check — vendor.user_id compared to logged-in user
-  const isOwner = !!session?.user?.id && !!vendor && vendor.user_id === session.user.id;
+  const isOwner = !!user?.id && !!vendor && vendor.user_id === user.id;
 
   const handleSubmitReview = async (rating: number, comment: string) => {
-    if (!session?.user?.id || !vendor) return;
-    const { data, error } = await supabase
-      .from('reviews')
-      .insert({ vendor_id: id, user_id: session.user.id, rating, comment })
-      .select('id, rating, comment, created_at, user_id')
-      .single();
-    if (!error && data) {
-      const newReview = { ...data, reviewer_name: session.user.user_metadata?.name ?? 'You' };
+    if (!user?.id || !vendor) return;
+    try {
+      const res = await apiFetch('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({ vendor_id: id, rating, comment }),
+      });
+      const newReview = {
+        ...res.data,
+        reviewer_name: user?.full_name ?? 'You',
+      };
       setMyReview(newReview);
       setReviews(prev => [newReview, ...prev]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setShowReviewModal(false);
     }
-    setShowReviewModal(false);
   };
 
   const handleDeleteReview = async (reviewId: string) => {
@@ -470,10 +443,12 @@ export default function VendorProfileScreen() {
       buttons: [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: async () => {
-          const { error } = await supabase.from('reviews').delete().eq('id', reviewId);
-          if (!error) {
+          try {
+            await apiFetch(`/reviews/${reviewId}`, { method: 'DELETE' });
             setReviews(prev => prev.filter(r => r.id !== reviewId));
             setMyReview(null);
+          } catch (error: any) {
+            Alert.alert('Error', error.message);
           }
         }},
       ],
@@ -535,7 +510,7 @@ export default function VendorProfileScreen() {
 
         <Animated.View style={{ opacity: headerBg }}>
           <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            {vendor.business_name}
+            {vendor.shop_name}
           </Text>
         </Animated.View>
 
@@ -591,7 +566,7 @@ export default function VendorProfileScreen() {
             <View className="flex-1 mr-3">
               <View className="flex-row items-center gap-2 mb-1">
                 <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                  {vendor.business_name}
+                  {vendor.shop_name}
                 </Text>
                 {vendor.is_verified && (
                   <Ionicons name="checkmark-circle" size={18} color="#2D8653" />
@@ -796,7 +771,7 @@ export default function VendorProfileScreen() {
                   </Text>
                 </View>
               ) : (
-                reviews.map(r => <ReviewCard key={r.id} review={r} currentUserId={session?.user?.id} onDelete={handleDeleteReview} />)
+                reviews.map(r => <ReviewCard key={r.id} review={r} currentUserId={user?.id} onDelete={handleDeleteReview} />)
               )}
             </View>
           )}
@@ -864,7 +839,7 @@ export default function VendorProfileScreen() {
                   activeOpacity={0.9}
                   onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${vendor.lat},${vendor.lng}`)}
                 >
-                  <StoreLocatorMap lat={vendor.lat} lng={vendor.lng} vendorName={vendor.business_name} />
+                  <StoreLocatorMap lat={vendor.lat} lng={vendor.lng} vendorName={vendor.shop_name} />
                 </TouchableOpacity>
                 {vendor.address && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
@@ -878,34 +853,34 @@ export default function VendorProfileScreen() {
             )}
 
             {/* Seller card */}
-            {ownerProfile && (
+            {vendor?.user && (
               <View className="bg-dark-2 border border-faint rounded-3xl p-4 mt-4">
                 <Text className="text-muted text-xs mb-3 tracking-widest uppercase" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
                   Sold by
                 </Text>
                 <View className="flex-row items-center gap-4">
                   {/* Avatar */}
-                  {ownerProfile.avatar_url ? (
+                  {vendor.user.avatar_url ? (
                     <Image
-                      source={{ uri: ownerProfile.avatar_url }}
+                      source={{ uri: vendor.user.avatar_url }}
                       style={{ width: 52, height: 52, borderRadius: 14, borderWidth: 2, borderColor: '#2A1F14' }}
                       resizeMode="cover"
                     />
                   ) : (
                     <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: 'rgba(232,82,26,0.15)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.25)', alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#E8521A' }}>
-                        {(ownerProfile.name ?? 'V').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                        {(vendor.user.full_name ?? 'V').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
                       </Text>
                     </View>
                   )}
                   <View className="flex-1">
                     <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                      {ownerProfile.name ?? 'Vendor'}
+                      {vendor.user.full_name ?? 'Vendor'}
                     </Text>
                     <View className="flex-row items-center gap-1.5 mt-1">
                       <Ionicons name="calendar-outline" size={12} color="#6B5E50" />
                       <Text className="text-muted text-xs">
-                        Member since {new Date(ownerProfile.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                        Member since {new Date(vendor.user.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
                       </Text>
                     </View>
                     {vendor.is_verified && (
@@ -980,7 +955,7 @@ export default function VendorProfileScreen() {
       {/* Review Modal */}
       <WriteReviewModal
         visible={showReviewModal}
-        vendorName={vendor?.business_name ?? ''}
+        vendorName={vendor?.shop_name ?? ''}
         existingReview={null}
         onClose={() => setShowReviewModal(false)}
         onSubmit={handleSubmitReview}
