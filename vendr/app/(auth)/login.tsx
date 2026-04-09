@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   View, TouchableOpacity,
   KeyboardAvoidingView, Platform, ScrollView,
   ActivityIndicator,
 } from 'react-native'
 import { Text } from '../../components/ui/StyledText'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { Ionicons } from '@expo/vector-icons'
 import { Button } from '../../components/ui/Button'
@@ -33,6 +33,18 @@ function GoogleIcon() {
 export default function LoginScreen() {
   const { setUser } = useAuthStore()
   const { showAlert, alertElement } = useVendrAlert()
+  const { expired } = useLocalSearchParams<{ expired?: string }>();
+
+  // Show alert if session expired
+  useEffect(() => {
+    if (expired === 'true') {
+      showAlert({
+        title: 'Session expired',
+        message: 'Your session has expired. Please log in again.',
+        type: 'warning',
+      });
+    }
+  }, [expired]);
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

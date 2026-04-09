@@ -13,13 +13,18 @@ export async function searchController(request: FastifyRequest, reply: FastifyRe
     }
 
     const input = parsed.data
-    const results = await SearchService.searchVendorsAndProducts(input)
+    const result = await SearchService.searchVendorsAndProducts(input)
 
     return reply.status(200).send({
       success: true,
-      data: results,
+      data: {
+        vendors: result.vendors,
+        products: result.products,
+        totalVendors: result.totalVendors,
+        totalProducts: result.totalProducts,
+        extractedTerm: SearchService.extractSearchTerm(input.q),
+      },
       query: input.q,
-      extracted_term: SearchService.extractSearchTerm(input.q),
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({
@@ -99,11 +104,13 @@ export async function saveSearchHistoryController(request: FastifyRequest, reply
 export async function clearSearchHistoryController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = request.user.id
-    await SearchService.clearSearchHistory(userId)
+    const { query } = request.query as { query?: string }
+    await SearchService.clearSearchHistory(userId, query)
 
+    const message = query ? 'Search history item deleted' : 'Search history cleared'
     return reply.status(200).send({
       success: true,
-      message: 'Search history cleared',
+      message,
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({

@@ -31,7 +31,7 @@ function buildMapHTML(lat: number, lng: number, vendors: Vendor[]) {
     id: v.id,
     lat: v.lat,
     lng: v.lng,
-    name: v.business_name,
+    name: v.shop_name,
     category: v.category,
     rating: v.rating,
     verified: v.is_verified,
@@ -56,6 +56,23 @@ function buildMapHTML(lat: number, lng: number, vendors: Vendor[]) {
   }
   .custom-pin.verified { background: #F5A623; }
   .custom-pin.selected { transform: rotate(-45deg) scale(1.35); z-index: 1000 !important; }
+  .custom-pin.cluster { 
+    background: #E74C3C; 
+    width: 24px !important; 
+    height: 24px !important; 
+    border: 3px solid #fff;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transform: rotate(-45deg) scale(1.2);
+  }
+  .cluster-count {
+    transform: rotate(45deg);
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+  }
   .user-pin {
     background: #5599E8; border: 3px solid #fff; border-radius: 50%;
     box-shadow: 0 0 0 6px rgba(85,153,232,0.25);
@@ -76,21 +93,106 @@ function buildMapHTML(lat: number, lng: number, vendors: Vendor[]) {
 
   var pins = ${JSON.stringify(pins)};
   var markers = {};
+  var clusterMarkers = {};
+  var clusterThreshold = 0.0005; // ~50 meters threshold for clustering
 
-  pins.forEach(function(v) {
-    var html = '<div class="custom-pin ' + (v.verified ? 'verified' : '') + '" style="width:18px;height:18px;"></div>';
-    var icon = L.divIcon({ className: '', html: html, iconSize:[18,18], iconAnchor:[9,18] });
-    var m = L.marker([v.lat, v.lng], { icon: icon }).addTo(map);
-    markers[v.id] = m;
-    m.on('click', function() {
-      Object.keys(markers).forEach(function(id) {
-        var el = markers[id].getElement();
-        if (el) el.querySelector('.custom-pin').classList.remove('selected');
+  // Function to check if two pins are close enough to cluster
+  function shouldCluster(pin1, pin2) {
+    var distance = Math.sqrt(Math.pow(pin1.lat - pin2.lat, 2) + Math.pow(pin1.lng - pin2.lng, 2));
+    return distance < clusterThreshold;
+  }
+
+  // Function to create clusters based on current zoom level
+  function createClusters(zoomLevel) {
+    // Clear ALL existing markers (both individual and cluster)
+    Object.values(markers).forEach(marker => map.removeLayer(marker));
+    Object.values(clusterMarkers).forEach(marker => map.removeLayer(marker));
+    markers = {};
+    clusterMarkers = {};
+    
+    // Adjust threshold based on zoom level (higher zoom = less clustering)
+    var threshold = zoomLevel >= 16 ? 0.00005 : zoomLevel >= 15 ? 0.0001 : clusterThreshold;
+    console.log('Zoom level:', zoomLevel, 'Threshold:', threshold);
+    
+    // Cluster overlapping pins
+    var clusters = [];
+    var processed = new Set();
+
+    pins.forEach(function(pin) {
+      if (processed.has(pin.id)) return;
+      
+      var cluster = [pin];
+      processed.add(pin.id);
+      
+      pins.forEach(function(otherPin) {
+        if (!processed.has(otherPin.id) && shouldClusterWithThreshold(pin, otherPin, threshold)) {
+          cluster.push(otherPin);
+          processed.add(otherPin.id);
+        }
       });
-      var el = m.getElement();
-      if (el) el.querySelector('.custom-pin').classList.add('selected');
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'select', id: v.id }));
+      
+      clusters.push(cluster);
     });
+
+    return clusters;
+  }
+
+  // Function to check clustering with dynamic threshold
+  function shouldClusterWithThreshold(pin1, pin2, threshold) {
+    var distance = Math.sqrt(Math.pow(pin1.lat - pin2.lat, 2) + Math.pow(pin1.lng - pin2.lng, 2));
+    return distance < threshold;
+  }
+
+  // Function to render markers for clusters
+  function renderMarkers(clusters) {
+    clusters.forEach(function(cluster) {
+      if (cluster.length === 1) {
+        // Single pin
+        var v = cluster[0];
+        var html = '<div class="custom-pin ' + (v.verified ? 'verified' : '') + '" style="width:18px;height:18px;"></div>';
+        var icon = L.divIcon({ className: '', html: html, iconSize:[18,18], iconAnchor:[9,18] });
+        var m = L.marker([v.lat, v.lng], { icon: icon }).addTo(map);
+        markers[v.id] = m;
+        m.on('click', function() {
+          Object.keys(markers).forEach(function(id) {
+            var el = markers[id].getElement();
+            if (el) el.querySelector('.custom-pin').classList.remove('selected');
+          });
+          var el = m.getElement();
+          if (el) el.querySelector('.custom-pin').classList.add('selected');
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'select', id: v.id }));
+        });
+      } else {
+        // Cluster pin
+        var centerLat = cluster.reduce((sum, p) => sum + p.lat, 0) / cluster.length;
+        var centerLng = cluster.reduce((sum, p) => sum + p.lng, 0) / cluster.length;
+        var clusterIds = cluster.map(p => p.id);
+        
+        var html = '<div class="custom-pin cluster" style="width:24px;height:24px;"><div class="cluster-count">' + cluster.length + '</div></div>';
+        var icon = L.divIcon({ className: '', html: html, iconSize:[24,24], iconAnchor:[12,24] });
+        var m = L.marker([centerLat, centerLng], { icon: icon }).addTo(map);
+        clusterMarkers[clusterIds.join(',')] = m;
+        
+        m.on('click', function() {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ 
+            type: 'cluster', 
+            ids: clusterIds,
+            centerLat: centerLat,
+            centerLng: centerLng
+          }));
+        });
+      }
+    });
+  }
+
+  // Initial render
+  var initialClusters = createClusters(map.getZoom());
+  renderMarkers(initialClusters);
+
+  // Re-render when zoom changes
+  map.on('zoomend', function() {
+    var newClusters = createClusters(map.getZoom());
+    renderMarkers(newClusters);
   });
 
   // Auto-fit bounds to all pins if we have some
@@ -222,6 +324,8 @@ export default function MapSearchScreen() {
         is_active: true,
         has_location: true,
         ids: isSearchMode && passedIds.length > 0 ? passedIds : undefined,
+        lat: userLat,
+        lng: userLng,
       });
       setAllVendors(data ?? []);
     } catch (error) {
@@ -242,6 +346,16 @@ export default function MapSearchScreen() {
         setSelectedVendor(displayVendors.find(x => x.id === msg.id) ?? null);
       } else if (msg.type === 'deselect') {
         setSelectedVendor(null);
+      } else if (msg.type === 'cluster') {
+        // Handle cluster click - zoom in aggressively to break apart the cluster
+        if (webRef.current) {
+          webRef.current.injectJavaScript(`
+            var currentZoom = map.getZoom();
+            var newZoom = Math.max(currentZoom + 3, 5);
+            console.log('Cluster clicked - zooming from', currentZoom, 'to', newZoom);
+            map.setView([${msg.centerLat}, ${msg.centerLng}], newZoom);
+          `);
+        }
       }
     } catch {}
   };

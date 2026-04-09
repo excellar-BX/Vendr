@@ -353,6 +353,32 @@ export async function getConversationMessages(
     take: limit ?? 100,
   })
 
+  // Fetch payment request details for payment_request type messages
+  const paymentRequestIds = messages
+    .filter(m => m.type === 'payment_request' && m.content)
+    .map(m => m.content!)
+    .filter(Boolean)
+
+  const paymentRequestsMap: Record<string, any> = {}
+  if (paymentRequestIds.length > 0) {
+    const paymentRequests = await prisma.paymentRequest.findMany({
+      where: { id: { in: paymentRequestIds } },
+    })
+    paymentRequests.forEach(pr => {
+      paymentRequestsMap[pr.id] = {
+        id: pr.id,
+        vendor_id: pr.vendor_id,
+        buyer_id: pr.buyer_id,
+        conversation_id: pr.conversation_id,
+        amount: pr.amount,
+        description: pr.description,
+        status: pr.status,
+        paid_at: pr.paid_at?.toISOString() ?? null,
+        created_at: pr.created_at.toISOString(),
+      }
+    })
+  }
+
   return messages.map(m => ({
     id: m.id,
     conversation_id: m.conversation_id,
@@ -364,6 +390,7 @@ export async function getConversationMessages(
     delivered: m.delivered,
     edited: m.edited,
     created_at: m.created_at.toISOString(),
+    payment_request: m.type === 'payment_request' && m.content ? paymentRequestsMap[m.content] : null,
   }))
 }
 
@@ -455,6 +482,8 @@ export async function sendMessage(
 
 /**
  * Mark messages as delivered/read
+ * When a user opens a conversation, all messages from the other party
+ * should be marked as both delivered AND read (standard messaging behavior)
  */
 export async function markMessagesDelivered(
   conversationId: string,
@@ -472,27 +501,16 @@ export async function markMessagesDelivered(
     throw { statusCode: 403, message: 'Not authorized' }
   }
 
-  // Mark all messages from other party as delivered
+  // Mark all messages from other party as delivered AND read
+  // This ensures both parties get read receipts when conversation is opened
   await prisma.message.updateMany({
     where: {
       conversation_id: conversationId,
       sender_id: { not: userId },
       delivered: false,
     },
-    data: { delivered: true }
+    data: { delivered: true, is_read: true }
   })
-
-  // If vendor, also mark as read
-  if (isVendor) {
-    await prisma.message.updateMany({
-      where: {
-        conversation_id: conversationId,
-        sender_id: { not: userId },
-        is_read: false,
-      },
-      data: { is_read: true }
-    })
-  }
 }
 
 /**

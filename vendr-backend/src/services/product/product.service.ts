@@ -42,8 +42,10 @@ export async function getProductById(productId: string, userId?: string): Promis
 
   // If user is provided, check if they own it (for update/delete operations)
   if (userId) {
-    const vendor = await prisma.vendor.findUnique({ where: { user_id: userId } })
-    if (!vendor || vendor.id !== product.vendor_id) {
+    const userVendor = await prisma.vendor.findFirst({
+      where: { user_id: userId, id: product.vendor_id }
+    })
+    if (!userVendor) {
       throw { statusCode: 403, message: 'Not authorized' }
     }
   }
@@ -65,8 +67,11 @@ export async function getProductById(productId: string, userId?: string): Promis
  * Create a new product for the vendor
  */
 export async function createProduct(userId: string, input: CreateProductInput): Promise<ProductOutput> {
-  // Get user's vendor
-  const vendor = await prisma.vendor.findUnique({ where: { user_id: userId } })
+  // Get user's most recent vendor
+  const vendor = await prisma.vendor.findFirst({
+    where: { user_id: userId },
+    orderBy: { created_at: 'desc' }
+  })
 
   if (!vendor) {
     throw { statusCode: 404, message: 'Vendor not found. Become a vendor first.' }
@@ -107,8 +112,10 @@ export async function updateProduct(productId: string, userId: string, input: Up
     throw { statusCode: 404, message: 'Product not found' }
   }
 
-  const vendor = await prisma.vendor.findUnique({ where: { user_id: userId } })
-  if (!vendor || vendor.id !== product.vendor_id) {
+  const userVendor = await prisma.vendor.findFirst({
+    where: { user_id: userId, id: product.vendor_id }
+  })
+  if (!userVendor) {
     throw { statusCode: 403, message: 'Not authorized' }
   }
 
@@ -146,8 +153,10 @@ export async function deleteProduct(productId: string, userId: string): Promise<
     throw { statusCode: 404, message: 'Product not found' }
   }
 
-  const vendor = await prisma.vendor.findUnique({ where: { user_id: userId } })
-  if (!vendor || vendor.id !== product.vendor_id) {
+  const userVendor = await prisma.vendor.findFirst({
+    where: { user_id: userId, id: product.vendor_id }
+  })
+  if (!userVendor) {
     throw { statusCode: 403, message: 'Not authorized' }
   }
 

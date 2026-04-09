@@ -175,7 +175,7 @@ export default function StoreDashboardScreen() {
       setUploadingBanner(true);
       const path = `stores/${storeId}/banner_${Date.now()}.jpg`;
       const url = await uploadImage('vendor-images', path, uri);
-      await apiFetch(`/vendors/me`, {
+      await apiFetch(`/vendors/${storeId}`, {
         method: 'PATCH',
         body: JSON.stringify({ banner_url: url }),
       });
@@ -195,7 +195,7 @@ export default function StoreDashboardScreen() {
       setUploadingLogo(true);
       const path = `stores/${storeId}/logo_${Date.now()}.jpg`;
       const url = await uploadImage('vendor-images', path, uri);
-      await apiFetch(`/vendors/me`, {
+      await apiFetch(`/vendors/${storeId}`, {
         method: 'PATCH',
         body: JSON.stringify({ logo_url: url }),
       });
@@ -345,7 +345,7 @@ export default function StoreDashboardScreen() {
     if (!store) return;
     const newVal = !store.is_active;
     setStore(prev => prev ? { ...prev, is_active: newVal } : null);
-    await apiFetch(`/vendors/me`, {
+    await apiFetch(`/vendors/${storeId}`, {
       method: 'PATCH',
       body: JSON.stringify({ is_active: newVal }),
     });
@@ -366,7 +366,7 @@ export default function StoreDashboardScreen() {
     try {
       setDeletingStore(true);
       // Backend handles cascade deactivation or deletion
-      await apiFetch(`/vendors/me`, { method: 'DELETE' });
+      await apiFetch(`/vendors/${storeId}`, { method: 'DELETE' });
       setShowDeleteStore(false);
       router.replace('/my-stores');
     } catch (e: any) {
@@ -378,7 +378,7 @@ export default function StoreDashboardScreen() {
   const handleChangeCategory = async (cat: string) => {
     try {
       setSavingCategory(true);
-      await apiFetch(`/vendors/me`, {
+      await apiFetch(`/vendors/${storeId}`, {
         method: 'PATCH',
         body: JSON.stringify({ category: cat }),
       });

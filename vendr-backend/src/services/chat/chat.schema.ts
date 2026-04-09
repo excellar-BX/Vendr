@@ -42,6 +42,17 @@ export const messageOutputSchema = z.object({
   delivered: z.boolean(),
   edited: z.boolean(),
   created_at: z.string(),
+  payment_request: z.object({
+    id: z.string(),
+    vendor_id: z.string(),
+    buyer_id: z.string(),
+    conversation_id: z.string().nullable(),
+    amount: z.number(),
+    description: z.string().nullable(),
+    status: z.string(),
+    paid_at: z.string().nullable(),
+    created_at: z.string(),
+  }).nullable().optional(),
 })
 
 export type MessageOutput = z.infer<typeof messageOutputSchema>

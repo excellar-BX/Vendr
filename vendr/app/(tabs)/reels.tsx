@@ -11,9 +11,9 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Text } from '../../components/ui/StyledText';
-import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPrice } from '../../lib/utils';
+import { reelApi } from '../../lib/api';
 
 const LIMIT = 10;
 
@@ -131,20 +131,9 @@ function ReelItem({
 
     if (!viewCountedRef.current) {
       viewCountedRef.current = true;
-      supabase.rpc('increment_reel_views', { p_reel_id: reel.id }).then(({ error }) => {
-        if (error) {
-          console.warn('[Reels] increment_reel_views failed:', error.message, error.code);
-          // Fallback: direct update
-          supabase.from('reels')
-            .update({ view_count: reel.view_count + 1 })
-            .eq('id', reel.id)
-            .then(({ error: e2 }) => {
-              if (e2) console.warn('[Reels] fallback view update failed:', e2.message);
-              else console.log('[Reels] view count updated via fallback');
-            });
-        } else {
-          console.log('[Reels] view counted for reel:', reel.id);
-        }
+      // Increment view via backend API (fire and forget)
+      reelApi.incrementView(reel.id).catch((e: any) => {
+        console.warn('[Reels] incrementView failed:', e?.message);
       });
     }
 
@@ -449,7 +438,7 @@ export default function ReelsScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const ITEM_HEIGHT = SH - insets.bottom;
 
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -463,83 +452,52 @@ export default function ReelsScreen() {
     return () => setIsScreenFocused(false);
   }, []));
 
-  const shapeDirectFetch = (data: any[], likedIds: Set<string>, savedIds: Set<string>): Reel[] =>
+  // Map backend enriched reel to UI format (flatten vendor/product)
+  const shapeBackendReel = (data: any[]): Reel[] =>
     data.map((r: any) => ({
       ...r,
-      business_name: r.vendors?.business_name ?? '',
-      vendor_logo: r.vendors?.logo_url ?? null,
-      is_verified: r.vendors?.is_verified ?? false,
-      vendor_category: r.vendors?.category ?? '',
-      product_name: r.products?.name ?? null,
-      product_price: r.products?.price ?? null,
-      product_image: r.products?.image_url ?? null,
-      is_liked: likedIds.has(r.id),
-      is_saved: savedIds.has(r.id),
+      business_name: r.vendor?.business_name ?? '',
+      vendor_logo: r.vendor?.logo_url ?? null,
+      is_verified: r.vendor?.is_verified ?? false,
+      vendor_category: r.vendor?.category ?? '',
+      product_name: r.product?.name ?? null,
+      product_price: r.product?.price ?? null,
+      product_image: r.product?.image_url ?? null,
       priority_score: 0,
     }));
 
   const fetchReels = useCallback(async (offset = 0) => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       console.log('[Reels] no session — skipping fetch');
       setLoading(false);
       return;
     }
     if (offset === 0) setLoading(true); else setLoadingMore(true);
 
-    const { data, error } = await supabase.rpc('get_reel_feed', {
-      p_user_id: session.user.id,
-      p_limit: LIMIT,
-      p_offset: offset,
-    });
+    try {
+      const { data } = await reelApi.getReels({
+        limit: LIMIT,
+        offset,
+      });
 
-    console.log('[Reels] RPC:', { count: data?.length ?? 0, error: error?.message ?? null });
-
-    if (!error && data && data.length > 0) {
-      // Normalize nulls from RPC — is_liked/is_saved should always be boolean
-      const normalized = data.map((r: any) => ({
-        ...r,
-        is_liked: r.is_liked ?? false,
-        is_saved: r.is_saved ?? false,
-      }));
-      if (offset === 0) setReels(normalized); else setReels(prev => [...prev, ...normalized]);
-      setHasMore(data.length === LIMIT);
-      offsetRef.current = offset + data.length;
-    } else {
-      const { data: fallback, error: fbErr } = await supabase
-        .from('reels')
-        .select(`
-          id, vendor_id, user_id, video_url, thumbnail_url, caption,
-          product_id, view_count, like_count, save_count, created_at,
-          vendors(business_name, logo_url, is_verified, category),
-          products(name, price, image_url)
-        `)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + LIMIT - 1);
-
-      console.log('[Reels] fallback:', { count: fallback?.length ?? 0, error: fbErr?.message ?? null });
-
-      if (fallback && fallback.length > 0) {
-        const reelIds = fallback.map((r: any) => r.id);
-        const [{ data: likedRows }, { data: savedRows }] = await Promise.all([
-          supabase.from('reel_likes').select('reel_id').eq('user_id', session.user.id).in('reel_id', reelIds),
-          supabase.from('reel_saves').select('reel_id').eq('user_id', session.user.id).in('reel_id', reelIds),
-        ]);
-        const likedIds = new Set((likedRows ?? []).map((r: any) => r.reel_id));
-        const savedIds = new Set((savedRows ?? []).map((r: any) => r.reel_id));
-        const shaped = shapeDirectFetch(fallback, likedIds, savedIds);
+      if (data && data.length > 0) {
+        const shaped = shapeBackendReel(data);
         if (offset === 0) setReels(shaped); else setReels(prev => [...prev, ...shaped]);
-        setHasMore(shaped.length === LIMIT);
-        offsetRef.current = offset + shaped.length;
+        setHasMore(data.length === LIMIT);
+        offsetRef.current = offset + data.length;
       } else {
         if (offset === 0) setReels([]);
         setHasMore(false);
       }
+    } catch (e: any) {
+      console.error('[Reels] fetch error:', e);
+      if (offset === 0) setReels([]);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
-
-    setLoading(false);
-    setLoadingMore(false);
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useFocusEffect(useCallback(() => {
     offsetRef.current = 0;
@@ -554,32 +512,42 @@ export default function ReelsScreen() {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
   const handleLike = useCallback(async (reelId: string, liked: boolean) => {
-    if (!session?.user?.id) return;
-    // Optimistically update reels array so state stays in sync
+    if (!user?.id) return;
+    // Optimistic update
     setReels(prev => prev.map(r => r.id === reelId
       ? { ...r, is_liked: liked, like_count: liked ? r.like_count + 1 : Math.max(r.like_count - 1, 0) }
       : r
     ));
-    if (liked) {
-      await supabase.from('reel_likes').insert({ reel_id: reelId, user_id: session.user.id });
-    } else {
-      await supabase.from('reel_likes').delete().eq('reel_id', reelId).eq('user_id', session.user.id);
+    try {
+      await reelApi.toggleLike(reelId);
+    } catch (e: any) {
+      // Revert on error
+      setReels(prev => prev.map(r => r.id === reelId
+        ? { ...r, is_liked: !liked, like_count: !liked ? r.like_count + 1 : Math.max(r.like_count - 1, 0) }
+        : r
+      ));
+      console.error('[Reels] toggleLike failed:', e);
     }
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const handleSave = useCallback(async (reelId: string, saved: boolean) => {
-    if (!session?.user?.id) return;
-    // Optimistically update reels array so state stays in sync
+    if (!user?.id) return;
+    // Optimistic update
     setReels(prev => prev.map(r => r.id === reelId
       ? { ...r, is_saved: saved, save_count: saved ? r.save_count + 1 : Math.max(r.save_count - 1, 0) }
       : r
     ));
-    if (saved) {
-      await supabase.from('reel_saves').insert({ reel_id: reelId, user_id: session.user.id });
-    } else {
-      await supabase.from('reel_saves').delete().eq('reel_id', reelId).eq('user_id', session.user.id);
+    try {
+      await reelApi.toggleSave(reelId);
+    } catch (e: any) {
+      // Revert on error
+      setReels(prev => prev.map(r => r.id === reelId
+        ? { ...r, is_saved: !saved, save_count: !saved ? r.save_count + 1 : Math.max(r.save_count - 1, 0) }
+        : r
+      ));
+      console.error('[Reels] toggleSave failed:', e);
     }
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -624,7 +592,7 @@ export default function ReelsScreen() {
             isScreenFocused={isScreenFocused}
             onLike={handleLike}
             onSave={handleSave}
-            currentUserId={session?.user?.id ?? ''}
+            currentUserId={user?.id ?? ''}
             itemWidth={SW}
             itemHeight={ITEM_HEIGHT}
           />

@@ -53,6 +53,16 @@ export async function register(input: RegisterInput) {
     select: { id: true, email: true, full_name: true, avatar_url: true, created_at: true },
   })
 
+  // Create wallet for new user
+  await prisma.wallet.create({
+    data: {
+      user_id: user.id,
+      available_balance: 0,
+      frozen_balance: 0,
+      currency: 'NGN',
+    },
+  })
+
   // Create email verification token (24h expiry)
   const verifyToken = generateSecureToken()
   const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
@@ -121,6 +131,16 @@ export async function googleAuth(input: GoogleAuthInput) {
         avatar_url: payload.picture ?? null,
         google_id: payload.sub,
         is_verified: true, // Google accounts are pre-verified
+      },
+    })
+
+    // Create wallet for new user
+    await prisma.wallet.create({
+      data: {
+        user_id: user.id,
+        available_balance: 0,
+        frozen_balance: 0,
+        currency: 'NGN',
       },
     })
   } else if (!user.google_id) {
@@ -249,14 +269,23 @@ export async function refresh(token: string) {
     throw { statusCode: 401, message: 'Refresh token not found or expired' }
   }
 
-  await prisma.refreshToken.delete({ where: { token } })
+  // Don't delete the refresh token immediately - let it expire naturally
+  // This prevents race conditions and makes the session more resilient
+  // await prisma.refreshToken.deleteMany({ where: { token } })
 
   const newAccessToken = generateAccessToken({ id: decoded.id, email: decoded.email })
-  const newRefreshToken = generateRefreshToken({ id: decoded.id, email: decoded.email })
-
-  await prisma.refreshToken.create({
-    data: { token: newRefreshToken, user_id: decoded.id, expires_at: getRefreshTokenExpiry() },
-  })
+  // Keep the same refresh token to avoid race conditions
+  // Only issue new refresh token if the current one is close to expiring (within 7 days)
+  const daysUntilExpiry = Math.floor((stored.expires_at.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  
+  let newRefreshToken = token
+  if (daysUntilExpiry <= 7) {
+    // Issue new refresh token if current one expires within 7 days
+    newRefreshToken = generateRefreshToken({ id: decoded.id, email: decoded.email })
+    await prisma.refreshToken.create({
+      data: { token: newRefreshToken, user_id: decoded.id, expires_at: getRefreshTokenExpiry() },
+    })
+  }
 
   return { accessToken: newAccessToken, refreshToken: newRefreshToken }
 }
@@ -283,7 +312,8 @@ export async function getMe(userId: string) {
       notifications_enabled: true,
       location_enabled: true,
       created_at: true,
-      vendor: {
+      vendors: {
+        where: { is_active: true },
         select: { id: true, shop_name: true, is_active: true },
       },
     },
@@ -293,9 +323,8 @@ export async function getMe(userId: string) {
     throw { statusCode: 404, message: 'User not found' }
   }
 
-  // Convert Date to ISO string for JSON serialization
   return {
     ...user,
-    created_at: user.created_at.toISOString()
+    vendor: user.vendors[0] || null, // Return first vendor as vendor for compatibility
   }
 }

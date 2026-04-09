@@ -10,8 +10,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import * as ImagePicker from 'expo-image-picker';
 import { chatApi, searchApi, storageApi } from '../../lib/api';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
+import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,6 +33,7 @@ interface Message {
   delivered: boolean;
   edited: boolean;
   created_at: string;
+  payment_request?: PaymentRequest | null;
 }
 
 interface PaymentRequest {
@@ -284,6 +292,30 @@ export default function ChatScreen() {
   const [payDescription, setPayDescription] = useState('');
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
 
+  // Pinch-to-zoom state for image viewer
+  const scale = useSharedValue(1);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      scale.value = event.scale;
+    })
+    .onEnd(() => {
+      if (scale.value < 1) {
+        scale.value = withSpring(1);
+      }
+    });
+
+  const animatedImageStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  // Reset scale when image viewer opens/closes
+  useEffect(() => {
+    if (viewingImage) {
+      scale.value = 1;
+    }
+  }, [viewingImage]);
+
   useEffect(() => {
     if (!user?.id) return;
     initChat();
@@ -335,6 +367,7 @@ export default function ChatScreen() {
       setMessages(msgs ?? []);
 
       // Mark messages as delivered/read and reset unread count
+      await chatApi.markDelivered(cid);
       const unreadField = actingAsVendor ? 'vendor_unread' : 'buyer_unread';
       await chatApi.resetUnread(cid, unreadField);
 
@@ -417,40 +450,61 @@ export default function ChatScreen() {
       const { uploadUrl, publicUrl } = signData;
 
       // Upload the image to R2 using the signed URL
-      const formData = new FormData();
-      // @ts-ignore: Expo's ImagePicker result
-      formData.append('file', {
-        uri,
-        type: 'image/jpeg',
-        name: 'photo.jpg',
-      } as any);
+      // Read file as base64 (same pattern as reel-upload)
+      console.log('[Chat] Reading file as base64...');
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: 'base64' as any,
+      });
+      console.log('[Chat] File read, base64 length:', base64.length);
 
+      // Convert base64 → Uint8Array
+      const binaryStr = atob(base64);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      console.log('[Chat] Converted to Uint8Array, bytes:', bytes.length);
+
+      console.log('[Chat] Uploading to R2:', uploadUrl.substring(0, 100) + '...');
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
-        body: formData,
+        body: bytes,
         headers: {
           'Content-Type': 'image/jpeg',
         },
       });
 
+      console.log('[Chat] Upload response status:', uploadResponse.status);
       if (!uploadResponse.ok) {
-        throw new Error(`Upload failed (${uploadResponse.status})`);
+        const errorText = await uploadResponse.text();
+        console.error('[Chat] Upload failed response:', errorText);
+        throw new Error(`Upload failed (${uploadResponse.status}): ${errorText}`);
       }
 
       // Send image message via API
       const { data: inserted } = await chatApi.sendMessage({
         conversation_id: convId,
-        content: '',
+        content: ' ',
         type: 'image',
         image_url: publicUrl,
       });
 
       // Replace temp message with real one
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: true } : m));
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: false, is_read: false } : m));
 
     } catch (e: any) {
-      console.error('Upload error:', e.message);
-      vendrAlert({ title: 'Upload Failed', message: e.message ?? 'Something went wrong', type: 'danger' });
+      console.error('Upload error:', e);
+      console.error('Error details:', {
+        message: e.message,
+        name: e.name,
+        stack: e.stack,
+        response: e.response
+      });
+      vendrAlert({
+        title: 'Upload Failed',
+        message: e.message || e.toString() || 'Something went wrong',
+        type: 'danger'
+      });
       setMessages(prev => prev.filter(m => m.id !== tempId));
     } finally {
       setUploadingImage(false);
@@ -538,7 +592,7 @@ export default function ChatScreen() {
         type: 'text',
       });
 
-      setMessages(prev => [...prev, { ...inserted, delivered: true }]);
+      setMessages(prev => [...prev, { ...inserted, delivered: false, is_read: false }]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error: any) {
       vendrAlert({ title: 'Error', message: 'Could not send message: ' + error.message, type: 'danger' });
@@ -591,11 +645,18 @@ export default function ChatScreen() {
         throw new Error('Payment failed');
       }
 
-      // Update local payment request state
+      // Update the payment request in both state stores optimistically
+      const updatedPr = { ...pr, status: 'paid' as const, paid_at: new Date().toISOString() };
       setPaymentRequests(prev => ({
         ...prev,
-        [pr.id]: { ...pr, status: 'paid', paid_at: new Date().toISOString() }
+        [pr.id]: updatedPr
       }));
+      // Also update the corresponding message in the messages array
+      setMessages(prev => prev.map(msg =>
+        msg.type === 'payment_request' && msg.content === pr.id
+          ? { ...msg, payment_request: updatedPr }
+          : msg
+      ));
 
       // Send confirmation message
       await chatApi.sendMessage({
@@ -627,8 +688,14 @@ export default function ChatScreen() {
         { text: 'Cancel Request', style: 'destructive', onPress: async () => {
           try {
             await chatApi.cancelPaymentRequest(pr.id);
-            // Update local state optimistically
+            // Update the payment request in both state stores optimistically
             setPaymentRequests(prev => ({ ...prev, [pr.id]: { ...pr, status: 'cancelled' as const } }));
+            // Also update the corresponding message in the messages array
+            setMessages(prev => prev.map(msg =>
+              msg.type === 'payment_request' && msg.content === pr.id
+                ? { ...msg, payment_request: { ...msg.payment_request!, status: 'cancelled' as const } }
+                : msg
+            ));
           } catch (error: any) {
             vendrAlert({
               title: 'Error',
@@ -665,7 +732,7 @@ export default function ChatScreen() {
       });
 
       // Replace temp message with real one
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: true } : m));
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, delivered: false, is_read: false } : m));
     } catch (error: any) {
       vendrAlert({ title: 'Send Failed', message: error.message || 'Could not send message', type: 'danger' });
       setMessages(prev => prev.filter(m => m.id !== tempId));
@@ -704,8 +771,9 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-dark" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
-      <StatusBar style="light" />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <KeyboardAvoidingView className="flex-1 bg-dark" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+        <StatusBar style="light" />
 
       {/* Header */}
       <View className="flex-row items-center px-4 pt-14 pb-3 border-b border-faint bg-dark gap-3">
@@ -771,12 +839,11 @@ export default function ChatScreen() {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item }) => {
             if (item.type === 'payment_request') {
-              const pr = item.content ? paymentRequests[item.content] : null;
               return (
                 <PaymentRequestBubble
                   msg={item}
                   isMine={item.sender_id === user?.id}
-                  paymentRequest={pr}
+                  paymentRequest={item.payment_request ?? null}
                   onPay={handlePayNow}
                   onCancel={handleCancelRequest}
                   paying={paying}
@@ -861,11 +928,16 @@ export default function ChatScreen() {
             onPress={() => setViewingImage(null)}
           >
             {viewingImage && (
-              <Image
-                source={{ uri: viewingImage }}
-                style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.85 }}
-                resizeMode="contain"
-              />
+              <GestureDetector gesture={pinchGesture}>
+                <Animated.Image
+                  source={{ uri: viewingImage }}
+                  style={[
+                    { width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.85 },
+                    animatedImageStyle
+                  ]}
+                  resizeMode="contain"
+                />
+              </GestureDetector>
             )}
           </TouchableOpacity>
         </View>
@@ -1044,5 +1116,6 @@ export default function ChatScreen() {
 
       {alertElement}
     </KeyboardAvoidingView>
-  );
+  </GestureHandlerRootView>
+);
 }

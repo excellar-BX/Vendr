@@ -1,18 +1,56 @@
 import { FastifyInstance } from 'fastify'
 import { authenticate } from '../../middlewares/authenticate'
-import { getWalletBalance, processPayment } from './wallet.service'
+import { 
+  getWalletBalance, 
+  processPayment 
+} from './wallet.service'
+import {
+  getWalletBalance as getWalletBalanceController,
+  getOrCreateVirtualAccount,
+  getVirtualAccount,
+  getTransactions,
+  getBanks,
+  withdrawToBank,
+  addBankAccount,
+  getBankAccounts,
+  deleteBankAccount,
+  setDefaultBankAccount,
+  processWebhook,
+} from './wallet.controller'
 
 export async function walletRoutes(app: FastifyInstance) {
   // Get current user's wallet balance
-  app.get('/wallet/balance', { preHandler: authenticate }, async (request, reply) => {
-    try {
-      const userId = request.user.id
-      const balance = await getWalletBalance(userId)
-      return reply.status(200).send({ success: true, data: balance })
-    } catch (err: any) {
-      return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
-    }
-  })
+  app.get('/wallet/balance', { preHandler: authenticate }, getWalletBalanceController)
+
+  // Get or create virtual account
+  app.post('/wallet/virtual-account', { preHandler: authenticate }, getOrCreateVirtualAccount)
+
+  // Get virtual account
+  app.get('/wallet/virtual-account', { preHandler: authenticate }, getVirtualAccount)
+
+  // Get transaction history
+  app.get('/wallet/transactions', { preHandler: authenticate }, getTransactions)
+
+  // Get list of supported banks
+  app.get('/wallet/banks', { preHandler: authenticate }, getBanks)
+
+  // Withdraw to bank
+  app.post('/wallet/withdraw', { preHandler: authenticate }, withdrawToBank)
+
+  // Add bank account
+  app.post('/wallet/bank-accounts', { preHandler: authenticate }, addBankAccount)
+
+  // Get bank accounts
+  app.get('/wallet/bank-accounts', { preHandler: authenticate }, getBankAccounts)
+
+  // Delete bank account
+  app.delete('/wallet/bank-accounts/:id', { preHandler: authenticate }, deleteBankAccount)
+
+  // Set default bank account
+  app.put('/wallet/bank-accounts/:id/default', { preHandler: authenticate }, setDefaultBankAccount)
+
+  // Process Monnify webhook (no auth required)
+  app.post('/wallet/webhook/monnify', processWebhook)
 
   // Process payment (transfer funds between wallets)
   app.post('/wallet/pay', { preHandler: authenticate }, async (request, reply) => {

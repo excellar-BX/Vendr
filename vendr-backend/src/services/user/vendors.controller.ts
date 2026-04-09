@@ -47,7 +47,7 @@ export async function getVendorsController(_request: FastifyRequest, reply: Fast
       return {
         id: v.id,
         user_id: v.user_id,
-        business_name: v.shop_name,
+        shop_name: v.shop_name,
         description: v.description,
         category: v.category as any,
         city: v.city,

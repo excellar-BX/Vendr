@@ -12,9 +12,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Text } from '../components/ui/StyledText';
 import { useVendrAlert } from '../components/ui/VendrAlert';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
 import { formatPrice } from '../lib/utils';
+import { reelApi, storageApi, vendorApi, productApi } from '../lib/api';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -37,24 +37,12 @@ async function uploadVideoToR2(
   mimeType: string,
   onProgress?: (pct: number) => void,
 ): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error('Not authenticated');
-
-  // Get pre-signed URL from Edge Function
+  // Get pre-signed URL from backend storage API
   onProgress?.(10);
-  const signRes = await fetch(
-    'https://mbdojwirmtknzpwccthb.supabase.co/functions/v1/r2-sign',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ key: `${bucket}/${path}`, contentType: mimeType }),
-    }
+  const { data: { uploadUrl, publicUrl } } = await storageApi.signUpload(
+    `${bucket}/${path}`,
+    mimeType
   );
-  if (!signRes.ok) throw new Error('Could not get upload URL');
-  const { uploadUrl, publicUrl } = await signRes.json();
 
   onProgress?.(20);
 
@@ -124,8 +112,7 @@ function PreviewVideo({ uri }: { uri: string }) {
 }
 
 export default function ReelUploadScreen() {
-  const { vendorId } = useLocalSearchParams<{ vendorId: string }>();
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
 
   const [stage, setStage] = useState<UploadStage>('pick');
@@ -139,39 +126,45 @@ export default function ReelUploadScreen() {
 
   const [productSearch, setProductSearch] = useState('');
 
-  // Fetch ALL products across all stores owned by this user
+  // Fetch products for the current user's vendor
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     const fetchAllProducts = async () => {
-      // Get all vendor IDs for this user
-      const { data: vendorRows } = await supabase
-        .from('vendors')
-        .select('id, business_name')
-        .eq('user_id', session.user.id);
+      try {
+        // Get current user's vendor
+        const { data: vendor } = await vendorApi.getMyVendor();
+        if (!vendor) {
+          return; // User is not a vendor or vendor not set up yet
+        }
 
-      if (!vendorRows || vendorRows.length === 0) return;
+        // Fetch products for this vendor
+        const { data: products } = await productApi.getProducts(vendor.id);
 
-      const vendorIds = vendorRows.map((v: any) => v.id);
-
-      // Fetch products across all stores
-      const { data } = await supabase
-        .from('products')
-        .select('id, name, price, image_url, vendor_id')
-        .in('vendor_id', vendorIds)
-        .eq('is_available', true)
-        .order('name', { ascending: true });
-
-      // Attach store name to each product for display
-      const vendorMap: Record<string, string> = {};
-      vendorRows.forEach((v: any) => { vendorMap[v.id] = v.business_name; });
-
-      setProducts((data ?? []).map((p: any) => ({
-        ...p,
-        store_name: vendorMap[p.vendor_id] ?? '',
-      })));
+        // Map to component format with store name
+        setProducts(products.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          image_url: p.image_url,
+          vendor_id: p.vendor_id,
+          store_name: vendor.shop_name || '',
+        })));
+      } catch (e: any) {
+        if (e.statusCode === 401) {
+          showAlert({
+            title: 'Session expired',
+            message: 'Your session has expired. Please log in again.',
+            type: 'warning',
+          });
+          router.replace('/(auth)/login?expired=true');
+        } else {
+          console.error('Failed to fetch products:', e);
+          showAlert({ title: 'Error', message: 'Failed to load products. Please try again.', type: 'danger' });
+        }
+      }
     };
     fetchAllProducts();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const handlePickVideo = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -215,12 +208,12 @@ export default function ReelUploadScreen() {
   };
 
   const handlePost = async () => {
-    if (!videoUri || !selectedProduct || !session?.user?.id) return;
+    if (!videoUri || !selectedProduct || !user?.id) return;
     setUploading(true);
     setStage('uploading');
 
     try {
-      const userId = session.user.id;
+      const userId = user.id;
       const timestamp = Date.now();
       const videoPath = `${userId}/${timestamp}_reel.mp4`;
 
@@ -254,25 +247,29 @@ export default function ReelUploadScreen() {
 
       setUploadProgress(98);
 
-      // Insert reel record
-      const { error } = await supabase.from('reels').insert({
-        vendor_id: selectedProduct.vendor_id,
-        user_id: userId,
+      // Create reel via backend API
+      await reelApi.createReel({
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         caption: caption.trim() || null,
         product_id: selectedProduct?.id ?? null,
-        is_active: true,
       });
-
-      if (error) throw error;
 
       setUploadProgress(100);
       setStage('done');
     } catch (e: any) {
-      setUploading(false);
-      setStage('preview');
-      showAlert({ title: 'Upload failed', message: e?.message ?? 'Something went wrong. Please try again.', type: 'danger' });
+      if (e.statusCode === 401) {
+        showAlert({
+          title: 'Session expired',
+          message: 'Your session has expired. Please log in again.',
+          type: 'warning',
+        });
+        router.replace('/(auth)/login?expired=true');
+      } else {
+        setUploading(false);
+        setStage('preview');
+        showAlert({ title: 'Upload failed', message: e?.message ?? 'Something went wrong. Please try again.', type: 'danger' });
+      }
     }
   };
 

@@ -18,6 +18,20 @@ export async function buildServer() {
     logger: process.env.NODE_ENV === 'development',
   })
 
+  // Allow empty JSON bodies for POST/PUT/PATCH requests
+  // This handles cases where clients send Content-Type: application/json with no body
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    if (!body || body.trim() === '') {
+      done(null, {})
+      return
+    }
+    try {
+      done(null, JSON.parse(body))
+    } catch (err) {
+      done(err)
+    }
+  })
+
   // ─── Plugins ──────────────────────────────────────────────────────────────
   await app.register(cors, {
     origin: true,

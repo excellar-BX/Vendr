@@ -36,7 +36,7 @@ model User {
   refresh_tokens             RefreshToken[]
   email_verification_tokens  EmailVerificationToken[]
   password_reset_tokens      PasswordResetToken[]
-  vendor                     Vendor?
+  vendors                    Vendor[] @relation("UserVendors")
   orders                     Order[]
   reviews                    Review[]
   savedVendors               SavedVendor[]
@@ -101,7 +101,7 @@ model PasswordResetToken {
 
 model Vendor {
   id                 String   @id @default(uuid())
-  user_id            String   @unique
+  user_id            String
   shop_name          String
   description        String?
   category           String?
@@ -126,7 +126,7 @@ model Vendor {
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 
-  user              User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user              User             @relation("UserVendors", fields: [user_id], references: [id], onDelete: Cascade)
   products          Product[]
   orders            Order[]
   reviews           Review[]

@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store'
 import { useAuthStore } from '../stores/authStore'
 
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.161.22.15:3000/api"
+const BASE_URL = 'http://10.177.228.15:3000/api' //process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api"
 console.log(BASE_URL)
 // ─── Token storage ────────────────────────────────────────────────────────────
 
@@ -35,22 +35,34 @@ async function refreshAccessToken(): Promise<string | null> {
     return null
   }
 
-  const res = await fetch(`${BASE_URL}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
+  try {
+    const res = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
 
-  if (!res.ok) {
-    // Refresh token expired or invalid - user must log in again
-    await clearTokens()
-    useAuthStore.getState().clear()
+    if (!res.ok) {
+      // Refresh token expired or invalid - user must log in again
+      await clearTokens()
+      useAuthStore.getState().clear()
+      return null
+    }
+
+    const data = await res.json()
+    // Only update refresh token if it's different (backend issues new one when close to expiry)
+    if (data.data.refreshToken !== refreshToken) {
+      await saveTokens(data.data.accessToken, data.data.refreshToken)
+    } else {
+      // Just update access token if refresh token is the same
+      await SecureStore.setItemAsync('access_token', data.data.accessToken)
+    }
+    return data.data.accessToken
+  } catch (error) {
+    console.error('Refresh token failed:', error)
+    // Don't clear tokens on network error, just return null and let retry happen
     return null
   }
-
-  const data = await res.json()
-  await saveTokens(data.data.accessToken, data.data.refreshToken)
-  return data.data.accessToken
 }
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
@@ -99,6 +111,9 @@ export async function apiFetch(
   const method = fetchOptions.method?.toUpperCase()
   if (method === 'GET' || method === 'DELETE') {
     delete fetchOptions.body
+  } else if (fetchOptions.body && typeof fetchOptions.body === 'object') {
+    // Stringify body objects for JSON requests
+    fetchOptions.body = JSON.stringify(fetchOptions.body)
   }
 
   const res = await fetch(url, { ...fetchOptions, headers })
@@ -111,6 +126,13 @@ export async function apiFetch(
     }
     // Refresh failed — user must log in again
     throw { statusCode: 401, message: 'Your session has expired. Please log in again.' }
+  }
+
+  // Handle network errors with retry
+  if (!res.ok && res.status >= 500 && retry) {
+    // Server error - retry once
+    await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1 second
+    return apiFetch(path, options, false)
   }
 
   const data = await res.json()
@@ -141,13 +163,28 @@ export const vendorApi = {
     is_active?: boolean
     ids?: string[]  // will be joined as comma-separated
     has_location?: boolean
+    lat?: number
+    lng?: number
+    limit?: number
+    offset?: number
   }) => {
     const query: any = { ...params };
     if (params?.ids?.length) {
       query.ids = params.ids.join(',');
     }
+    // Ensure lat/lng are strings for URL params
+    if (params?.lat != null) query.lat = String(params.lat);
+    if (params?.lng != null) query.lng = String(params.lng);
     return apiFetch('/vendors', { query });
   },
+}
+
+export const productApi = {
+  /**
+   * Get products by vendor_id (only active by default)
+   */
+  getProducts: (vendor_id: string, include_all?: boolean) =>
+    apiFetch('/products', { query: { vendor_id, include_all } }),
 }
 
 export const searchApi = {
@@ -187,9 +224,9 @@ export const searchApi = {
   }),
 
   /**
-   * Clear search history
+   * Clear search history (or delete specific query if provided)
    */
-  clearHistory: () => apiFetch('/search/history', { method: 'DELETE' }),
+  clearHistory: (query?: string) => apiFetch('/search/history', { method: 'DELETE', query: query ? { query } : {} }),
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -215,24 +252,32 @@ export const storageApi = {
 
 export const reelApi = {
   /**
-   * Get reels by vendor_id
+   * Get reels (feed or vendor-specific)
+   * No params -> main feed
+   * vendor_id -> reels for that vendor
+   * Optional: include_all=true (vendor only, includes inactive)
+   * Optional: limit, offset for pagination
+   * Auth required for personalization (is_liked, is_saved)
    */
-  getReels: (vendor_id: string, include_all?: boolean) =>
-    apiFetch('/reels', { query: { vendor_id, include_all } }),
+  getReels: (params?: {
+    vendor_id?: string
+    include_all?: boolean
+    limit?: number
+    offset?: number
+  }) => apiFetch('/reels', { query: params }),
 
   /**
    * Create a reel
    */
   createReel: (data: {
-    vendor_id: string
     video_url: string
-    thumbnail_url: string
-    caption?: string
-    product_id?: string
+    thumbnail_url?: string | null
+    caption?: string | null
+    product_id?: string | null
   }) => apiFetch('/reels', { method: 'POST', body: data }),
 
   /**
-   * Get a single reel
+   * Get a single reel (enriched with vendor/product and like/save status)
    */
   getReel: (reelId: string) => apiFetch(`/reels/${reelId}`),
 
@@ -242,14 +287,19 @@ export const reelApi = {
   incrementView: (reelId: string) => apiFetch(`/reels/${reelId}/view`, { method: 'POST' }),
 
   /**
+   * Toggle like on a reel
+   */
+  toggleLike: (reelId: string) => apiFetch(`/reels/${reelId}/like`, { method: 'POST' }),
+
+  /**
+   * Toggle save on a reel
+   */
+  toggleSave: (reelId: string) => apiFetch(`/reels/${reelId}/save`, { method: 'POST' }),
+
+  /**
    * Delete a reel
    */
   deleteReel: (reelId: string) => apiFetch(`/reels/${reelId}`, { method: 'DELETE' }),
-
-  /**
-   * Get saved reels for current user
-   */
-  getSavedReels: () => apiFetch('/reels/saved'),
 }
 
 export const walletApi = {
@@ -257,6 +307,92 @@ export const walletApi = {
    * Get wallet balance
    */
   getBalance: () => apiFetch('/wallet/balance'),
+
+  /**
+   * Get or create virtual account
+   */
+  getOrCreateVirtualAccount: () => apiFetch('/wallet/virtual-account', {
+    method: 'POST',
+  }),
+
+  /**
+   * Get virtual account
+   */
+  getVirtualAccount: () => apiFetch('/wallet/virtual-account'),
+
+  /**
+   * Get transaction history
+   */
+  getTransactions: (params?: { limit?: number; offset?: number }) =>
+    apiFetch('/wallet/transactions', { query: params }),
+
+  /**
+   * Get list of supported banks
+   */
+  getBanks: () => apiFetch('/wallet/banks'),
+
+  /**
+   * Withdraw to bank
+   */
+  withdraw: (params: {
+    amount: number;
+    bank_code: string;
+    account_number: string;
+    account_name: string;
+  }) =>
+    apiFetch('/wallet/withdraw', {
+      method: 'POST',
+      body: params,
+    }),
+
+  /**
+   * Add bank account
+   */
+  addBankAccount: (params: {
+    account_number: string;
+    account_name: string;
+    bank_name: string;
+    bank_code: string;
+  }) =>
+    apiFetch('/wallet/bank-accounts', {
+      method: 'POST',
+      body: params,
+    }),
+
+  /**
+   * Get bank accounts
+   */
+  getBankAccounts: () => apiFetch('/wallet/bank-accounts'),
+
+  /**
+   * Delete bank account
+   */
+  deleteBankAccount: (id: string) =>
+    apiFetch(`/wallet/bank-accounts/${id}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Set default bank account
+   */
+  setDefaultBankAccount: (id: string) =>
+    apiFetch(`/wallet/bank-accounts/${id}/default`, {
+      method: 'PUT',
+    }),
+
+  /**
+   * Process payment (transfer between wallets)
+   */
+  pay: (params: {
+    vendor_id: string;
+    amount: number;
+    payment_request_id?: string;
+    description?: string;
+  }) =>
+    apiFetch('/wallet/pay', {
+      method: 'POST',
+      body: params,
+    }),
 }
 
 export const chatApi = {

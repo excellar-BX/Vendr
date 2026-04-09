@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, ScrollView, TouchableOpacity,
+  View, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, Image, Dimensions,
   TextInput as RNTextInput,
 } from 'react-native';
@@ -17,7 +17,6 @@ import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
-type FilterTab = 'all' | 'vendors' | 'products';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_GAP = 12;
@@ -50,8 +49,29 @@ interface Suggestion {
   rating?: number;
 }
 
-function VendorGridCard({ vendor }: { vendor: Vendor }) {
-  const cfg = categoryConfig[vendor.category] ?? { color: '#E8521A', icon: 'storefront-outline' as IoniconsName };
+// Unified result from backend - vendor or product
+type SearchResultItem = {
+  id: string;
+  type: 'vendor' | 'product';
+  vendor_id: string;
+  vendor_shop_name: string | null;
+  vendor_category: string | null;
+  vendor_lat: number | null;
+  vendor_lng: number | null;
+  vendor_logo_url: string | null;
+  vendor_is_verified: boolean | null;
+  vendor_rating: number | null;
+  vendor_review_count: number | null;
+  name: string | null;
+  description: string | null;
+  price: number | null;
+  image_url: string | null;
+  score: number;
+  distance: number | null;
+}
+
+function VendorGridCard({ vendor }: { vendor: SearchResultItem & { type: 'vendor' } }) {
+  const cfg = categoryConfig[vendor.vendor_category ?? ''] ?? { color: '#E8521A', icon: 'storefront-outline' as IoniconsName };
   return (
     <TouchableOpacity
       onPress={() => router.push({ pathname: '/vendor/[id]', params: { id: vendor.id } })}
@@ -63,13 +83,13 @@ function VendorGridCard({ vendor }: { vendor: Vendor }) {
       }}
     >
       <View style={{ height: 96, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-        {vendor.banner_url
-          ? <Image source={{ uri: vendor.banner_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        {vendor.vendor_logo_url
+          ? <Image source={{ uri: vendor.vendor_logo_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
           : <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: `${cfg.color}22`, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name={cfg.icon} size={22} color={cfg.color} />
             </View>
         }
-        {vendor.is_verified && (
+        {vendor.vendor_is_verified && ( 
           <View style={{
             position: 'absolute', top: 8, right: 8,
             backgroundColor: 'rgba(45,134,83,0.2)', borderRadius: 8,
@@ -80,23 +100,23 @@ function VendorGridCard({ vendor }: { vendor: Vendor }) {
             <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 9, color: '#2D8653' }}>Verified</Text>
           </View>
         )}
-        {vendor.logo_url && (
+        {vendor.vendor_logo_url && (
           <View style={{ position: 'absolute', bottom: -16, left: 10 }}>
-            <Image source={{ uri: vendor.logo_url }} style={{ width: 36, height: 36, borderRadius: 10, borderWidth: 2, borderColor: '#1A1208' }} resizeMode="cover" />
+            <Image source={{ uri: vendor.vendor_logo_url }} style={{ width: 36, height: 36, borderRadius: 10, borderWidth: 2, borderColor: '#1A1208' }} resizeMode="cover" />
           </View>
         )}
       </View>
-      <View style={{ padding: 10, paddingTop: vendor.logo_url ? 22 : 10, gap: 4 }}>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }} numberOfLines={1}>{vendor.shop_name}</Text>
+      <View style={{ padding: 10, paddingTop: vendor.vendor_logo_url ? 22 : 10, gap: 4 }}>
+        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }} numberOfLines={1}>{vendor.vendor_shop_name}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Ionicons name={cfg.icon} size={10} color={cfg.color} />
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }} numberOfLines={1}>{vendor.category}</Text>
+          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }} numberOfLines={1}>{vendor.vendor_category ?? 'Store'}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
             <Ionicons name="star" size={10} color="#F5A623" />
             <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#FDF6EC' }}>
-              {vendor.rating > 0 ? vendor.rating.toFixed(1) : 'New'}
+              {vendor.vendor_rating && vendor.vendor_rating > 0 ? vendor.vendor_rating.toFixed(1) : 'New'}
             </Text>
           </View>
           {vendor.distance != null && (
@@ -111,7 +131,16 @@ function VendorGridCard({ vendor }: { vendor: Vendor }) {
   );
 }
 
-function ProductResultCard({ product, onEnquire }: { product: Product & { vendor_name?: string }; onEnquire: () => void }) {
+function SectionHeader({ title,}: { title: string }) {
+  return (
+    <Text className="text-muted text-xs pt-5 pb-2 tracking-widest uppercase" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+      {title}
+    </Text>
+  );
+}
+
+
+function ProductResultCard({ product, onEnquire }: { product: SearchResultItem & { type: 'product' }; onEnquire: () => void }) {
   return (
     <TouchableOpacity
       activeOpacity={0.85} onPress={onEnquire}
@@ -121,7 +150,7 @@ function ProductResultCard({ product, onEnquire }: { product: Product & { vendor
         shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 3,
       }}
     >
-      <View style={{ width: 88, height: 88, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 88, height: 100, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
         {product.image_url
           ? <Image source={{ uri: product.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
           : <Ionicons name="cube-outline" size={26} color="#3D3026" />
@@ -135,25 +164,32 @@ function ProductResultCard({ product, onEnquire }: { product: Product & { vendor
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>{formatPrice(product.price)}</Text>
-          {product.vendor_name && (
+          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>{formatPrice(product.price ?? 0)}</Text>
+          {product.vendor_shop_name && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="storefront-outline" size={11} color="#9A8570" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }} numberOfLines={1}>{product.vendor_name}</Text>
+              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }} numberOfLines={1}>{product.vendor_shop_name}</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+          {product.vendor_rating != null && product.vendor_rating > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Ionicons name="star" size={10} color="#F5A623" />
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#FDF6EC' }}>
+                {product.vendor_rating.toFixed(1)}
+              </Text>
+            </View>
+          )}
+          {product.distance != null && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              <Ionicons name="navigate-outline" size={10} color="#6B5E50" />
+              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>{formatDistance(product.distance)}</Text>
             </View>
           )}
         </View>
       </View>
     </TouchableOpacity>
-  );
-}
-
-function SectionHeader({ title, count }: { title: string; count: number }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 20 }}>
-      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>{title}</Text>
-      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>{count} found</Text>
-    </View>
   );
 }
 
@@ -168,7 +204,6 @@ export default function SearchScreen() {
 
   const [query, setQuery] = useState('');
   const [committedQuery, setCommittedQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
   const [minRating, setMinRating] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -177,12 +212,16 @@ export default function SearchScreen() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [products, setProducts] = useState<(Product & { vendor_name?: string })[]>([]);
+  const [vendors, setVendors] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [nearbyVendors, setNearbyVendors] = useState<any[]>([]);
+  const [farVendors, setFarVendors] = useState<any[]>([]);
+  const [showFarVendors, setShowFarVendors] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [mixedFeed, setMixedFeed] = useState<any[]>([]);
   const [myVendorIds, setMyVendorIds] = useState<string[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
-  // Dropdown sits just below the search input
   const DROPDOWN_TOP = insets.top + 56 + 40 + 52 + 10;
 
   useEffect(() => {
@@ -190,6 +229,14 @@ export default function SearchScreen() {
     loadMyVendors();
     loadHistory();
   }, [user?.id]);
+
+  // Update mixed feed when far vendors toggle changes
+  useEffect(() => {
+    if (nearbyVendors.length > 0 || products.length > 0) {
+      const feed = createMixedFeed(nearbyVendors, farVendors, products);
+      setMixedFeed(feed);
+    }
+  }, [showFarVendors, nearbyVendors, farVendors, products]);
 
   useFocusEffect(useCallback(() => { loadHistory(); }, [user?.id]));
 
@@ -211,12 +258,11 @@ export default function SearchScreen() {
         setMyVendorIds(data ? [data.id] : []);
       }
     } catch (error) {
-      // Not an error if user is not a vendor - just keep empty array
       setMyVendorIds([]);
     }
   };
 
-  // Suggestions — API call
+  // Suggestions
   useEffect(() => {
     if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
     if (query.length < 1) { setSuggestions([]); return; }
@@ -254,23 +300,8 @@ export default function SearchScreen() {
     }, 200);
   }, [query]);
 
-  // THE search — only called by explicit user tap
-  // Strip filler words and extract the real search term
-  const extractSearchTerm = (raw: string): string => {
-    let q = raw.toLowerCase();
-    const fillers = [
-      'near me', 'around me', 'close to me', 'nearby', 'in lagos', 'in abuja',
-      'in nigeria', 'around here', 'close by', 'around', 'near',
-      'vendor', 'vendors', 'seller', 'sellers', 'shop', 'store', 'stores',
-      'cheap', 'cheapest', 'affordable', 'best', 'good', 'top', 'quality',
-      'where can i buy', 'where to buy', 'i need', 'i want', 'looking for',
-      'find me', 'get me', 'show me',
-    ];
-    fillers.forEach(f => { q = q.replace(new RegExp(`\\b${f}\\b`, 'gi'), ''); });
-    return q.replace(/\s+/g, ' ').trim() || raw.trim();
-  };
-
-  const runSearch = async (q: string) => {
+  // THE search
+  const runSearch = async (q: string, categoryOverride?: Category) => {
     if (!q.trim()) return;
     setDropdownVisible(false);
     setQuery('');
@@ -280,76 +311,43 @@ export default function SearchScreen() {
     setLoading(true);
     setHasSearched(true);
 
-    // Persist original query to history
+    if (categoryOverride && categoryOverride !== activeCategory) {
+      setActiveCategory(categoryOverride);
+    }
+    const effectiveCategory = categoryOverride ?? activeCategory;
+
     if (user?.id) {
       await searchApi.saveHistory(q.trim());
       setRecentSearches(prev => [q, ...prev.filter(s => s !== q)].slice(0, 10));
     }
 
-    // Perform search via API
     try {
-      const { data } = await searchApi.search({
-        q,
-        category: activeCategory !== 'All' ? activeCategory : undefined,
-        verified_only: verifiedOnly,
-        min_rating: minRating > 0 ? minRating : undefined,
-        lat: lat ?? undefined,
-        lng: lng ?? undefined,
-        limit: 50,
-      });
+      // Build query params, omitting false flags to avoid parsing ambiguity
+      const queryParams: any = { q, limit: 50 };
+      if (effectiveCategory !== 'All') queryParams.category = effectiveCategory;
+      if (verifiedOnly) queryParams.verified_only = true; // only include when true
+      if (minRating > 0) queryParams.min_rating = minRating;
+      if (lat != null) queryParams.lat = lat;
+      if (lng != null) queryParams.lng = lng;
 
-      // Transform vendor data to match expected format
-      const vList: Vendor[] = (data?.vendors ?? []).map((v: any) => ({
-        id: v.id,
-        user_id: v.user_id,
-        shop_name: v.shop_name,
-        description: v.description,
-        category: v.category,
-        address: v.address,
-        lat: v.lat,
-        lng: v.lng,
-        phone: v.phone,
-        whatsapp: v.whatsapp,
-        instagram: v.instagram,
-        twitter: v.twitter,
-        open_days: v.open_days,
-        open_time: v.open_time,
-        close_time: v.close_time,
-        logo_url: v.logo_url,
-        banner_url: v.banner_url,
-        is_verified: v.is_verified,
-        is_active: v.is_active,
-        rating: v.rating,
-        review_count: v.review_count,
-        created_at: v.created_at,
-        updated_at: v.updated_at,
-        user: v.user,
-        distance: v.distance,
-      }));
+      const { data } = await searchApi.search(queryParams);
 
-      // Sort by distance if lat/lng available
-      if (lat && lng) {
-        vList.forEach(v => {
-          v.distance = (v.lat != null && v.lng != null) ? calcDistance(lat, lng, v.lat!, v.lng!) : undefined;
-        });
-        vList.sort((a, b) => (a.distance ?? 99) - (b.distance ?? 99));
-      }
-
-      setVendors(vList);
-
-      // Transform product data
-      setProducts((data?.products ?? []).map((p: any) => ({
-        id: p.id,
-        vendor_id: p.vendor_id,
-        name: p.name,
-        description: p.description,
-        price: p.price,
-        image_url: p.image_url,
-        is_available: p.is_available,
-        created_at: p.created_at,
-        updated_at: p.updated_at,
-        vendor_name: p.vendor_name,
-      })));
+      // Separate vendors by distance (5km threshold for hyper-local)
+      const allVendors = data?.vendors ?? [];
+      const nearby = allVendors.filter(v => v.distance !== null && v.distance <= 5);
+      const far = allVendors.filter(v => v.distance === null || v.distance > 5);
+      
+      setNearbyVendors(nearby);
+      setFarVendors(far);
+      setVendors(allVendors);
+      setProducts(data?.products ?? []);
+      setShowFarVendors(false); // Reset far vendors visibility on new search
+      
+      // Generate mixed feed for display
+      const feed = createMixedFeed(nearby, far, data?.products ?? []);
+      setMixedFeed(feed);
+      
+      console.log(`[Search] ${nearby.length} nearby vendors, ${far.length} far vendors, ${feed.length} total feed items`);
     } catch (error: any) {
       console.error('Search error:', error);
       vendrAlert({ title: 'Search Failed', message: error.message || 'Something went wrong', type: 'danger' });
@@ -364,10 +362,53 @@ export default function SearchScreen() {
     setHasSearched(false);
     setVendors([]);
     setProducts([]);
+    setNearbyVendors([]);
+    setFarVendors([]);
+    setShowFarVendors(false);
+    setMixedFeed([]);
     setSuggestions([]);
     setDropdownVisible(false);
     setTimeout(() => inputRef.current?.focus(), 50);
   };
+
+  // Function to create smart mixed feed (TikTok style)
+  const createMixedFeed = (nearbyVendors: any[], farVendors: any[], products: any[]) => {
+    const feed: any[] = [];
+    const allVendors = [...nearbyVendors, ...(showFarVendors ? farVendors : [])];
+    const allProducts = [...products];
+    
+    // Shuffle both arrays for variety
+    const shuffledVendors = [...allVendors].sort(() => Math.random() - 0.5);
+    const shuffledProducts = [...allProducts].sort(() => Math.random() - 0.5);
+    
+    let vendorIndex = 0;
+    let productIndex = 0;
+    
+    // Create mixed pattern: 4 vendors, 2 products, repeat
+    while (vendorIndex < shuffledVendors.length || productIndex < shuffledProducts.length) {
+      // Add 4 vendors (or as many as available)
+      for (let i = 0; i < 4 && vendorIndex < shuffledVendors.length; i++) {
+        feed.push({ ...shuffledVendors[vendorIndex], itemType: 'vendor' });
+        vendorIndex++;
+      }
+      
+      // Add 2 products (or as many as available)
+      for (let i = 0; i < 2 && productIndex < shuffledProducts.length; i++) {
+        feed.push({ ...shuffledProducts[productIndex], itemType: 'product' });
+        productIndex++;
+      }
+    }
+    
+    return feed;
+  };
+
+  const onRefresh = useCallback(async () => {
+    if (committedQuery) {
+      setRefreshing(true);
+      await runSearch(committedQuery);
+      setRefreshing(false);
+    }
+  }, [committedQuery]);
 
   const clearHistory = async () => {
     try {
@@ -379,19 +420,18 @@ export default function SearchScreen() {
   };
 
   const removeHistoryItem = async (item: string) => {
-    // The backend doesn't have an endpoint to delete individual items yet
-    // For now, just clear all and re-add the filtered list
-    setRecentSearches(prev => prev.filter(s => s !== item));
-    // TODO: Add backend endpoint to delete single search history item if needed
+    try {
+      await searchApi.clearHistory(item);
+      setRecentSearches(prev => prev.filter(s => s !== item));
+    } catch (error) {
+      console.error('Failed to delete search history item:', error);
+      vendrAlert({ title: 'Error', message: 'Failed to delete item', type: 'danger' });
+    }
   };
 
-  const filteredVendors  = activeFilter === 'products' ? [] : vendors;
-  const filteredProducts = activeFilter === 'vendors'  ? [] : products;
-  const totalResults = filteredVendors.length + filteredProducts.length;
-  const showMapFab = hasSearched && filteredVendors.length > 0 && !loading;
-
-  const vendorRows: Vendor[][] = [];
-  for (let i = 0; i < filteredVendors.length; i += 2) vendorRows.push(filteredVendors.slice(i, i + 2));
+  // Count vendors with location for map FAB
+  const vendorsWithLocation = vendors.filter(v => v.vendor_lat != null && v.vendor_lng != null);
+  const showMapFab = hasSearched && vendorsWithLocation.length > 0 && !loading;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
@@ -425,7 +465,6 @@ export default function SearchScreen() {
               if (query.length >= 1) setDropdownVisible(true);
             }}
             onBlur={() => {
-              // If user tapped a dropdown row, dropdownTapped ref prevents hiding
               setTimeout(() => {
                 if (!dropdownTapped.current) setDropdownVisible(false);
                 dropdownTapped.current = false;
@@ -476,27 +515,26 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {/* Filter tabs — only after a search */}
+        {/* Category chips — only after a search */}
         {hasSearched && (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {([
-              { key: 'all', label: 'All', icon: 'apps-outline' },
-              { key: 'vendors', label: 'Vendors', icon: 'storefront-outline' },
-              { key: 'products', label: 'Products', icon: 'cube-outline' },
-            ] as { key: FilterTab; label: string; icon: IoniconsName }[]).map(tab => (
-              <TouchableOpacity
-                key={tab.key} onPress={() => setActiveFilter(tab.key)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: activeFilter === tab.key ? '#E8521A' : '#1A1208', borderWidth: 1, borderColor: activeFilter === tab.key ? '#E8521A' : '#2A1F14' }}
-              >
-                <Ionicons name={tab.icon} size={13} color={activeFilter === tab.key ? 'white' : '#9A8570'} />
-                <Text style={{ fontFamily: activeFilter === tab.key ? 'SpaceGrotesk_600SemiBold' : 'SpaceGrotesk_400Regular', fontSize: 12, color: activeFilter === tab.key ? 'white' : '#9A8570' }}>{tab.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}>
+            {CATEGORIES.map(cat => {
+              const isActive = activeCategory === cat.label;
+              return (
+                <TouchableOpacity
+                  key={cat.label} onPress={() => runSearch(committedQuery, cat.label)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: isActive ? 'rgba(232,82,26,0.15)' : '#1A1208', borderWidth: 1, borderColor: isActive ? 'rgba(232,82,26,0.5)' : '#2A1F14' }}
+                >
+                  <Ionicons name={cat.icon} size={13} color={isActive ? '#E8521A' : '#9A8570'} />
+                  <Text style={{ fontFamily: isActive ? 'SpaceGrotesk_600SemiBold' : 'SpaceGrotesk_400Regular', fontSize: 12, color: isActive ? '#E8521A' : '#9A8570' }}>{cat.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         )}
       </View>
 
-      {/* ── Dropdown — absolutely positioned, floats over everything ── */}
+      {/* ── Dropdown ── */}
       {dropdownVisible && (
         <View
           style={{
@@ -507,7 +545,6 @@ export default function SearchScreen() {
             overflow: 'hidden',
           }}
         >
-          {/* Always-present row: the raw query */}
           <TouchableOpacity
             onPressIn={() => { dropdownTapped.current = true; }}
             onPress={() => runSearch(query)}
@@ -526,7 +563,6 @@ export default function SearchScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* RPC suggestion rows */}
           {suggestions.map((s, i) => {
             const isHistory = s.source === 'history';
             const isProduct = s.source === 'product';
@@ -567,26 +603,21 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {/* Category chips — only after a search */}
-      {hasSearched && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 20, paddingBottom: 10 }}>
-          {CATEGORIES.map(cat => {
-            const isActive = activeCategory === cat.label;
-            return (
-              <TouchableOpacity
-                key={cat.label} onPress={() => setActiveCategory(cat.label)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: isActive ? 'rgba(232,82,26,0.15)' : '#1A1208', borderWidth: 1, borderColor: isActive ? 'rgba(232,82,26,0.5)' : '#2A1F14' }}
-              >
-                <Ionicons name={cat.icon} size={13} color={isActive ? '#E8521A' : '#9A8570'} />
-                <Text style={{ fontFamily: isActive ? 'SpaceGrotesk_600SemiBold' : 'SpaceGrotesk_400Regular', fontSize: 12, color: isActive ? '#E8521A' : '#9A8570' }}>{cat.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      )}
-
       {/* Content */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView 
+      style={{ flex: 1 }} 
+      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} 
+      showsVerticalScrollIndicator={false} 
+      keyboardShouldPersistTaps="handled"
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor="#E8521A"
+          colors={["#E8521A"]}
+        />
+      }
+    >
 
         {loading && (
           <View style={{ alignItems: 'center', paddingVertical: 60, gap: 12 }}>
@@ -601,7 +632,7 @@ export default function SearchScreen() {
               <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC', marginBottom: 12 }}>Browse by Category</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                 {CATEGORIES.filter(c => c.label !== 'All').map(cat => (
-                  <TouchableOpacity key={cat.label} onPress={() => runSearch(cat.label)}
+                  <TouchableOpacity key={cat.label} onPress={() => runSearch(cat.label, cat.label)}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11 }}
                   >
                     <Ionicons name={cat.icon} size={16} color="#E8521A" />
@@ -635,48 +666,73 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {hasSearched && !loading && totalResults === 0 && (
-          <View style={{ alignItems: 'center', paddingVertical: 60, gap: 12 }}>
-            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="search-outline" size={28} color="#3D3026" />
+        {hasSearched && !loading && vendors.length === 0 && products.length === 0 && (
+          <View style={{ gap: 20 }}>
+            <View style={{ alignItems: 'center', paddingVertical: 20, gap: 12 }}>
+              <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="search-outline" size={28} color="#3D3026" />
+              </View>
+              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>No results found</Text>
+              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', paddingHorizontal: 32 }}>
+                No vendors or products match "{committedQuery}". Try a different search.
+              </Text>
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>No results found</Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', paddingHorizontal: 32 }}>
-              No vendors or products match "{committedQuery}". Try a different search.
-            </Text>
           </View>
         )}
 
-        {hasSearched && !loading && totalResults > 0 && (
+        {hasSearched && !loading && (vendors.length > 0 || products.length > 0) && (
           <View>
             <View style={{ marginTop: 8, marginBottom: 4 }}>
               <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50' }}>
                 Results for <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E8521A' }}>"{committedQuery}"</Text>
               </Text>
             </View>
-            {filteredVendors.length > 0 && (
-              <View>
-                <SectionHeader title="Vendors" count={filteredVendors.length} />
-                {vendorRows.map((row, rowIdx) => (
-                  <View key={rowIdx} style={{ flexDirection: 'row', gap: CARD_GAP }}>
-                    {row.map(v => <VendorGridCard key={v.id} vendor={v} />)}
-                    {row.length === 1 && <View style={{ width: CARD_W }} />}
-                  </View>
-                ))}
-              </View>
-            )}
-            {filteredProducts.length > 0 && (
-              <View>
-                <SectionHeader title="Products" count={filteredProducts.length} />
-                {filteredProducts.map(p => (
-                  <ProductResultCard
-                    key={p.id} product={p}
-                    onEnquire={() => {
-                      if (myVendorIds.includes(p.vendor_id)) { router.push('/my-stores'); return; }
-                      router.push({ pathname: '/chat/[conversationId]', params: { vendorId: p.vendor_id, productId: p.id, productName: p.name, productPrice: formatPrice(p.price) } });
-                    }}
-                  />
-                ))}
+
+            {/* Mixed Feed - TikTok Style */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP }}>
+              {mixedFeed.map((item, index) => {
+                if (item.itemType === 'vendor') {
+                  return (
+                    <View key={`vendor-${item.id}`} style={{ width: CARD_W }}>
+                      <VendorGridCard vendor={item} />
+                    </View>
+                  );
+                } else {
+                  return (
+                    <View key={`product-${item.id}`} style={{ width: '100%' }}>
+                      <ProductResultCard
+                        product={item}
+                        onEnquire={() => {
+                          if (myVendorIds.includes(item.vendor_id)) { router.push('/my-stores'); return; }
+                          router.push({ pathname: '/chat/[conversationId]', params: { vendorId: item.vendor_id, productId: item.id, productName: item.name ?? '', productPrice: formatPrice(item.price ?? 0) } });
+                        }}
+                      />
+                    </View>
+                  );
+                }
+              })}
+            </View>
+
+            {/* Far Vendors Toggle */}
+            {farVendors.length > 0 && !showFarVendors && (
+              <View style={{ marginTop: 20 }}>
+                <TouchableOpacity 
+                  onPress={() => setShowFarVendors(true)}
+                  style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    backgroundColor: 'transparent', 
+                    paddingVertical: 8,
+                    gap: 6
+                  }}
+                >
+                  <Ionicons name="location-outline" size={14} color="#6B5E50" />
+                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#6B5E50' }}>
+                    Show {farVendors.length} more beyond 5km
+                  </Text>
+                  <Ionicons name="chevron-down-outline" size={12} color="#6B5E50" />
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -685,15 +741,14 @@ export default function SearchScreen() {
 
       {showMapFab && (
         <TouchableOpacity onPress={() => {
-          const ids = filteredVendors.filter(v => v.lat && v.lng).map(v => v.id);
-          if (ids.length === 0) return;
+          const ids = vendorsWithLocation.map(v => v.id);
           router.push({ pathname: '/map-search', params: { vendorIds: JSON.stringify(ids), searchQuery: committedQuery } });
         }} activeOpacity={0.9}
           style={{ position: 'absolute', bottom: 28, right: 20, height: 48, paddingHorizontal: 18, borderRadius: 16, backgroundColor: '#E8521A', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, shadowColor: '#E8521A', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 10 }}
         >
           <Ionicons name="map" size={18} color="white" />
           <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: 'white' }}>
-            View {filteredVendors.filter(v => v.lat && v.lng).length} on map
+            View {vendorsWithLocation.length} on map
           </Text>
         </TouchableOpacity>
       )}

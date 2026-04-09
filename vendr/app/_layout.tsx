@@ -38,6 +38,7 @@ function RootLayout() {
   const { setUser, user, clear } = useAuthStore();
   const [appReady, setAppReady] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
   
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
@@ -54,30 +55,63 @@ function RootLayout() {
   useEffect(() => {
     const bootstrapAuth = async () => {
       try {
+        console.log("🔐 Starting auth bootstrap...");
         const token = await getAccessToken();
+        console.log("🔑 Token exists:", !!token);
         if (!token) {
           clear();
+          console.log("❌ No token found - user not logged in");
+          // No token = first-time user (or logged out). Will show welcome.
         } else {
-          const response = await apiFetch('/auth/me');
-          const userData = response.data;
+          try {
+            console.log("🔍 Validating token with /auth/me...");
+            const response = await apiFetch('/auth/me');
+            const userData = response.data;
+            console.log("✅ Token valid, user:", userData.email);
 
-          if (userData?.is_deleted) {
-            await clearTokens();
-            clear();
-          } else {
-            setUser(userData);
-            Sentry.setUser({ id: userData.id, email: userData.email });
-            
-            // Handle push tokens if enabled
-            if (userData?.notifications_enabled !== false) {
-              registerPushToken(userData.id);
+            if (userData?.is_deleted) {
+              await clearTokens();
+              clear();
+              setSessionExpired(true);
+              console.log("🚫 User account deleted");
+            } else {
+              setUser(userData);
+              Sentry.setUser({ id: userData.id, email: userData.email });
+
+              // Handle push tokens if enabled
+              if (userData?.notifications_enabled !== false) {
+                registerPushToken(userData.id);
+              }
+
+              // Clear session expired flag if user successfully logged in
+              if (sessionExpired) {
+                setSessionExpired(false);
+              }
+              console.log("✅ User successfully logged in");
             }
+          } catch (validationError: any) {
+            // Token exists but validation failed - could be network error or expired token
+            console.log("❌ Token validation failed:", validationError.statusCode, validationError.message);
+            
+            // Only clear tokens if it's actually an auth error (401)
+            if (validationError.statusCode === 401) {
+              await clearTokens();
+              clear();
+              setSessionExpired(true);
+              console.log("🚫 Token expired - session expired");
+            }
+            // For network errors, keep tokens and let user continue
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Auth bootstrap failed:", error);
-        await clearTokens();
-        clear();
+        // Only clear tokens if it's a critical error, not network issues
+        if (error.statusCode === 401 || error.message?.includes('session')) {
+          await clearTokens();
+          clear();
+          setSessionExpired(true);
+        }
+        // For other errors, continue without clearing tokens
       } finally {
         setAppReady(true);
       }
@@ -133,11 +167,13 @@ function RootLayout() {
         } else {
           router.replace('/(auth)/verify-email');
         }
+      } else if (sessionExpired) {
+        router.replace('/(auth)/login?expired=true');
       } else {
         router.replace('/(auth)/welcome');
       }
     }
-  }, [showSplash, appReady, user]);
+  }, [showSplash, appReady, user, sessionExpired]);
 
   if (showSplash || !appReady || (!fontsLoaded && !fontError)) {
     return <SplashScreenView />;

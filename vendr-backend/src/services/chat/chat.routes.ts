@@ -6,10 +6,15 @@ import {
   createConversationController,
   getMessagesController,
   sendMessageController,
+  updateMessageController,
+  deleteMessageController,
   markDeliveredController,
   resetUnreadController,
   presenceController,
   getPresenceController,
+  createPaymentRequestController,
+  payPaymentRequestController,
+  cancelPaymentRequestController,
 } from './chat.controller'
 
 export async function chatRoutes(app: FastifyInstance) {

@@ -58,7 +58,7 @@ export default function HomeScreen() {
       const response = await apiFetch('/vendors', { method: 'GET' });
       // The backend returns vendors with lat/lng as separate fields
       let list: Vendor[] = response.data.map((v: any) => ({
-        ...v,
+        ...v, 
         lat: v.lat ?? 0,
         lng: v.lng ?? 0,
       }));

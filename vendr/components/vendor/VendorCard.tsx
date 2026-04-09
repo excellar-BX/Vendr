@@ -93,7 +93,7 @@ export function VendorCard({ vendor }: VendorCardProps) {
             style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
             numberOfLines={1}
           >
-            {vendor.business_name}
+            {vendor.shop_name}
           </Text>
 
           <View className="flex-row items-center gap-1">

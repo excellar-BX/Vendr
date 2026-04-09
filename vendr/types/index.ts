@@ -49,6 +49,12 @@ export interface Product {
   description?: string | null;
   price: number;
   image_url?: string | null;
+  vendor_shop_name?: string | null;
+  vendor_rating?: number | null;
+  vendor_review_count?: number | null;
+  vendor_lat?: number | null;
+  vendor_lng?: number | null;
+  distance?: number | null;
   is_available: boolean;
   created_at: string;
   updated_at: string;

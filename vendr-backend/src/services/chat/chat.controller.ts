@@ -147,7 +147,7 @@ export async function sendMessageController(request: FastifyRequest, reply: Fast
   }
 }
 
-export async function markDeliveredController(request: FastifyReply, reply: FastifyReply) {
+export async function markDeliveredController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
     const userId = request.user.id
@@ -166,7 +166,7 @@ export async function markDeliveredController(request: FastifyReply, reply: Fast
   }
 }
 
-export async function resetUnreadController(request: FastifyReply, reply: FastifyReply) {
+export async function resetUnreadController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
     const userId = request.user.id
@@ -290,55 +290,6 @@ export async function cancelPaymentRequestController(request: FastifyRequest, re
     return reply.status(200).send({
       success: true,
       message: 'Payment request cancelled',
-    })
-  } catch (err: any) {
-    return reply.status(err.statusCode ?? 500).send({
-      success: false,
-      message: err.message
-    })
-  }
-}
-
-export async function createPaymentRequestController(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const userId = request.user.id
-    const { conversation_id, amount, description } = request.body as {
-      conversation_id: string
-      amount: number
-      description?: string
-    }
-
-    if (!conversation_id || !amount) {
-      return reply.status(400).send({
-        success: false,
-        message: 'conversation_id and amount are required',
-      })
-    }
-
-    const result = await ChatService.createPaymentRequest(conversation_id, userId, amount, description)
-
-    return reply.status(201).send({
-      success: true,
-      data: result,
-    })
-  } catch (err: any) {
-    return reply.status(err.statusCode ?? 500).send({
-      success: false,
-      message: err.message
-    })
-  }
-}
-
-export async function payPaymentRequestController(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const userId = request.user.id
-    const { id } = request.params as { id: string }
-
-    const result = await ChatService.payPaymentRequest(id, userId)
-
-    return reply.status(200).send({
-      success: true,
-      data: result,
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({

@@ -14,8 +14,9 @@ export async function getMyProfile(userId: string): Promise<GetMyProfileOutput> 
       notifications_enabled: true,
       location_enabled: true,
       created_at: true,
-      vendor: {
-        select: { id: true, shop_name: true, is_active: true }
+      vendors: {
+        select: { id: true, shop_name: true, is_active: true },
+        take: 1
       }
     }
   })
@@ -42,7 +43,7 @@ export async function getMyProfile(userId: string): Promise<GetMyProfileOutput> 
     notifications_enabled: user.notifications_enabled,
     location_enabled: user.location_enabled,
     created_at: user.created_at.toISOString(),
-    vendor: user.vendor,
+    vendor: user.vendors[0] || null,
     stats: {
       orders: ordersCount,
       reviews: reviewsCount,
@@ -87,16 +88,25 @@ export async function updateMyProfile(userId: string, input: UpdateMyProfileInpu
       notifications_enabled: true,
       location_enabled: true,
       created_at: true,
-      vendor: {
-        select: { id: true, shop_name: true, is_active: true }
+      vendors: {
+        select: { id: true, shop_name: true, is_active: true },
+        take: 1
       }
     }
   })
 
   // Convert Date to ISO string for JSON serialization
   return {
-    ...user,
-    created_at: user.created_at.toISOString()
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    avatar_url: user.avatar_url,
+    phone: user.phone,
+    is_verified: user.is_verified,
+    notifications_enabled: user.notifications_enabled,
+    location_enabled: user.location_enabled,
+    created_at: user.created_at.toISOString(),
+    vendor: user.vendors[0] || null
   }
 }
 

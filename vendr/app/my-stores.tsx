@@ -27,12 +27,11 @@ export default function MyStoresScreen() {
       if (!user?.id) return;
       setLoading(true);
       try {
-        const response = await apiFetch('/vendors/me', { method: 'GET' });
-        // The backend returns a single vendor object (not an array)
-        // For now, we'll wrap it in an array for the UI
-        const vendor = response.data;
-        if (vendor) {
-          setStores([{
+        const response = await apiFetch('/vendors/me/all', { method: 'GET' });
+        // The backend returns an array of vendor objects
+        const vendors = response.data;
+        if (vendors && Array.isArray(vendors)) {
+          setStores(vendors.map((vendor: any) => ({
             id: vendor.id,
             business_name: vendor.shop_name,
             category: vendor.category,
@@ -40,7 +39,7 @@ export default function MyStoresScreen() {
             is_verified: vendor.is_verified,
             rating: vendor.rating,
             review_count: vendor.review_count,
-          }]);
+          })));
         } else {
           setStores([]);
         }

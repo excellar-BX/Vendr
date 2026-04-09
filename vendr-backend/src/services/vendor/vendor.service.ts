@@ -21,17 +21,9 @@ export interface CreateVendorInput {
 /**
  * Create a vendor store for the current user
  * This also sets the user's is_vendor flag to true and updates phone
+ * Users can create multiple vendor stores
  */
 export async function createVendor(userId: string, input: CreateVendorInput) {
-  // Check if user already has a vendor (for now, one vendor per user)
-  const existingVendor = await prisma.vendor.findUnique({
-    where: { user_id: userId }
-  });
-
-  if (existingVendor) {
-    throw { statusCode: 409, message: 'You already have a vendor store' };
-  }
-
   // Create vendor (note: phone belongs to User, not Vendor)
   const vendor = await prisma.vendor.create({
     data: {
@@ -88,10 +80,13 @@ export async function createVendor(userId: string, input: CreateVendorInput) {
 
 /**
  * Get vendor by user ID (authenticated)
+ * Returns the most recent vendor for the user (ordered by created_at desc)
+ * In multi-vendor scenario, this is the "primary" vendor
  */
 export async function getVendorByUserId(userId: string) {
-  const vendor = await prisma.vendor.findUnique({
+  const vendor = await prisma.vendor.findFirst({
     where: { user_id: userId },
+    orderBy: { created_at: 'desc' },
     include: {
       user: {
         select: {
@@ -105,6 +100,29 @@ export async function getVendorByUserId(userId: string) {
   });
 
   return vendor;
+}
+
+/**
+ * Get ALL vendors for a user (authenticated)
+ * Used for listing all stores in "My Stores" screen
+ */
+export async function getAllVendorsByUserId(userId: string) {
+  const vendors = await prisma.vendor.findMany({
+    where: { user_id: userId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          full_name: true,
+          avatar_url: true,
+        }
+      }
+    },
+    orderBy: { created_at: 'desc' }
+  });
+
+  return vendors;
 }
 
 /**
@@ -144,11 +162,13 @@ export async function getVendorById(vendorId: string) {
 
 /**
  * Update vendor settings
+ * Updates the most recent vendor for the user (by created_at desc)
  */
 export async function updateVendor(userId: string, input: Partial<CreateVendorInput> & { is_active?: boolean; is_verified?: boolean }) {
-  // Find vendor by user_id
-  const existingVendor = await prisma.vendor.findUnique({
-    where: { user_id: userId }
+  // Find the most recent vendor for this user
+  const existingVendor = await prisma.vendor.findFirst({
+    where: { user_id: userId },
+    orderBy: { created_at: 'desc' }
   });
 
   if (!existingVendor) {
@@ -196,8 +216,9 @@ export async function updateVendor(userId: string, input: Partial<CreateVendorIn
  * Could also hard delete if needed
  */
 export async function deleteVendorStore(userId: string): Promise<void> {
-  const vendor = await prisma.vendor.findUnique({
-    where: { user_id: userId }
+  const vendor = await prisma.vendor.findFirst({
+    where: { user_id: userId },
+    orderBy: { created_at: 'desc' }
   })
 
   if (!vendor) {
@@ -217,5 +238,78 @@ export async function deleteVendorStore(userId: string): Promise<void> {
 
   // Option 2: Hard delete cascade (uncomment if desired)
   // await prisma.vendor.delete({ where: { id: vendor.id } })
+}
+
+/**
+ * Update a specific vendor by ID (authenticated)
+ * Ensures the vendor belongs to the authenticated user
+ */
+export async function updateVendorById(vendorId: string, userId: string, input: Partial<CreateVendorInput> & { is_active?: boolean; is_verified?: boolean }) {
+  // Verify ownership
+  const existing = await prisma.vendor.findFirst({
+    where: { id: vendorId, user_id: userId }
+  });
+
+  if (!existing) {
+    throw { statusCode: 404, message: 'Vendor not found or access denied' };
+  }
+
+  const vendor = await prisma.vendor.update({
+    where: { id: vendorId },
+    data: {
+      ...(input.business_name && { shop_name: input.business_name }),
+      ...(input.category && { category: input.category }),
+      ...(input.description && { description: input.description }),
+      ...(input.address && { address: input.address }),
+      ...(input.lat && { lat: input.lat }),
+      ...(input.lng && { lng: input.lng }),
+      ...(input.phone && { phone: input.phone }),
+      ...(input.whatsapp && { whatsapp: input.whatsapp }),
+      ...(input.instagram && { instagram: input.instagram }),
+      ...(input.twitter && { twitter: input.twitter }),
+      ...(input.open_days && { open_days: input.open_days }),
+      ...(input.open_time && { open_time: input.open_time }),
+      ...(input.close_time && { close_time: input.close_time }),
+      ...(input.logo_url !== undefined && { logo_url: input.logo_url }),
+      ...(input.banner_url !== undefined && { banner_url: input.banner_url }),
+      ...(input.is_active !== undefined && { is_active: input.is_active }),
+      ...(input.is_verified !== undefined && { is_verified: input.is_verified }),
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          full_name: true,
+          avatar_url: true,
+        }
+      }
+    }
+  });
+
+  return vendor;
+}
+
+/**
+ * Delete (deactivate) a specific vendor by ID (authenticated)
+ * Ensures the vendor belongs to the authenticated user
+ */
+export async function deleteVendorById(vendorId: string, userId: string): Promise<void> {
+  // Verify ownership
+  const existing = await prisma.vendor.findFirst({
+    where: { id: vendorId, user_id: userId }
+  });
+
+  if (!existing) {
+    throw { statusCode: 404, message: 'Vendor not found or access denied' };
+  }
+
+  // Soft delete - deactivate
+  await prisma.vendor.update({
+    where: { id: vendorId },
+    data: {
+      is_active: false,
+    },
+  });
 }
 
