@@ -1,39 +1,40 @@
 import { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middlewares/authenticate';
 import * as NotificationController from './notification.controller';
 
 export async function notificationRoutes(fastify: FastifyInstance) {
   // Get all notifications
   fastify.get('/notifications', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.getNotificationsController);
 
   // Get unread count
   fastify.get('/notifications/unread-count', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.getUnreadCountController);
 
   // Mark notification as read
   fastify.patch('/notifications/:id/read', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.markAsReadController);
 
   // Mark all notifications as read
   fastify.patch('/notifications/read-all', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.markAllAsReadController);
 
   // Delete notification
   fastify.delete('/notifications/:id', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.deleteNotificationController);
 
   // Register push token
   fastify.post('/notifications/register-token', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.registerPushTokenController);
 
   // Clear push token
   fastify.delete('/notifications/clear-token', {
-    preHandler: [fastify.authenticate],
+    preHandler: authenticate,
   }, NotificationController.clearPushTokenController);
 }
