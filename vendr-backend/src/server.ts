@@ -12,6 +12,7 @@ import { savedVendorRoutes } from './services/saved-vendor/saved-vendor.routes'
 import { storageRoutes } from './services/storage/storage.routes'
 import { walletRoutes } from './services/wallet/wallet.routes'
 import { orderRoutes } from './services/order/order.routes'
+import { notificationRoutes } from './services/notification/notification.routes'
 import { initSocket } from './lib/socket'
 
 export async function buildServer() {
@@ -53,6 +54,7 @@ export async function buildServer() {
   await app.register(savedVendorRoutes, { prefix: '/api' })
   await app.register(walletRoutes, { prefix: '/api' })
   await app.register(storageRoutes, { prefix: '/api' })
+  await app.register(notificationRoutes, { prefix: '/api' })
 
   // ─── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

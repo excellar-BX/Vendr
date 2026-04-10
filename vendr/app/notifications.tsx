@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { notificationApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -117,46 +117,39 @@ function groupByDate(notifs: AppNotification[]) {
 }
 
 export default function NotificationsScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const userId = session?.user?.id;
+  const userId = user?.id;
 
   const fetchNotifications = async () => {
     if (!userId) return;
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(60);
-    setNotifications((data ?? []) as AppNotification[]);
-    setLoading(false);
-    setRefreshing(false);
+    try {
+      const { data } = await notificationApi.getNotifications(60);
+      setNotifications(data || []);
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useFocusEffect(useCallback(() => { fetchNotifications(); }, [userId]));
 
-  useEffect(() => {
-    if (!userId) return;
-    const channel = supabase
-      .channel('notifications-feed')
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'notifications',
-        filter: `user_id=eq.${userId}`,
-      }, (payload) => {
-        setNotifications(prev => [payload.new as AppNotification, ...prev]);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [userId]);
+  // Remove Supabase realtime - will use polling or Socket.io later if needed
+  // For now, notifications will refresh on screen focus
 
   const markRead = async (notif: AppNotification) => {
     if (!notif.is_read) {
-      await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id);
-      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      try {
+        await notificationApi.markAsRead(notif.id);
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      } catch (error) {
+        console.error('Failed to mark as read:', error);
+      }
     }
     // Navigate based on type
     if (notif.data?.conversation_id) {
@@ -168,8 +161,12 @@ export default function NotificationsScreen() {
 
   const markAllRead = async () => {
     if (!userId) return;
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false);
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    try {
+      await notificationApi.markAllAsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (error) {
+      console.error('Failed to mark all as read:', error);
+    }
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;

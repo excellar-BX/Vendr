@@ -1,6 +1,9 @@
 import prisma from '../../lib/prisma'
 import type { CreateReviewInput, UpdateReviewInput, ReviewOutput } from './review.schema'
 
+// Notification service
+const { createNotification } = require('../notification/notification.service')
+
 /**
  * Recalculate vendor rating statistics
  */
@@ -168,6 +171,20 @@ export async function createReview(userId: string, input: CreateReviewInput): Pr
 
   // Recalculate vendor rating
   await recalculateVendorRating(input.vendor_id)
+
+  // Create notification for the vendor (non-blocking)
+  try {
+    await createNotification({
+      userId: vendor.user_id,
+      type: 'review_received',
+      title: 'New review received',
+      body: `You received a ${input.rating} star review`,
+      data: { vendor_id: input.vendor_id, review_id: review.id },
+    })
+  } catch (notifError) {
+    console.error('[Review] Notification error for review_received:', notifError)
+    // Don't throw - review was successfully created
+  }
 
   return {
     id: review.id,

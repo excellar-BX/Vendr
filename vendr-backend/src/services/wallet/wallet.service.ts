@@ -1,5 +1,8 @@
 import prisma from '../../lib/prisma'
 
+// Notification service
+const { createNotification } = require('../notification/notification.service')
+
 /**
  * Get user's wallet balance
  */
@@ -138,6 +141,32 @@ export async function processPayment(
             },
           });
           console.log('[Wallet] Order created:', order.id, 'for buyer:', buyerId, 'vendor:', vendorId);
+
+          // Create notification for buyer (order_placed)
+          try {
+            await createNotification({
+              userId: buyerId,
+              type: 'order_placed',
+              title: 'Order placed successfully',
+              body: `Your order of ₦${paymentRequest.amount.toLocaleString()} has been placed`,
+              data: { order_id: order.id, conversation_id: paymentRequest.conversation_id },
+            })
+          } catch (notifError) {
+            console.error('[Wallet] Notification error for order_placed:', notifError)
+          }
+
+          // Create notification for vendor (new_order)
+          try {
+            await createNotification({
+              userId: vendorId,
+              type: 'new_order',
+              title: 'New order received',
+              body: `New order of ₦${paymentRequest.amount.toLocaleString()} received`,
+              data: { order_id: order.id, conversation_id: paymentRequest.conversation_id },
+            })
+          } catch (notifError) {
+            console.error('[Wallet] Notification error for new_order:', notifError)
+          }
         } else {
           console.log('[Wallet] Payment request not found for order creation:', paymentRequestId);
         }

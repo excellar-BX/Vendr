@@ -590,6 +590,50 @@ export const userApi = {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Notifications API
+// ──────────────────────────────────────────────────────────────
+
+export const notificationApi = {
+  /**
+   * Get all notifications for current user
+   */
+  getNotifications: (limit?: number) => apiFetch('/notifications', { query: { limit } }),
+
+  /**
+   * Get unread notification count
+   */
+  getUnreadCount: () => apiFetch('/notifications/unread-count'),
+
+  /**
+   * Mark a notification as read
+   */
+  markAsRead: (notificationId: string) =>
+    apiFetch(`/notifications/${notificationId}/read`, { method: 'PATCH' }),
+
+  /**
+   * Mark all notifications as read
+   */
+  markAllAsRead: () => apiFetch('/notifications/read-all', { method: 'PATCH' }),
+
+  /**
+   * Delete a notification
+   */
+  deleteNotification: (notificationId: string) =>
+    apiFetch(`/notifications/${notificationId}`, { method: 'DELETE' }),
+
+  /**
+   * Register Expo push token
+   */
+  registerPushToken: (pushToken: string) =>
+    apiFetch('/notifications/register-token', { method: 'POST', body: { pushToken } }),
+
+  /**
+   * Clear push token
+   */
+  clearPushToken: () => apiFetch('/notifications/clear-token', { method: 'DELETE' }),
+}
+
+// ──────────────────────────────────────────────────────────────
 // Orders API
 // ──────────────────────────────────────────────────────────────
 

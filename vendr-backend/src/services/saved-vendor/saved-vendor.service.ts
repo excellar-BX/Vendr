@@ -1,6 +1,9 @@
 import prisma from '../../lib/prisma'
 import type { SavedVendorInput, SavedVendorOutput } from './saved-vendor.schema'
 
+// Notification service
+const { createNotification } = require('../notification/notification.service')
+
 /**
  * Save a vendor (add to saved list)
  */
@@ -38,6 +41,20 @@ export async function saveVendor(userId: string, input: SavedVendorInput): Promi
       vendor_id: vendorId,
     },
   })
+
+  // Create notification for the vendor (non-blocking)
+  try {
+    await createNotification({
+      userId: vendor.user_id,
+      type: 'store_saved',
+      title: 'Store saved',
+      body: 'Someone saved your store',
+      data: { vendor_id: vendorId },
+    })
+  } catch (notifError) {
+    console.error('[SavedVendor] Notification error:', notifError)
+    // Don't throw - vendor was successfully saved
+  }
 
   return {
     id: saved.id,

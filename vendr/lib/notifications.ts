@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { supabase } from './supabase';
+import { notificationApi } from './api';
 
 // Expo Go on SDK 53+ does not support push notifications.
 // We lazy-import expo-notifications only when needed so the module
@@ -80,12 +80,9 @@ export async function registerPushToken(userId: string): Promise<string | null> 
     const token = tokenData.data;
     console.log('[Push] Token:', token);
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({ push_token: token })
-      .eq('id', userId);
+    // Save to backend instead of Supabase
+    await notificationApi.registerPushToken(token);
 
-    if (error) console.warn('[Push] Failed to save token:', error.message);
     return token;
   } catch (e: any) {
     console.warn('[Push] Failed to register:', e?.message);
@@ -95,11 +92,11 @@ export async function registerPushToken(userId: string): Promise<string | null> 
 
 export async function clearPushToken(userId: string) {
   try {
-    await supabase
-      .from('profiles')
-      .update({ push_token: null })
-      .eq('id', userId);
-  } catch {}
+    // Clear from backend instead of Supabase
+    await notificationApi.clearPushToken();
+  } catch (error) {
+    console.warn('[Push] Failed to clear token:', error);
+  }
 }
 
 // Listener helpers — safe to call anywhere, no-ops in Expo Go

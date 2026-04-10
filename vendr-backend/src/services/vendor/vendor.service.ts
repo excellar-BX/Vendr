@@ -1,5 +1,8 @@
 import prisma from '../../lib/prisma';
 
+// Notification service
+const { createNotification } = require('../notification/notification.service');
+
 export interface CreateVendorInput {
   business_name: string;
   category: string;
@@ -207,6 +210,22 @@ export async function updateVendor(userId: string, input: Partial<CreateVendorIn
       }
     }
   });
+
+  // Create notification if vendor is verified (non-blocking)
+  if (input.is_verified === true && !existingVendor.is_verified) {
+    try {
+      await createNotification({
+        userId: userId,
+        type: 'vendor_verified',
+        title: 'Vendor verified',
+        body: 'Your store has been verified',
+        data: { vendor_id: vendor.id },
+      })
+    } catch (notifError) {
+      console.error('[Vendor] Notification error for vendor_verified:', notifError)
+      // Don't throw - vendor was successfully updated
+    }
+  }
 
   return vendor;
 }

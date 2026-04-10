@@ -12,6 +12,9 @@ import type {
 // Socket.io import for real-time events
 const { getSocketIO } = require('../../lib/socket')
 
+// Notification service
+const { createNotification } = require('../notification/notification.service')
+
 /**
  * Check if user is trying to chat with themselves
  */
@@ -499,6 +502,21 @@ export async function sendMessage(
     // Don't throw - message was successfully saved to DB
   }
 
+  // Create notification for the recipient (non-blocking)
+  const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
+  try {
+    await createNotification({
+      userId: otherUserId,
+      type: 'new_message',
+      title: 'New message',
+      body: content || 'Sent you a message',
+      data: { conversation_id: conversationId, message_id: messageOutput.id },
+    })
+  } catch (notifError) {
+    console.error('[Chat] Notification error:', notifError)
+    // Don't throw - message was successfully sent
+  }
+
   return messageOutput
 }
 
@@ -815,6 +833,20 @@ export async function createPaymentRequest(
       buyer_unread: { increment: 1 }
     }
   })
+
+  // Create notification for the buyer (non-blocking)
+  try {
+    await createNotification({
+      userId: conv.buyer_id,
+      type: 'payment_request',
+      title: 'Payment request',
+      body: `₦${amount.toLocaleString()} payment request received`,
+      data: { conversation_id: conversationId, payment_request_id: paymentRequest.id },
+    })
+  } catch (notifError) {
+    console.error('[Chat] Notification error for payment request:', notifError)
+    // Don't throw - payment request was successfully created
+  }
 
   return {
     id: message.id,
