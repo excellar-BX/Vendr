@@ -7,7 +7,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { reviewApi, vendorApi } from '../lib/api';
+import { reviewApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 interface ReviewLeft {
@@ -185,32 +185,24 @@ export default function MyReviewsScreen() {
 
         // If vendor — fetch reviews received for their store
         if (isVendor) {
-          const vendorRes = await vendorApi.getMyVendor();
-          const vendorId = vendorRes.data?.id;
+          const receivedRes = await reviewApi.getReviewsReceived();
+          const receivedData = receivedRes.data || [];
 
-          if (vendorId) {
-            const receivedRes = await reviewApi.getVendorReviews(vendorId);
-            const receivedData = receivedRes.data || [];
+          // Transform to ReviewReceived format
+          const shaped: ReviewReceived[] = (receivedData as any[]).map(r => ({
+            id: r.id,
+            rating: r.rating,
+            comment: r.comment,
+            created_at: r.created_at,
+            reviewer_name: r.reviewer_name ?? 'Anonymous',
+            reviewer_avatar: r.reviewer_avatar ?? null,
+          }));
+          setReviewsReceived(shaped);
 
-            // Transform to ReviewReceived format
-            const shaped: ReviewReceived[] = (receivedData as any[]).map(r => ({
-              id: r.id,
-              rating: r.rating,
-              comment: r.comment,
-              created_at: r.created_at,
-              reviewer_name: r.reviewer_name ?? 'Anonymous',
-              reviewer_avatar: r.reviewer_avatar ?? null,
-            }));
-            setReviewsReceived(shaped);
-
-            if (shaped.length > 0) {
-              const avg = shaped.reduce((sum, r) => sum + r.rating, 0) / shaped.length;
-              setAvgRating(Math.round(avg * 10) / 10);
-            } else {
-              setAvgRating(0);
-            }
+          if (shaped.length > 0) {
+            const avg = shaped.reduce((sum, r) => sum + r.rating, 0) / shaped.length;
+            setAvgRating(Math.round(avg * 10) / 10);
           } else {
-            setReviewsReceived([]);
             setAvgRating(0);
           }
         }

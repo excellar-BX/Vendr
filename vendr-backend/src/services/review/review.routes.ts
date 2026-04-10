@@ -3,6 +3,7 @@ import { authenticate } from '../../middlewares/authenticate'
 import {
   getReviewsController,
   getMyReviewsController,
+  getReviewsReceivedController,
   createReviewController,
   updateReviewController,
   deleteReviewController,
@@ -17,6 +18,11 @@ export async function reviewRoutes(app: FastifyInstance) {
   // Protected: Get reviews written by current user
   app.get('/reviews/me', { preHandler: authenticate }, async (request, reply) => {
     return getMyReviewsController(request, reply)
+  })
+
+  // Protected: Get reviews received for vendor's store (for vendors)
+  app.get('/reviews/received', { preHandler: authenticate }, async (request, reply) => {
+    return getReviewsReceivedController(request, reply)
   })
 
   // Protected: Create review

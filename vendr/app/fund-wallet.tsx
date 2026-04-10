@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, ScrollView, TouchableOpacity, ActivityIndicator,
   Share, Clipboard,
@@ -7,10 +7,8 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
-import { getOrCreateVirtualAccount, getWalletBalance } from '../lib/walletService';
-import { PAYMENT_PROVIDER } from '../lib/payments/config';
+import { walletApi } from '../lib/api';
 
 function formatAmount(n: number) {
   return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -19,7 +17,8 @@ function formatAmount(n: number) {
 type Stage = 'loading' | 'show_account' | 'error';
 
 export default function FundWalletScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
+  const intervalRef = useRef<number | null>(null);
   const [stage, setStage] = useState<Stage>('loading');
   const [virtualAccount, setVirtualAccount] = useState<{
     accountNumber: string;
@@ -33,45 +32,73 @@ export default function FundWalletScreen() {
   const [funded, setFunded] = useState(false);
 
   const load = useCallback(async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     try {
       setStage('loading');
-      const [account, bal] = await Promise.all([
-        getOrCreateVirtualAccount(session.user.id),
-        getWalletBalance(session.user.id),
+      const [accountRes, balRes] = await Promise.all([
+        walletApi.getOrCreateVirtualAccount(),
+        walletApi.getBalance(),
       ]);
+      const account = accountRes.data;
       setVirtualAccount({
         accountNumber: account.account_number,
         bankName: account.bank_name,
         accountName: account.account_name,
       });
-      setBalance(bal);
-      setBalanceBefore(bal);
+      setBalance(balRes.data?.available_balance ?? 0);
+      setBalanceBefore(balRes.data?.available_balance ?? 0);
       setStage('show_account');
     } catch (e: any) {
       setErrorMsg(e.message ?? 'Could not load account details');
       setStage('error');
     }
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Poll balance every 5s to detect incoming transfer
+  // Auto-redirect to wallet 3s after funding is detected
   useEffect(() => {
+    if (funded) {
+      const timer = setTimeout(() => {
+        router.replace('/wallet');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [funded]);
+
+  // Poll balance every 15s to detect incoming transfer
+  useEffect(() => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     if (stage !== 'show_account' || funded) return;
-    const interval = setInterval(async () => {
-      if (!session?.user?.id) return;
+
+    intervalRef.current = setInterval(async () => {
+      if (!user?.id) return;
       try {
-        const newBal = await getWalletBalance(session.user.id);
+        const balRes = await walletApi.getBalance();
+        const newBal = balRes.data?.available_balance ?? 0;
         setBalance(newBal);
         if (newBal > balanceBefore) {
           setFunded(true);
-          clearInterval(interval);
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
         }
       } catch {}
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [stage, funded, balanceBefore, session?.user?.id]);
+    }, 15000) as unknown as number;
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [stage, funded, balanceBefore, user?.id]);
 
   const copyAccountNumber = () => {
     if (!virtualAccount) return;
@@ -170,7 +197,7 @@ export default function FundWalletScreen() {
           <View style={{ backgroundColor: '#0F0A06', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: '#2A1F14' }}>
             <Ionicons name="shield-checkmark" size={14} color="#2D8653" />
             <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#2D8653' }}>
-              Secured by {PAYMENT_PROVIDER === 'monnify' ? 'Monnify' : 'Paystack'}
+              Secured by Monnify
             </Text>
           </View>
 

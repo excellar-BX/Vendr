@@ -59,6 +59,17 @@ type SearchResultItem = {
   vendor_lat: number | null;
   vendor_lng: number | null;
   vendor_logo_url: string | null;
+  vendor_banner_url: string | null;
+  vendor_avatar_url: string | null;
+  vendor_address: string | null;
+  vendor_phone: string | null;
+  vendor_whatsapp: string | null;
+  vendor_instagram: string | null;
+  vendor_twitter: string | null;
+  vendor_open_days: string[] | null;
+  vendor_open_time: string | null;
+  vendor_close_time: string | null;
+  vendor_city: string | null;
   vendor_is_verified: boolean | null;
   vendor_rating: number | null;
   vendor_review_count: number | null;
@@ -83,13 +94,15 @@ function VendorGridCard({ vendor }: { vendor: SearchResultItem & { type: 'vendor
       }}
     >
       <View style={{ height: 96, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-        {vendor.vendor_logo_url
-          ? <Image source={{ uri: vendor.vendor_logo_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          : <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: `${cfg.color}22`, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name={cfg.icon} size={22} color={cfg.color} />
-            </View>
+        {vendor.vendor_banner_url
+          ? <Image source={{ uri: vendor.vendor_banner_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          : vendor.vendor_logo_url
+            ? <Image source={{ uri: vendor.vendor_logo_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            : <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: `${cfg.color}22`, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={cfg.icon} size={22} color={cfg.color} />
+              </View>
         }
-        {vendor.vendor_is_verified && ( 
+        {vendor.vendor_is_verified && (
           <View style={{
             position: 'absolute', top: 8, right: 8,
             backgroundColor: 'rgba(45,134,83,0.2)', borderRadius: 8,
@@ -107,7 +120,7 @@ function VendorGridCard({ vendor }: { vendor: SearchResultItem & { type: 'vendor
         )}
       </View>
       <View style={{ padding: 10, paddingTop: vendor.vendor_logo_url ? 22 : 10, gap: 4 }}>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }} numberOfLines={1}>{vendor.vendor_shop_name}</Text>
+        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }} numberOfLines={1}>{vendor.vendor_shop_name || 'Unknown Store'}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Ionicons name={cfg.icon} size={10} color={cfg.color} />
           <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }} numberOfLines={1}>{vendor.vendor_category ?? 'Store'}</Text>

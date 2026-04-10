@@ -9,6 +9,7 @@ import {
   updateMessageController,
   deleteMessageController,
   markDeliveredController,
+  markAsReadController,
   resetUnreadController,
   presenceController,
   getPresenceController,
@@ -67,6 +68,10 @@ export async function chatRoutes(app: FastifyInstance) {
   // Mark as delivered/read
   app.patch('/conversations/:id/mark-delivered', authOptions, async (request, reply) => {
     return markDeliveredController(request, reply)
+  })
+
+  app.patch('/conversations/:id/mark-read', authOptions, async (request, reply) => {
+    return markAsReadController(request, reply)
   })
 
   app.patch('/conversations/:id/reset-unread', authOptions, async (request, reply) => {

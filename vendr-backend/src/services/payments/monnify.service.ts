@@ -1,5 +1,7 @@
 // ── Monnify Integration Service ─────────────────────────────────────────────────────
 
+import { createHmac } from 'crypto';
+
 const BASE_URL = process.env.MONNIFY_BASE_URL || 'https://sandbox.monnify.com';
 const API_KEY = process.env.MONNIFY_API_KEY || '';
 const SECRET_KEY = process.env.MONNIFY_SECRET_KEY || '';
@@ -52,13 +54,14 @@ interface DisbursementRequest {
   narration: string;
   destinationBankCode: string;
   destinationAccountNumber: string;
+  destinationAccountName: string;
   currency: string;
   sourceAccountNumber?: string;
 }
 
 interface DisbursementResponse {
   reference: string;
-  status: 'SUCCESS' | 'PENDING' | 'FAILED';
+  status: 'SUCCESS' | 'SUCCESSFUL' | 'PENDING' | 'FAILED';
   amount: number;
 }
 
@@ -67,12 +70,23 @@ interface Bank {
   code: string;
 }
 
-// ── Auth token cache ─────────────────────────────────────────────────────────────
+// ── Auth token cache ───────────────────────────────────────────────────────────────
 let cachedToken: string | null = null;
-let tokenExpiry = 0;
+let tokenExpiry: number | null = null;
+
+// ── Webhook signature verification ───────────────────────────────────────────────────
+/**
+ * Verify Monnify webhook signature
+ * Monnify sends a SHA-512 HMAC hash in the 'monnify-signature' header
+ * Hash = SHA-512(clientSecret + requestBody)
+ */
+export function verifyWebhookSignature(payload: string, signature: string, clientSecret: string): boolean {
+  const computedHash = createHmac('sha512', clientSecret).update(payload).digest('hex');
+  return computedHash === signature;
+}
 
 async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiry) return cachedToken;
+  if (cachedToken && tokenExpiry && Date.now() < tokenExpiry) return cachedToken;
 
   const credentials = Buffer.from(`${API_KEY}:${SECRET_KEY}`).toString('base64');
   const res = await fetch(`${BASE_URL}/api/v1/auth/login`, {
@@ -110,6 +124,8 @@ async function monnifyFetch<T = any>(path: string, method = 'GET', body?: object
   });
 
   const json = await res.json() as MonnifyResponse<T>;
+  console.log('[Monnify] Response:', { path, status: res.status, requestSuccessful: json.requestSuccessful, responseMessage: json.responseMessage });
+
   if (!json.requestSuccessful) {
     throw new Error(json.responseMessage || 'Monnify request failed');
   }
@@ -136,6 +152,7 @@ export interface DisburseParams {
   amount: number;
   bankCode: string;
   accountNumber: string;
+  accountName: string;
   narration: string;
   reference: string;
 }
@@ -143,6 +160,12 @@ export interface DisburseParams {
 export interface DisburseResult {
   reference: string;
   status: 'success' | 'pending' | 'failed';
+  amount: number;
+}
+
+export interface DisbursementStatusResult {
+  transactionReference: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED';
   amount: number;
 }
 
@@ -199,20 +222,7 @@ export const monnifyService = {
    * Disburse funds to a bank account
    */
   async disburseTo(params: DisburseParams): Promise<DisburseResult> {
-    const { amount, bankCode, accountNumber, narration, reference } = params;
-    
-    const isSandbox = BASE_URL.includes('sandbox');
-
-    // In sandbox, Monnify requires OTP for disbursements which can't be automated
-    // We simulate a successful disbursement so the full flow can be tested
-    if (isSandbox) {
-      console.log('[Monnify] Sandbox disbursement simulated for:', { amount, accountNumber, reference });
-      return {
-        reference,
-        status: 'success',
-        amount,
-      };
-    }
+    const { amount, bankCode, accountNumber, accountName, narration, reference } = params;
 
     const body: DisbursementRequest = {
       amount,
@@ -220,6 +230,7 @@ export const monnifyService = {
       narration,
       destinationBankCode: bankCode,
       destinationAccountNumber: accountNumber,
+      destinationAccountName: accountName,
       currency: 'NGN',
       sourceAccountNumber: process.env.MONNIFY_WALLET_ACCOUNT || '',
     };
@@ -230,12 +241,52 @@ export const monnifyService = {
       body,
     );
 
+    console.log('[Monnify] Disbursement response data:', data);
+
+    const status = 'pending';
+
     return {
       reference: data.reference,
-      status: data.status === 'SUCCESS' ? 'success' 
-            : data.status === 'PENDING' ? 'pending' 
-            : 'failed',
+      status,
       amount: data.amount,
+    };
+  },
+
+  /**
+   * PATCHED: checkDisbursementStatus
+   *
+   * The transfer-status endpoint returns a different response shape —
+   * requestSuccessful is undefined, so monnifyFetch throws even on HTTP 200.
+   * This method now calls the endpoint directly and handles the raw response.
+   */
+  async checkDisbursementStatus(reference: string): Promise<DisbursementStatusResult> {
+    const token = await getAccessToken();
+    const res = await fetch(
+      `${BASE_URL}/api/v2/disbursements/transfer-status/${encodeURIComponent(reference)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const json = await res.json() as any;
+
+    console.log('[Monnify] checkDisbursementStatus raw response:', JSON.stringify(json, null, 2));
+
+    if (!res.ok) {
+      throw new Error(json?.responseMessage || `Monnify status check failed: ${res.status}`);
+    }
+
+    // Monnify wraps in responseBody for this endpoint
+    const data = json?.responseBody || json;
+
+    return {
+      transactionReference: data.transactionReference || data.reference || reference,
+      status: data.transactionStatus || data.status || 'PENDING',
+      amount: data.amount || 0,
     };
   },
 
@@ -259,11 +310,36 @@ export const monnifyService = {
   },
 
   /**
-   * Get list of supported banks
+   * PATCHED: getBanks
+   *
+   * Bug: monnifyFetch() already unwraps responseBody before returning.
+   * The old code then tried to do response?.responseBody?.banks on the
+   * already-unwrapped value, which was always undefined → returned [].
+   *
+   * Fix: treat the returned value as the banks array directly.
+   * Monnify's GET /api/v1/banks returns responseBody as an array of banks.
    */
   async getBanks(): Promise<Bank[]> {
-    const data: Bank[] = await monnifyFetch('/api/v1/sdk/transactions/banks');
-    return data;
+    const response = await monnifyFetch('/api/v1/banks');
+    // monnifyFetch returns responseBody directly.
+    // responseBody for /api/v1/banks is an array of bank objects.
+    const banks: any[] = Array.isArray(response) ? response : (response?.banks ?? []);
+    return banks.map((bank: any) => ({
+      name: bank.name || bank.bankName,
+      code: bank.code || bank.bankCode,
+    }));
+  },
+
+  /**
+   * Validate account number and get account name
+   */
+  async validateAccount(accountNumber: string, bankCode: string): Promise<{ accountName: string }> {
+    console.log('[Monnify] Validating account:', { accountNumber, bankCode });
+    const response = await monnifyFetch(`/api/v1/disbursements/account/validate?accountNumber=${accountNumber}&bankCode=${bankCode}`, 'GET');
+
+    return {
+      accountName: response?.responseBody?.accountName || response?.accountName || '',
+    };
   },
 
   /**
@@ -271,35 +347,40 @@ export const monnifyService = {
    */
   processWebhookEvent(event: any): { type: string; userId?: string; amount?: number; reference?: string } {
     // Monnify webhook structure
-    // This is a simplified version - you'll need to adjust based on actual webhook payload
     const eventType = event.eventType || event.event;
-    
-    if (eventType === 'ACCOUNT_CREDITED') {
+    const eventData = event.eventData || {};
+
+    console.log('[Monnify] Processing webhook:', { eventType, paymentStatus: eventData.paymentStatus });
+
+    if (eventType === 'SUCCESSFUL_TRANSACTION' && eventData.paymentStatus === 'PAID') {
       // Extract account reference to find user
-      const accountReference = event.eventData?.accountReference || event.accountReference;
-      const amount = event.eventData?.amount || event.amount;
-      
+      const accountReference = eventData.product?.reference || eventData.accountReference;
+      const transactionReference = eventData.transactionReference || eventData.paymentReference;
+      const amount = eventData.amountPaid || eventData.amount;
+
+      console.log('[Monnify] Transaction details:', { accountReference, transactionReference, amount });
+
       // Parse user ID from account reference (format: vendr_userId_timestamp)
       const userIdMatch = accountReference?.match(/vendr_([^_]+)_/);
       const userId = userIdMatch ? userIdMatch[1] : undefined;
-      
+
+      console.log('[Monnify] Extracted userId:', userId);
+
       return {
         type: 'wallet_funded',
         userId,
         amount,
-        reference: accountReference,
+        reference: transactionReference || accountReference, // Use unique transaction reference
       };
     }
-    
+
     if (eventType === 'DISBURSEMENT') {
       return {
         type: 'transfer_complete',
-        reference: event.eventData?.reference,
+        reference: eventData.reference,
       };
     }
-    
-    return {
-      type: 'unknown',
-    };
+
+    return { type: 'unknown' };
   },
 };

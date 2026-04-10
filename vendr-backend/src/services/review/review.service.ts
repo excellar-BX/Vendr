@@ -85,6 +85,45 @@ export async function getReviewsByUser(userId: string): Promise<(ReviewOutput & 
 }
 
 /**
+ * Get reviews received for a vendor's store (by vendor_user_id)
+ * This is for vendors to see reviews customers left for their store
+ */
+export async function getReviewsReceivedForVendor(vendorUserId: string): Promise<ReviewOutput[]> {
+  const reviews = await prisma.review.findMany({
+    where: {
+      vendor: {
+        user_id: vendorUserId
+      }
+    },
+    orderBy: { created_at: 'desc' },
+    include: {
+      user: {
+        select: {
+          full_name: true,
+          avatar_url: true,
+        },
+      },
+      vendor: {
+        select: {
+          shop_name: true
+        }
+      }
+    }
+  })
+
+  return reviews.map(r => ({
+    id: r.id,
+    vendor_id: r.vendor_id,
+    user_id: r.user_id,
+    rating: r.rating,
+    comment: r.comment,
+    created_at: r.created_at.toISOString(),
+    reviewer_name: r.user?.full_name ?? 'Anonymous',
+    reviewer_avatar: r.user?.avatar_url ?? null,
+  }))
+}
+
+/**
  * Create a review (one per user per vendor)
  */
 export async function createReview(userId: string, input: CreateReviewInput): Promise<ReviewOutput> {

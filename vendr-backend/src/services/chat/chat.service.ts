@@ -9,6 +9,9 @@ import type {
   EnrichedConversation,
 } from './chat.schema'
 
+// Socket.io import for real-time events
+const { getSocketIO } = require('../../lib/socket')
+
 /**
  * Check if user is trying to chat with themselves
  */
@@ -466,7 +469,7 @@ export async function sendMessage(
     }
   })
 
-  return {
+  const messageOutput = {
     id: message.id,
     conversation_id: message.conversation_id,
     sender_id: message.sender_id,
@@ -478,12 +481,30 @@ export async function sendMessage(
     edited: message.edited,
     created_at: message.created_at.toISOString(),
   }
+
+  // Emit Socket.io event for new message (non-blocking)
+  try {
+    const io = getSocketIO()
+
+    if (io) {
+      // Emit to the conversation room
+      io.to(`conversation:${conversationId}`).emit('new_message', messageOutput)
+
+      // Also emit to the other party's personal room
+      const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
+      io.to(`user:${otherUserId}`).emit('new_message', messageOutput)
+    }
+  } catch (socketError) {
+    console.error('[Chat] Socket.io emit error:', socketError)
+    // Don't throw - message was successfully saved to DB
+  }
+
+  return messageOutput
 }
 
 /**
- * Mark messages as delivered/read
- * When a user opens a conversation, all messages from the other party
- * should be marked as both delivered AND read (standard messaging behavior)
+ * Mark messages as delivered
+ * When a user opens a conversation, mark messages from the other party as delivered
  */
 export async function markMessagesDelivered(
   conversationId: string,
@@ -501,16 +522,111 @@ export async function markMessagesDelivered(
     throw { statusCode: 403, message: 'Not authorized' }
   }
 
-  // Mark all messages from other party as delivered AND read
-  // This ensures both parties get read receipts when conversation is opened
+  // Mark all messages from other party as delivered (not read yet)
   await prisma.message.updateMany({
     where: {
       conversation_id: conversationId,
       sender_id: { not: userId },
       delivered: false,
     },
-    data: { delivered: true, is_read: true }
+    data: { delivered: true }
   })
+
+  // Emit Socket.io event for messages delivered (non-blocking)
+  try {
+    const io = getSocketIO()
+
+    if (io) {
+      // Emit to the conversation room
+      io.to(`conversation:${conversationId}`).emit('message_delivered', {
+        conversationId,
+        userId
+      })
+
+      // Also emit to the other party's personal room (the sender of the messages)
+      const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
+      io.to(`user:${otherUserId}`).emit('message_delivered', {
+        conversationId,
+        userId
+      })
+    }
+  } catch (socketError) {
+    console.error('[Chat] Socket.io emit error for message_delivered:', socketError)
+    // Don't throw - messages were successfully marked as delivered in DB
+  }
+}
+
+/**
+ * Mark messages as read
+ * When a user reads messages, mark them as read and emit Socket.io event to sender
+ */
+export async function markMessagesAsRead(
+  conversationId: string,
+  userId: string
+): Promise<{ messageIds: string[]; senderId: string }> {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    include: { vendor: { select: { user_id: true } } }
+  })
+
+  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
+
+  const isVendor = conv.vendor.user_id === userId
+  if (!isVendor && conv.buyer_id !== userId) {
+    throw { statusCode: 403, message: 'Not authorized' }
+  }
+
+  // Get the other party's user ID
+  const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
+
+  // Mark all unread messages from other party as read
+  const updatedMessages = await prisma.message.updateMany({
+    where: {
+      conversation_id: conversationId,
+      sender_id: otherUserId,
+      is_read: false,
+    },
+    data: { is_read: true }
+  })
+
+  // Get the IDs of messages that were marked as read
+  const messages = await prisma.message.findMany({
+    where: {
+      conversation_id: conversationId,
+      sender_id: otherUserId,
+      is_read: true,
+    },
+    select: { id: true },
+  })
+
+  // Emit Socket.io event for messages read (non-blocking)
+  try {
+    const io = getSocketIO()
+
+    if (io) {
+      // Emit to the conversation room
+      io.to(`conversation:${conversationId}`).emit('messages_read', {
+        conversationId,
+        messageIds: messages.map(m => m.id),
+        readBy: userId
+      })
+
+      // Also emit to the other party's personal room
+      io.to(`user:${otherUserId}`).emit('messages_read', {
+        conversationId,
+        messageIds: messages.map(m => m.id),
+        readBy: userId
+      })
+    }
+  } catch (socketError) {
+    console.error('[Chat] Socket.io emit error for messages_read:', socketError)
+    // Don't throw - messages were successfully marked as read in DB
+  }
+
+  return {
+    messageIds: messages.map(m => m.id),
+    senderId: otherUserId,
+  }
 }
 
 /**
@@ -559,6 +675,22 @@ export async function updateUserPresence(
       last_seen: new Date(),
     },
   })
+
+  // Emit Socket.io event for user presence update (non-blocking)
+  try {
+    const io = getSocketIO()
+
+    if (io) {
+      // Emit to all connected clients (they will filter for relevant user IDs)
+      io.emit('user_presence', {
+        userId,
+        isOnline
+      })
+    }
+  } catch (socketError) {
+    console.error('[Chat] Socket.io emit error for user_presence:', socketError)
+    // Don't throw - presence was successfully updated in DB
+  }
 }
 
 /**
@@ -742,7 +874,7 @@ export async function payPaymentRequest(
   // Process the payment via wallet service
   await WalletService.processPayment(
     buyerId,
-    pr.vendor_id,
+    pr.vendor.user_id,
     pr.amount,
     pr.id,
     pr.description ?? undefined

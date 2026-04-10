@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify'
 import { authenticate } from '../../middlewares/authenticate'
-import { 
-  getWalletBalance, 
-  processPayment 
+import {
+  getWalletBalance,
+  processPayment
 } from './wallet.service'
 import {
   getWalletBalance as getWalletBalanceController,
@@ -10,12 +10,15 @@ import {
   getVirtualAccount,
   getTransactions,
   getBanks,
+  validateAccount,
   withdrawToBank,
   addBankAccount,
   getBankAccounts,
   deleteBankAccount,
   setDefaultBankAccount,
   processWebhook,
+  processDisbursementWebhook,
+  pollPendingWithdrawals,
 } from './wallet.controller'
 
 export async function walletRoutes(app: FastifyInstance) {
@@ -34,6 +37,9 @@ export async function walletRoutes(app: FastifyInstance) {
   // Get list of supported banks
   app.get('/wallet/banks', { preHandler: authenticate }, getBanks)
 
+  // Validate bank account
+  app.get('/wallet/validate-account', { preHandler: authenticate }, validateAccount)
+
   // Withdraw to bank
   app.post('/wallet/withdraw', { preHandler: authenticate }, withdrawToBank)
 
@@ -51,6 +57,19 @@ export async function walletRoutes(app: FastifyInstance) {
 
   // Process Monnify webhook (no auth required)
   app.post('/wallet/webhook/monnify', processWebhook)
+
+  // Process Monnify disbursement webhook (no auth required)
+  app.post('/wallet/webhook/monnify/disbursement', processDisbursementWebhook)
+
+  // Poll pending withdrawals (for manual testing or cron job)
+  app.post('/wallet/poll-withdrawals', { preHandler: authenticate }, async (request, reply) => {
+    try {
+      const result = await pollPendingWithdrawals();
+      return reply.status(200).send({ success: true, data: result });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  })
 
   // Process payment (transfer funds between wallets)
   app.post('/wallet/pay', { preHandler: authenticate }, async (request, reply) => {

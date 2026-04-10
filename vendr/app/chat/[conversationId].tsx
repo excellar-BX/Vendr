@@ -19,6 +19,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { connectSocket, disconnectSocket, joinConversation, leaveConversation } from '../../lib/socket';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -366,15 +367,53 @@ export default function ChatScreen() {
       const { data: msgs } = await chatApi.getMessages(cid, { limit: 100 });
       setMessages(msgs ?? []);
 
-      // Mark messages as delivered/read and reset unread count
+      // Mark messages as delivered and reset unread count
       await chatApi.markDelivered(cid);
       const unreadField = actingAsVendor ? 'vendor_unread' : 'buyer_unread';
       await chatApi.resetUnread(cid, unreadField);
 
+      // Mark messages as read (this will emit Socket.io event to sender)
+      await chatApi.markAsRead(cid);
+
       // Set presence
       await chatApi.setPresence(true);
 
-      // Get other user's presence
+      // Connect to Socket.io and join conversation room
+      const socket = await connectSocket();
+      if (socket && cid) {
+        joinConversation(cid);
+
+        // Listen for messages_read event (when other party reads our messages)
+        socket.on('messages_read', (data: { conversationId: string; messageIds: string[]; readBy: string }) => {
+          if (data.conversationId === cid) {
+            setMessages(prev => prev.map(msg =>
+              data.messageIds.includes(msg.id) ? { ...msg, is_read: true } : msg
+            ));
+          }
+        });
+
+        // Listen for user_presence event (real-time online status)
+        socket.on('user_presence', (data: { userId: string; isOnline: boolean }) => {
+          const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
+          if (data.userId === otherUserId) {
+            setOtherOnline(data.isOnline);
+          }
+        });
+
+        // Listen for new_message event (real-time message delivery)
+        socket.on('new_message', (newMsg: Message) => {
+          if (newMsg.conversation_id === cid) {
+            setMessages(prev => {
+              // Check if message already exists (avoid duplicates)
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+          }
+        });
+      }
+
+      // Get other user's presence (initial fetch)
       const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
       if (otherUserId) {
         try {
@@ -402,12 +441,18 @@ export default function ChatScreen() {
 
   useEffect(() => {
     return () => {
+      // Leave conversation room and disconnect socket
+      if (convId) {
+        leaveConversation(convId);
+      }
+      disconnectSocket();
+
       // Set user as offline when leaving chat
       if (user?.id) {
-        chatApi.setPresence(false).catch(console.error); 
+        chatApi.setPresence(false).catch(console.error);
       }
     };
-  }, []);
+  }, [convId]);
 
   // ─── Image Upload ──────────────────────────────────────────────────────────
   const pickFromGallery = async () => {

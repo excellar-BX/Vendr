@@ -1,6 +1,11 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../../lib/prisma';
-import { monnifyService } from '../payments/monnify.service';
+import { monnifyService, verifyWebhookSignature } from '../payments/monnify.service';
+
+// Withdrawal fee configuration
+const MONNIFY_FEE = 35; // Monnify transfer fee
+const VENDR_FEE = 25; // Vendr platform fee
+const TOTAL_FEE = MONNIFY_FEE + VENDR_FEE;
 
 /**
  * Get user's wallet balance
@@ -142,7 +147,7 @@ export async function getVirtualAccount(request: FastifyRequest, reply: FastifyR
     return reply.status(500).send({ success: false, message: err.message });
   }
 }
-
+ 
 /**
  * Get user's transaction history
  */
@@ -175,12 +180,41 @@ export async function getBanks(request: FastifyRequest, reply: FastifyReply) {
     const banks = await monnifyService.getBanks();
     return reply.status(200).send({ success: true, data: banks });
   } catch (err: any) {
+    console.error('[Wallet] Get banks error:', err);
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
+export async function validateAccount(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { account_number, bank_code } = request.query as {
+      account_number: string;
+      bank_code: string;
+    };
+
+    if (!account_number || !bank_code) {
+      return reply.status(400).send({ success: false, message: 'Account number and bank code are required' });
+    }
+
+    const result = await monnifyService.validateAccount(account_number, bank_code);
+    return reply.status(200).send({ success: true, data: result });
+  } catch (err: any) {
+    console.error('[Wallet] Validate account error:', err);
     return reply.status(500).send({ success: false, message: err.message });
   }
 }
 
 /**
- * Withdraw funds to bank account
+ * PATCHED: withdrawToBank
+ *
+ * Key fix: Monnify disbursement call is now OUTSIDE the Prisma transaction.
+ *
+ * Flow:
+ *   1. Validate amount + balance
+ *   2. DB tx: freeze funds + create pending transaction record
+ *   3. Call Monnify (outside DB tx)
+ *   4a. If Monnify throws: DB tx to unfreeze + mark failed — clean rollback
+ *   4b. If Monnify succeeds: update transaction metadata — webhook will finalize
  */
 export async function withdrawToBank(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -192,26 +226,14 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
       account_name: string;
     };
 
-    // Validate amount
+    // ── 1. Validate inputs ────────────────────────────────────────────────────
     if (!amount || amount <= 0) {
       return reply.status(400).send({ success: false, message: 'Invalid amount' });
     }
-
-    // Get wallet balance
-    const wallet = await prisma.wallet.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!wallet) {
-      return reply.status(404).send({ success: false, message: 'Wallet not found' });
+    if (!bank_code || !account_number || !account_name) {
+      return reply.status(400).send({ success: false, message: 'bank_code, account_number and account_name are required' });
     }
 
-    // Check sufficient balance
-    if (wallet.available_balance < amount) {
-      return reply.status(400).send({ success: false, message: 'Insufficient wallet balance' });
-    }
-
-    // Enforce free tier withdrawal limit (₦50,000)
     const FREE_TIER_LIMIT = 50000;
     if (amount > FREE_TIER_LIMIT) {
       return reply.status(400).send({
@@ -220,51 +242,125 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
       });
     }
 
+    // ── 2. Calculate total deduction (amount + fees) ───────────────────────────
+    const totalDeduction = amount + TOTAL_FEE;
+
+    // ── 3. Check wallet balance ───────────────────────────────────────────────
+    const wallet = await prisma.wallet.findUnique({ where: { user_id: userId } });
+
+    if (!wallet) {
+      return reply.status(404).send({ success: false, message: 'Wallet not found' });
+    }
+    if (wallet.available_balance < totalDeduction) {
+      return reply.status(400).send({ success: false, message: 'Insufficient wallet balance' });
+    }
+
     const reference = `vendr_wd_${userId}_${Date.now()}`;
 
-    // Start transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Deduct from wallet
-      await tx.wallet.update({
-        where: { user_id: userId },
-        data: { available_balance: { decrement: amount } },
-      });
+    // ── 4. DB transaction: freeze total funds + create pending record ──────────
+    // NOTE: No external calls inside here. Pure DB work only.
+    let transaction: { id: string } | null = null;
 
-      // 2. Create transaction record
-      await tx.transaction.create({
-        data: {
-          user_id: userId,
-          type: 'withdrawal',
-          amount,
-          status: 'pending',
-          reference,
-          description: `Withdrawal to ${account_name} (${account_number})`,
-          provider: 'monnify',
-        },
-      });
+    try {
+      transaction = await prisma.$transaction(async (tx) => {
+        await tx.wallet.update({
+          where: { user_id: userId },
+          data: {
+            available_balance: { decrement: totalDeduction },
+            frozen_balance: { increment: totalDeduction },
+          },
+        });
 
-      // 3. Disburse via Monnify
+        return tx.transaction.create({
+          data: {
+            user_id: userId,
+            type: 'withdrawal',
+            amount: totalDeduction, // Store total deduction (amount + fees)
+            status: 'pending',
+            reference,
+            description: `Withdrawal to ${account_name} (${account_number})`,
+            provider: 'monnify',
+            metadata: {
+              withdrawalAmount: amount, // Actual amount sent to user's bank
+              monnifyFee: MONNIFY_FEE,
+              vendrFee: VENDR_FEE,
+              totalFee: TOTAL_FEE,
+            } as any,
+          },
+        });
+      });
+    } catch (dbErr: any) {
+      console.error('[Wallet] DB freeze error:', dbErr);
+      return reply.status(500).send({ success: false, message: 'Failed to initiate withdrawal. Please try again.' });
+    }
+
+    // ── 5. Call Monnify outside the DB transaction (only send withdrawal amount) ────
+    try {
       const disbursement = await monnifyService.disburseTo({
-        amount,
+        amount, // Only send the withdrawal amount, not the total deduction
         bankCode: bank_code,
         accountNumber: account_number,
+        accountName: account_name,
         narration: `Vendr withdrawal - ${account_name}`,
         reference,
       });
 
-      // 4. Update transaction status
-      await tx.transaction.update({
-        where: { reference },
-        data: { status: disbursement.status },
+      // Update transaction metadata with Monnify's disbursement reference
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          metadata: {
+            ...(transaction.metadata as any),
+            disbursementReference: disbursement.reference,
+            disbursementStatus: disbursement.status,
+          },
+        },
       });
 
-      return disbursement;
-    });
+      return reply.status(200).send({
+        success: true,
+        message: 'Withdrawal initiated successfully. Funds will arrive shortly.',
+        data: {
+          reference,
+          amount, // Return the withdrawal amount (not total deduction)
+          fee: TOTAL_FEE,
+          totalDeduction,
+          status: 'pending',
+        },
+      });
 
-    return reply.status(200).send({
-      success: true,
-      data: result,
-    });
+    } catch (monnifyErr: any) {
+      // ── 5a. Monnify failed — unfreeze withdrawal amount (fee stays consumed) ────
+      console.error('[Wallet] Monnify disbursement error:', monnifyErr);
+
+      await prisma.$transaction(async (tx) => {
+        // Only return the withdrawal amount to available balance, keep fee consumed
+        await tx.wallet.update({
+          where: { user_id: userId },
+          data: {
+            available_balance: { increment: amount },
+            frozen_balance: { decrement: totalDeduction }, // Unfreeze total deduction
+          },
+        });
+        await tx.transaction.update({
+          where: { id: transaction!.id },
+          data: {
+            status: 'failed',
+            metadata: {
+              ...(transaction.metadata as any),
+              error: monnifyErr.message,
+              failedAt: new Date().toISOString(),
+            },
+          },
+        });
+      });
+
+      return reply.status(502).send({
+        success: false,
+        message: 'Transfer could not be initiated. Your withdrawal amount has been returned to your wallet (fee consumed).',
+      });
+    }
+
   } catch (err: any) {
     console.error('[Wallet] Withdrawal error:', err);
     return reply.status(500).send({ success: false, message: err.message });
@@ -374,19 +470,29 @@ export async function setDefaultBankAccount(request: FastifyRequest, reply: Fast
 export async function processWebhook(request: FastifyRequest, reply: FastifyReply) {
   try {
     const event = request.body;
-    
+
     console.log('[Wallet] Webhook received:', event);
-    
+
     const processed = monnifyService.processWebhookEvent(event);
-    
+
     if (processed.type === 'wallet_funded' && processed.userId && processed.amount) {
+      // Check if transaction with this reference already exists (idempotency)
+      const existingTx = await prisma.transaction.findUnique({
+        where: { reference: processed.reference },
+      });
+
+      if (existingTx) {
+        console.log('[Wallet] Transaction already processed, skipping:', processed.reference);
+        return reply.status(200).send({ success: true, message: 'Transaction already processed' });
+      }
+
       // Credit user's wallet
       await prisma.$transaction(async (tx) => {
         // Get or create wallet
         let wallet = await tx.wallet.findUnique({
           where: { user_id: processed.userId! },
         });
-        
+
         if (!wallet) {
           wallet = await tx.wallet.create({
             data: {
@@ -397,13 +503,13 @@ export async function processWebhook(request: FastifyRequest, reply: FastifyRepl
             },
           });
         }
-        
+
         // Credit wallet
         await tx.wallet.update({
           where: { user_id: processed.userId! },
           data: { available_balance: { increment: processed.amount! } },
         });
-        
+
         // Create transaction record
         await tx.transaction.create({
           data: {
@@ -417,13 +523,232 @@ export async function processWebhook(request: FastifyRequest, reply: FastifyRepl
           },
         });
       });
-      
+
       console.log('[Wallet] Wallet credited:', processed);
     }
-    
+
     return reply.status(200).send({ success: true });
   } catch (err: any) {
     console.error('[Wallet] Webhook error:', err);
     return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
+/**
+ * Process Monnify disbursement webhook
+ */
+export async function processDisbursementWebhook(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const event = request.body as any;
+    const signature = request.headers['monnify-signature'] as string;
+
+    console.log('[Wallet] Disbursement webhook received:', event);
+
+    // Verify webhook signature for security (in production)
+    if (process.env.NODE_ENV === 'production' && signature) {
+      const clientSecret = process.env.MONNIFY_SECRET_KEY || '';
+      const payload = JSON.stringify(event);
+      const isValid = verifyWebhookSignature(payload, signature, clientSecret);
+
+      if (!isValid) {
+        console.log('[Wallet] Invalid webhook signature');
+        return reply.status(401).send({ success: false, message: 'Invalid signature' });
+      }
+    }
+
+    const eventType = event.eventType || event.event;
+    const eventData = event.eventData || {};
+
+    // Handle Monnify disbursement events
+    if (
+      eventType === 'SUCCESSFUL_DISBURSEMENT' ||
+      eventType === 'FAILED_DISBURSEMENT' ||
+      eventType === 'REVERSED_DISBURSEMENT'
+    ) {
+      const reference = eventData.reference || eventData.transactionReference;
+      const status = eventData.status || eventData.transactionStatus;
+
+      if (!reference) {
+        console.log('[Wallet] Disbursement webhook missing reference');
+        return reply.status(400).send({ success: false, message: 'Missing reference' });
+      }
+
+      // Find transaction by reference
+      const transaction = await prisma.transaction.findUnique({
+        where: { reference },
+      });
+
+      if (!transaction) {
+        console.log('[Wallet] Transaction not found for reference:', reference);
+        return reply.status(404).send({ success: false, message: 'Transaction not found' });
+      }
+
+      // Only process withdrawal transactions
+      if (transaction.type !== 'withdrawal') {
+        console.log('[Wallet] Not a withdrawal transaction, skipping');
+        return reply.status(200).send({ success: true });
+      }
+
+      // Check if already processed (idempotency)
+      if (transaction.status === 'completed' || transaction.status === 'failed') {
+        console.log('[Wallet] Transaction already finalized, skipping:', reference);
+        return reply.status(200).send({ success: true, message: 'Transaction already finalized' });
+      }
+
+      // Process based on status
+      await prisma.$transaction(async (tx: any) => {
+        const withdrawalAmount = (transaction.metadata as any)?.withdrawalAmount || transaction.amount;
+
+        if (status === 'SUCCESS' || status === 'SUCCESSFUL') {
+          // Transaction successful - release frozen funds (total deduction already deducted from available)
+          await tx.transaction.update({
+            where: { id: transaction.id },
+            data: {
+              status: 'completed',
+              metadata: {
+                ...(transaction.metadata as any || {}),
+                disbursementStatus: status,
+                completedAt: new Date().toISOString(),
+              } as any,
+            },
+          });
+          await tx.wallet.update({
+            where: { user_id: transaction.user_id },
+            data: { frozen_balance: { decrement: transaction.amount } }, // Unfreeze total deduction
+          });
+          console.log('[Wallet] Withdrawal completed:', reference);
+        } else if (status === 'FAILED' || status === 'REVERSED') {
+          // Transaction failed or reversed - return withdrawal amount only (fee stays consumed)
+          await tx.transaction.update({
+            where: { id: transaction.id },
+            data: {
+              status: 'failed',
+              metadata: {
+                ...transaction.metadata,
+                disbursementStatus: status,
+                failedAt: new Date().toISOString(),
+              },
+            },
+          });
+          await tx.wallet.update({
+            where: { user_id: transaction.user_id },
+            data: {
+              available_balance: { increment: withdrawalAmount }, // Only return withdrawal amount
+              frozen_balance: { decrement: transaction.amount }, // Unfreeze total deduction
+            },
+          });
+          console.log('[Wallet] Withdrawal failed/reversed, withdrawal amount restored (fee consumed):', reference);
+        } else {
+          // Still pending - just update metadata
+          await tx.transaction.update({
+            where: { id: transaction.id },
+            data: {
+              metadata: {
+                ...transaction.metadata,
+                disbursementStatus: status,
+              },
+            },
+          });
+          console.log('[Wallet] Withdrawal still pending:', reference);
+        }
+      });
+
+      return reply.status(200).send({ success: true });
+    }
+
+    return reply.status(200).send({ success: true, message: 'Event processed' });
+  } catch (err: any) {
+    console.error('[Wallet] Disbursement webhook error:', err);
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
+/**
+ * Poll pending withdrawals (safety net for missed webhooks)
+ * Call this periodically (e.g., every 10 minutes) to check on transactions
+ * that have been pending for more than 5 minutes
+ */
+export async function pollPendingWithdrawals() {
+  try {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    const pendingTransactions = await prisma.transaction.findMany({
+      where: {
+        type: 'withdrawal',
+        status: 'pending',
+        created_at: { lt: fiveMinutesAgo },
+      },
+    });
+
+    console.log(`[Wallet] Polling ${pendingTransactions.length} pending withdrawals`);
+
+    for (const transaction of pendingTransactions) {
+      try {
+        const disbursementRef = (transaction.metadata as any)?.disbursementReference;
+
+        if (!disbursementRef) {
+          console.log('[Wallet] No disbursement reference for transaction:', transaction.reference);
+          continue;
+        }
+
+        const status = await monnifyService.checkDisbursementStatus(disbursementRef);
+
+        console.log('[Wallet] Disbursement status for', transaction.reference, ':', status.status);
+
+        if (status.status === 'SUCCESS') {
+          await prisma.$transaction(async (tx: any) => {
+            await tx.transaction.update({
+              where: { id: transaction.id },
+              data: {
+                status: 'success',
+                metadata: {
+                  ...(transaction.metadata as any || {}),
+                  disbursementStatus: status.status,
+                  completedAt: new Date().toISOString(),
+                  pollingUpdate: true,
+                } as any,
+              },
+            });
+            await tx.wallet.update({
+              where: { user_id: transaction.user_id },
+              data: { frozen_balance: { decrement: transaction.amount } }, // Unfreeze total deduction
+            });
+          });
+          console.log('[Wallet] Withdrawal completed via polling:', transaction.reference);
+        } else if (status.status === 'FAILED' || status.status === 'REVERSED' || status.status === 'EXPIRED') {
+          const withdrawalAmount = (transaction.metadata as any)?.withdrawalAmount || transaction.amount;
+
+          await prisma.$transaction(async (tx: any) => {
+            await tx.transaction.update({
+              where: { id: transaction.id },
+              data: {
+                status: 'failed',
+                metadata: {
+                  ...transaction.metadata,
+                  disbursementStatus: status.status,
+                  failedAt: new Date().toISOString(),
+                  pollingUpdate: true,
+                },
+              },
+            });
+            await tx.wallet.update({
+              where: { user_id: transaction.user_id },
+              data: {
+                available_balance: { increment: withdrawalAmount }, // Only return withdrawal amount
+                frozen_balance: { decrement: transaction.amount }, // Unfreeze total deduction
+              },
+            });
+          });
+          console.log('[Wallet] Withdrawal failed via polling:', transaction.reference);
+        }
+      } catch (err) {
+        console.error('[Wallet] Error polling transaction:', transaction.reference, err);
+      }
+    }
+
+    return { polled: pendingTransactions.length };
+  } catch (err) {
+    console.error('[Wallet] Poll pending withdrawals error:', err);
+    throw err;
   }
 }

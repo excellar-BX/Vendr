@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store'
 import { useAuthStore } from '../stores/authStore'
 
 
-const BASE_URL = 'http://10.177.228.15:3000/api' //process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api"
+const BASE_URL = 'https://unfoisted-annabel-virilocally.ngrok-free.dev/api' //process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api"
 console.log(BASE_URL)
 // ─── Token storage ────────────────────────────────────────────────────────────
 
@@ -332,6 +332,12 @@ export const walletApi = {
   getBanks: () => apiFetch('/wallet/banks'),
 
   /**
+   * Validate bank account
+   */
+  validateAccount: (params: { account_number: string; bank_code: string }) =>
+    apiFetch('/wallet/validate-account', { query: params }),
+
+  /**
    * Withdraw to bank
    */
   withdraw: (params: {
@@ -440,6 +446,12 @@ export const chatApi = {
     apiFetch(`/conversations/${conversationId}/mark-delivered`, { method: 'PATCH' }),
 
   /**
+   * Mark messages as read
+   */
+  markAsRead: (conversationId: string) =>
+    apiFetch(`/conversations/${conversationId}/mark-read`, { method: 'PATCH' }),
+
+  /**
    * Reset unread count
    */
   resetUnread: (conversationId: string, field: 'buyer_unread' | 'vendor_unread') =>
@@ -538,6 +550,11 @@ export const reviewApi = {
    * Get reviews written by current user (with vendor details)
    */
   getMyReviews: () => apiFetch('/reviews/me'),
+
+  /**
+   * Get reviews received for vendor's store (for vendors)
+   */
+  getReviewsReceived: () => apiFetch('/reviews/received'),
 
   /**
    * Create a review

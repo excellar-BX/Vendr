@@ -7,8 +7,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
+import { walletApi } from '../lib/api';
 
 type TxType = 'credit' | 'debit' | 'withdrawal' | 'payment_sent' | 'payment_received' | 'refund';
 type TxStatus = 'pending' | 'success' | 'failed';
@@ -68,7 +68,7 @@ type ListItem =
   | { kind: 'tx'; data: Transaction };
 
 export default function WalletTransactionsScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,27 +78,22 @@ export default function WalletTransactionsScreen() {
   const [stats, setStats] = useState({ totalIn: 0, totalOut: 0, count: 0 });
 
   const fetchAll = async () => {
-    if (!session?.user?.id) return;
-    const { data } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-
-    const txs = data ?? [];
+    if (!user?.id) return;
+    const res = await walletApi.getTransactions();
+    const txs = res.data ?? [];
     setTransactions(txs);
 
     // Compute stats
     const totalIn = txs.filter(t => ['credit', 'payment_received', 'refund'].includes(t.type) && t.status === 'success')
-      .reduce((s, t) => s + t.amount, 0);
+      .reduce((s: number, t: Transaction) => s + t.amount, 0);
     const totalOut = txs.filter(t => ['debit', 'withdrawal', 'payment_sent'].includes(t.type) && t.status === 'success')
-      .reduce((s, t) => s + t.amount, 0);
+      .reduce((s: number, t: Transaction) => s + t.amount, 0);
     setStats({ totalIn, totalOut, count: txs.length });
     setLoading(false);
     setRefreshing(false);
   };
 
-  useFocusEffect(useCallback(() => { fetchAll(); }, [session]));
+  useFocusEffect(useCallback(() => { fetchAll(); }, [user]));
 
   const filtered = transactions.filter(tx => {
     const matchesFilter = filter === 'all' || tx.type === filter;

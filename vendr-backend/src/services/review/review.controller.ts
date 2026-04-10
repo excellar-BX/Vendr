@@ -27,6 +27,16 @@ export async function getMyReviewsController(request: FastifyRequest, reply: Fas
   }
 }
 
+export async function getReviewsReceivedController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const userId = request.user.id
+    const reviews = await ReviewService.getReviewsReceivedForVendor(userId)
+    return reply.status(200).send({ success: true, data: reviews })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
+  }
+}
+
 export async function createReviewController(request: FastifyRequest, reply: FastifyReply) {
   const parsed = createReviewSchema.safeParse(request.body)
   if (!parsed.success) {

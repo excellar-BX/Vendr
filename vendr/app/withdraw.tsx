@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import {
   View, ScrollView, TouchableOpacity, ActivityIndicator,
-  TextInput as RNTextInput, Modal,
+  TextInput as RNTextInput, Switch, Modal,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
-import { withdrawToBank, getWalletBalance } from '../lib/walletService';
+import { walletApi } from '../lib/api';
+
+// Withdrawal fee configuration
+const WITHDRAWAL_FEE = 60; // ₦60 total fee (₦35 Monnify + ₦25 Vendr)
 
 interface BankAccount {
   id: string;
@@ -25,11 +27,12 @@ function formatAmount(n: number) {
 }
 
 export default function WithdrawScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
+  const params = useLocalSearchParams();
+  const [amount, setAmount] = useState('');
   const [balance, setBalance] = useState(0);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [selectedBank, setSelectedBank] = useState<BankAccount | null>(null);
-  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [withdrawing, setWithdrawing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -38,48 +41,56 @@ export default function WithdrawScreen() {
 
   useEffect(() => {
     const fetch = async () => {
-      if (!session?.user?.id) return;
-      const [bal, banksRes] = await Promise.all([
-        getWalletBalance(session.user.id),
-        supabase.from('bank_accounts').select('*').eq('user_id', session.user.id).order('is_default', { ascending: false }),
+      if (!user?.id) return;
+      const [balRes, banksRes] = await Promise.all([
+        walletApi.getBalance(),
+        walletApi.getBankAccounts(),
       ]);
-      setBalance(bal);
-      if (banksRes.data) {
+      setBalance(balRes?.data?.available_balance ?? 0);
+      if (banksRes?.data) {
         setBankAccounts(banksRes.data);
-        const def = banksRes.data.find(b => b.is_default) ?? banksRes.data[0];
+        const def = banksRes.data.find((b: BankAccount) => b.is_default) ?? banksRes.data[0];
         if (def) setSelectedBank(def);
       }
       setLoading(false);
     };
     fetch();
-  }, [session]);
+  }, [user]);
+
+  // Handle selected account from add-bank-account screen
+  useEffect(() => {
+    if (params.selectedAccountId && bankAccounts.length > 0) {
+      const selected = bankAccounts.find((b: BankAccount) => b.id === params.selectedAccountId);
+      if (selected) setSelectedBank(selected);
+    }
+  }, [params.selectedAccountId, bankAccounts]);
 
   const parsedAmount = parseFloat(amount.replace(/[^0-9.]/g, '')) || 0;
+  const totalDeduction = parsedAmount + WITHDRAWAL_FEE;
 
   const validate = () => {
     if (!selectedBank) { setError('Please add a bank account first'); return false; }
     if (parsedAmount < 100) { setError('Minimum withdrawal is ₦100'); return false; }
-    if (parsedAmount > balance) { setError('Insufficient balance'); return false; }
+    if (totalDeduction > balance) { setError('Insufficient balance (including fee)'); return false; }
     setError('');
     return true;
   };
 
   const handleWithdraw = async () => {
-    if (!session?.user?.id || !selectedBank) return;
+    if (!user?.id || !selectedBank) return;
     setWithdrawing(true);
     try {
-      await withdrawToBank({
-        userId: session.user.id,
+      await walletApi.withdraw({
         amount: parsedAmount,
-        bankCode: selectedBank.bank_code,
-        accountNumber: selectedBank.account_number,
-        accountName: selectedBank.account_name,
+        bank_code: selectedBank.bank_code,
+        account_number: selectedBank.account_number,
+        account_name: selectedBank.account_name,
       });
       setShowConfirm(false);
       setShowSuccess(true);
       // Refresh balance
-      const newBal = await getWalletBalance(session.user.id);
-      setBalance(newBal);
+      const balRes = await walletApi.getBalance();
+      setBalance(balRes?.data?.available_balance ?? 0);
     } catch (e: any) {
       setShowConfirm(false);
       setError(e.message);
@@ -168,14 +179,14 @@ export default function WithdrawScreen() {
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#9A8570' }}>WITHDRAW TO</Text>
-            <TouchableOpacity onPress={() => router.push('/add-bank-account')}>
+            <TouchableOpacity onPress={() => router.push({ pathname: '/add-bank-account', params: { mode: 'select' } })}>
               <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>+ Add Account</Text>
             </TouchableOpacity>
           </View>
 
           {bankAccounts.length === 0 ? (
             <TouchableOpacity
-              onPress={() => router.push('/add-bank-account')}
+              onPress={() => router.push({ pathname: '/add-bank-account', params: { mode: 'select' } })}
               style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderStyle: 'dashed', borderRadius: 18, padding: 20, alignItems: 'center', gap: 8 }}
             >
               <Ionicons name="card-outline" size={28} color="#3D3026" />
@@ -237,8 +248,17 @@ export default function WithdrawScreen() {
 
             <View style={{ backgroundColor: '#0F0A06', borderRadius: 16, borderWidth: 1, borderColor: '#2A1F14', padding: 16, gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Amount</Text>
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Withdrawal amount</Text>
                 <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }}>{formatAmount(parsedAmount)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Vendr withdrawal fee</Text>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#F5A623' }}>{formatAmount(WITHDRAWAL_FEE)}</Text>
+              </View>
+              <View style={{ height: 1, backgroundColor: '#1A1208' }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Total deducted</Text>
+                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>{formatAmount(totalDeduction)}</Text>
               </View>
               <View style={{ height: 1, backgroundColor: '#1A1208' }} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>

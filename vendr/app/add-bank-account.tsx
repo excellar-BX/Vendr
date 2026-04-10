@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
   View, ScrollView, TouchableOpacity, ActivityIndicator,
-  TextInput as RNTextInput, Switch,
+  TextInput as RNTextInput, Modal, Switch,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
+import { walletApi } from '../lib/api';
 
 interface Bank { name: string; code: string; }
 
@@ -21,7 +21,10 @@ interface SavedAccount {
 }
 
 export default function AddBankAccountScreen() {
-  const { session } = useAuthStore();
+  const { user } = useAuthStore();
+  const params = useLocalSearchParams();
+  const isSelectionMode = params.mode === 'select';
+
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
@@ -36,24 +39,19 @@ export default function AddBankAccountScreen() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
 
     // Fetch saved accounts
-    supabase.from('bank_accounts').select('*').eq('user_id', session.user.id)
-      .order('is_default', { ascending: false })
-      .then(({ data }) => setSavedAccounts(data ?? []));
+    walletApi.getBankAccounts().then(res => {
+      if (res?.data) setSavedAccounts(res.data);
+    }).catch(console.error);
 
-    // Fetch live bank list from Paystack via edge function
+    // Fetch bank list from backend
     const fetchBanks = async () => {
       setLoadingBanks(true);
       try {
-        const { data: { session: s } } = await supabase.auth.getSession();
-        const res = await fetch(
-          'https://mbdojwirmtknzpwccthb.supabase.co/functions/v1/list-banks',
-          { headers: { Authorization: `Bearer ${s?.access_token}` } }
-        );
-        const json = await res.json();
-        if (json.banks) setBanks(json.banks);
+        const res = await walletApi.getBanks();
+        if (res?.data) setBanks(res.data);
       } catch (e) {
         console.log('Failed to fetch banks:', e);
       } finally {
@@ -61,7 +59,7 @@ export default function AddBankAccountScreen() {
       }
     };
     fetchBanks();
-  }, [session]);
+  }, [user]);
 
   // Auto-resolve account name when number is 10 digits and bank selected
   useEffect(() => {
@@ -70,58 +68,59 @@ export default function AddBankAccountScreen() {
     } else {
       setResolvedName('');
     }
-  }, [accountNumber, selectedBank]);
+  }, [accountNumber, selectedBank]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resolveAccountName = async () => {
     setResolving(true);
     setResolvedName('');
     setError('');
     try {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      const res = await fetch(
-        'https://mbdojwirmtknzpwccthb.supabase.co/functions/v1/resolve-account',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s?.access_token}` },
-          body: JSON.stringify({ account_number: accountNumber, bank_code: selectedBank!.code }),
-        }
-      );
-      const json = await res.json();
-      if (json.account_name) {
-        setResolvedName(json.account_name);
+      if (!selectedBank) return;
+      const res = await walletApi.validateAccount({
+        account_number: accountNumber,
+        bank_code: selectedBank.code,
+      });
+      if (res?.data?.accountName) {
+        setResolvedName(res.data.accountName);
       } else {
-        setError(json.error ?? 'Could not verify account. Check the number and bank.');
+        setError('Unable to verify account at the moment. This may be due to issues with our payment provider. Please try again later.');
       }
     } catch (e: any) {
-      setError('Could not verify account number: ' + e.message);
+      setError('Unable to verify account at the moment. This may be due to issues with our payment provider. Please try again later.');
     } finally {
       setResolving(false);
     }
   };
 
   const handleSave = async () => {
-    if (!session?.user?.id || !selectedBank || !resolvedName) return;
+    if (!user?.id || !selectedBank) return;
     setSaving(true);
     try {
-      if (isDefault) {
-        await supabase.from('bank_accounts').update({ is_default: false }).eq('user_id', session.user.id);
-      }
-
-      const { data, error: saveErr } = await supabase.from('bank_accounts').insert({
-        user_id: session.user.id,
+      const res = await walletApi.addBankAccount({
         account_number: accountNumber,
         account_name: resolvedName,
         bank_name: selectedBank.name,
         bank_code: selectedBank.code,
-        is_default: isDefault || savedAccounts.length === 0,
-      }).select().single();
+      });
 
-      if (saveErr) throw saveErr;
-      setSavedAccounts(prev => [data, ...prev]);
+      // If setting as default, mark it as default
+      if (isDefault && res?.data?.id) {
+        await walletApi.setDefaultBankAccount(res.data.id);
+      }
+
+      // Refresh saved accounts
+      const banksRes = await walletApi.getBankAccounts();
+      if (banksRes?.data) setSavedAccounts(banksRes.data);
+
       setAccountNumber('');
       setSelectedBank(null);
       setResolvedName('');
       setIsDefault(false);
+
+      // If in selection mode, go back to withdraw screen with newly added account
+      if (isSelectionMode && res?.data?.id) {
+        router.push({ pathname: '/withdraw', params: { selectedAccountId: res.data.id } });
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -130,8 +129,12 @@ export default function AddBankAccountScreen() {
   };
 
   const handleDelete = async (id: string) => {
-    setSavedAccounts(prev => prev.filter(a => a.id !== id));
-    await supabase.from('bank_accounts').delete().eq('id', id);
+    try {
+      await walletApi.deleteBankAccount(id);
+      setSavedAccounts(prev => prev.filter(a => a.id !== id));
+    } catch (e: any) {
+      console.error('Failed to delete bank account:', e);
+    }
   };
 
   const filteredBanks = banks.filter(b => b.name.toLowerCase().includes(bankSearch.toLowerCase()));
@@ -157,17 +160,21 @@ export default function AddBankAccountScreen() {
         <TouchableOpacity onPress={() => router.back()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
           <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', flex: 1 }}>Bank Accounts</Text>
+        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', flex: 1 }}>Add Bank Account</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} showsVerticalScrollIndicator={false}>
 
-        {/* Saved accounts */}
-        {savedAccounts.length > 0 && (
+        {/* Saved accounts - only show when NOT in selection mode */}
+        {!isSelectionMode && savedAccounts.length > 0 && (
           <View style={{ gap: 10 }}>
             <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Saved Accounts</Text>
             {savedAccounts.map(acc => (
-              <View key={acc.id} style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                key={acc.id}
+                activeOpacity={1}
+                style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+              >
                 <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(232,82,26,0.1)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="card-outline" size={20} color="#E8521A" />
                 </View>
@@ -187,7 +194,7 @@ export default function AddBankAccountScreen() {
                 <TouchableOpacity onPress={() => handleDelete(acc.id)} style={{ padding: 8 }}>
                   <Ionicons name="trash-outline" size={18} color="#E85555" />
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -235,10 +242,12 @@ export default function AddBankAccountScreen() {
           {error ? <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#E85555' }}>{error}</Text> : null}
 
           {/* Set as default */}
-          <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>Set as default</Text>
-            <Switch value={isDefault} onValueChange={setIsDefault} trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white" />
-          </View>
+          {!isSelectionMode && (
+            <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>Set as default</Text>
+              <Switch value={isDefault} onValueChange={setIsDefault} trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white" />
+            </View>
+          )}
 
           <TouchableOpacity
             onPress={handleSave}

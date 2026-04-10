@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import { chatApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+import { connectSocket, disconnectSocket } from '../../lib/socket';
 
 interface Conversation {
   id: string;
@@ -152,8 +153,46 @@ export default function ChatListScreen() {
 
   useFocusEffect(useCallback(() => { fetchConversations(); }, [user]));
 
-  // Real-time updates not yet implemented - refresh on focus
-  // TODO: Add WebSocket or polling for real-time updates
+  // Socket.io for real-time updates
+  useEffect(() => {
+    let mounted = true;
+    
+    const setupSocket = async () => {
+      const socket = await connectSocket();
+      if (!socket || !mounted) return;
+
+      // Listen for new messages
+      socket.on('new_message', (data: { conversation_id: string; sender_id: string }) => {
+        // Refresh conversations to get updated last message and unread count
+        fetchConversations();
+      });
+
+      // Listen for messages read (to update unread count)
+      socket.on('messages_read', (data: { conversationId: string; readBy: string }) => {
+        // Refresh conversations to get updated unread count
+        fetchConversations();
+      });
+
+      // Listen for user presence updates
+      socket.on('user_presence', (data: { userId: string; isOnline: boolean }) => {
+        // Update online status for conversations with this user
+        setConversations(prev => prev.map(conv => {
+          const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
+          if (otherUserId === data.userId) {
+            return { ...conv, other_online: data.isOnline };
+          }
+          return conv;
+        }));
+      });
+    };
+
+    setupSocket();
+
+    return () => {
+      mounted = false;
+      // Socket cleanup is handled by the global disconnectSocket
+    };
+  }, [user]);
 
   const totalUnread = conversations.reduce((sum, c) =>
     sum + (c.iAmVendor ? c.vendor_unread : c.buyer_unread), 0

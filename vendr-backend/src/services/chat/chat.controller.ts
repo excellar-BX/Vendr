@@ -166,6 +166,52 @@ export async function markDeliveredController(request: FastifyRequest, reply: Fa
   }
 }
 
+export async function markAsReadController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.user.id
+
+    const { messageIds, senderId } = await ChatService.markMessagesAsRead(id, userId)
+
+    // Emit Socket.io event to sender (non-blocking)
+    try {
+      const { getSocketIO } = require('../../lib/socket')
+      const io = getSocketIO()
+
+      if (io && messageIds.length > 0) {
+        // Emit to the sender's personal room
+        io.to(`user:${senderId}`).emit('messages_read', {
+          conversationId: id,
+          messageIds,
+          readBy: userId,
+          timestamp: new Date().toISOString(),
+        })
+
+        // Also emit to the conversation room
+        io.to(`conversation:${id}`).emit('messages_read', {
+          conversationId: id,
+          messageIds,
+          readBy: userId,
+          timestamp: new Date().toISOString(),
+        })
+      }
+    } catch (socketError) {
+      console.error('[Chat] Socket.io emit error in markAsRead:', socketError)
+    }
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Messages marked as read',
+      data: { messageIds },
+    })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({
+      success: false,
+      message: err.message
+    })
+  }
+}
+
 export async function resetUnreadController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
@@ -199,6 +245,23 @@ export async function presenceController(request: FastifyRequest, reply: Fastify
     const { is_online } = request.body as { is_online?: boolean }
 
     await ChatService.updateUserPresence(userId, is_online ?? true)
+
+    // Emit Socket.io event for real-time presence updates (non-blocking)
+    try {
+      const { getSocketIO } = require('../../lib/socket')
+      const io = getSocketIO()
+
+      if (io) {
+        // Broadcast to all connected users
+        io.emit('user_presence', {
+          userId,
+          isOnline: is_online ?? true,
+          timestamp: new Date().toISOString(),
+        })
+      }
+    } catch (socketError) {
+      console.error('[Chat] Socket.io emit error in presence:', socketError)
+    }
 
     return reply.status(200).send({
       success: true,

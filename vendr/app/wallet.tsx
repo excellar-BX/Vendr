@@ -7,9 +7,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
-import { getOrCreateVirtualAccount } from '../lib/walletService';
+import { walletApi } from '../lib/api';
 import { useVendrAlert } from '../components/ui/VendrAlert';
 
 const { width } = Dimensions.get('window');
@@ -72,7 +71,7 @@ function groupByDate(txs: Transaction[]) {
 }
 
 export default function WalletScreen() {
-  const { session, profile } = useAuthStore();
+  const { user } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
@@ -83,24 +82,27 @@ export default function WalletScreen() {
   const [creatingVA, setCreatingVA] = useState(false);
 
   const fetchAll = async () => {
-    if (!session?.user?.id) return;
-    const uid = session.user.id;
+    if (!user?.id) return;
 
-    const [walletRes, vaRes, txRes] = await Promise.all([
-      supabase.from('wallets').select('*').eq('user_id', uid).maybeSingle(),
-      supabase.from('virtual_accounts').select('*').eq('user_id', uid).maybeSingle(),
-      supabase.from('transactions').select('*').eq('user_id', uid)
-        .order('created_at', { ascending: false }).limit(50),
-    ]);
+    try {
+      const [walletRes, vaRes, txRes] = await Promise.all([
+        walletApi.getBalance(),
+        walletApi.getVirtualAccount().catch(() => null), // Don't fail if no VA
+        walletApi.getTransactions({ limit: 50 }),
+      ]);
 
-    if (walletRes.data) setWallet(walletRes.data);
-    if (vaRes.data) setVirtualAccount(vaRes.data);
-    if (txRes.data) setTransactions(txRes.data);
-    setLoading(false);
-    setRefreshing(false);
+      if (walletRes?.data) setWallet(walletRes.data);
+      if (vaRes?.data) setVirtualAccount(vaRes.data);
+      if (txRes?.data) setTransactions(txRes.data);
+    } catch (error) {
+      console.error('Error fetching wallet data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  useFocusEffect(useCallback(() => { fetchAll(); }, [session]));
+  useFocusEffect(useCallback(() => { fetchAll(); }, [user]));
 
   const [vaStatus, setVaStatus] = useState('');
   const [copied, setCopied] = useState(false);
@@ -113,15 +115,15 @@ export default function WalletScreen() {
   };
 
   const handleCreateVirtualAccount = async () => {
-    if (!session?.user?.id || !profile) return;
     setCreatingVA(true);
     setVaStatus('Setting up your account...');
     try {
-      const account = await getOrCreateVirtualAccount(session.user.id);
+      const res = await walletApi.getOrCreateVirtualAccount();
+      const account = res.data;
       setVirtualAccount({
         account_number: account.account_number,
-        account_name:   account.account_name,
-        bank_name:      account.bank_name,
+        account_name: account.account_name,
+        bank_name: account.bank_name,
       });
       setVaStatus('Done!');
     } catch (e: any) {
@@ -377,7 +379,7 @@ export default function WalletScreen() {
         <View style={{ marginHorizontal: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Recent Activity</Text>
-            {transactions.length > 5 && (
+            {transactions.length > 0 && (
               <TouchableOpacity onPress={() => router.push('/wallet-transactions')}>
                 <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>See all</Text>
               </TouchableOpacity>
@@ -393,45 +395,60 @@ export default function WalletScreen() {
               </Text>
             </View>
           ) : (
-            Object.entries(grouped).slice(0, 3).map(([date, txs]) => (
-              <View key={date} style={{ marginBottom: 16 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#6B5E50', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {date}
-                </Text>
-                <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, overflow: 'hidden' }}>
-                  {txs.map((tx, i) => {
-                    const cfg = TX_CONFIG[tx.type];
-                    const isPositive = cfg.sign === '+';
-                    return (
-                      <View key={tx.id} style={{
-                        flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12,
-                        borderBottomWidth: i < txs.length - 1 ? 1 : 0, borderColor: '#2A1F14',
-                      }}>
-                        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${cfg.color}18`, alignItems: 'center', justifyContent: 'center' }}>
-                          <Ionicons name={cfg.icon as any} size={20} color={cfg.color} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{cfg.label}</Text>
-                          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570', marginTop: 2 }} numberOfLines={1}>
-                            {tx.description}
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: isPositive ? '#2D8653' : '#E85555' }}>
-                            {cfg.sign}{formatAmount(tx.amount)}
-                          </Text>
-                          <View style={{ marginTop: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: tx.status === 'success' ? 'rgba(45,134,83,0.12)' : tx.status === 'pending' ? 'rgba(245,166,35,0.12)' : 'rgba(232,85,85,0.12)' }}>
-                            <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 10, color: tx.status === 'success' ? '#2D8653' : tx.status === 'pending' ? '#F5A623' : '#E85555', textTransform: 'uppercase' }}>
-                              {tx.status}
-                            </Text>
+            <View>
+              {(() => {
+                let count = 0;
+                const maxCount = 6;
+                const groupsToShow = [];
+
+                for (const [date, txs] of Object.entries(grouped)) {
+                  if (count >= maxCount) break;
+                  const remaining = maxCount - count;
+                  groupsToShow.push({ date, txs: txs.slice(0, remaining) });
+                  count += Math.min(remaining, txs.length);
+                }
+
+                return groupsToShow.map(({ date, txs }) => (
+                  <View key={date} style={{ marginBottom: 16 }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#6B5E50', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      {date}
+                    </Text>
+                    <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, overflow: 'hidden' }}>
+                      {txs.map((tx, i) => {
+                        const cfg = TX_CONFIG[tx.type];
+                        const isPositive = cfg.sign === '+';
+                        return (
+                          <View key={tx.id} style={{
+                            flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+                            borderBottomWidth: i < txs.length - 1 ? 1 : 0, borderColor: '#2A1F14',
+                          }}>
+                            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${cfg.color}18`, alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name={cfg.icon as any} size={20} color={cfg.color} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{cfg.label}</Text>
+                              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570', marginTop: 2 }} numberOfLines={1}>
+                                {tx.description}
+                              </Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: isPositive ? '#2D8653' : '#E85555' }}>
+                                {cfg.sign}{formatAmount(tx.amount)}
+                              </Text>
+                              <View style={{ marginTop: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: tx.status === 'success' ? 'rgba(45,134,83,0.12)' : tx.status === 'pending' ? 'rgba(245,166,35,0.12)' : 'rgba(232,85,85,0.12)' }}>
+                                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 10, color: tx.status === 'success' ? '#2D8653' : tx.status === 'pending' ? '#F5A623' : '#E85555', textTransform: 'uppercase' }}>
+                                  {tx.status}
+                                </Text>
+                              </View>
+                            </View>
                           </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ))
+                        );
+                      })}
+                    </View>
+                  </View>
+                ));
+              })()}
+            </View>
           )}
         </View>
       </ScrollView>

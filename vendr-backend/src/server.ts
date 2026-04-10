@@ -12,6 +12,7 @@ import { savedVendorRoutes } from './services/saved-vendor/saved-vendor.routes'
 import { storageRoutes } from './services/storage/storage.routes'
 import { walletRoutes } from './services/wallet/wallet.routes'
 import { orderRoutes } from './services/order/order.routes'
+import { initSocket } from './lib/socket'
 
 export async function buildServer() {
   const app = Fastify({
@@ -55,6 +56,12 @@ export async function buildServer() {
 
   // ─── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
+
+  // Initialize Socket.io after server is ready
+  app.ready((err) => {
+    if (err) throw err
+    initSocket(app.server)
+  })
 
   return app
 }
