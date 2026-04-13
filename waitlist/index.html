@@ -24,7 +24,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --orange: #E8521A;
@@ -1065,8 +1064,8 @@ select.waitlist-input option:disabled {
       <div class="feat-card reveal reveal-delay-2">
         <div class="feat-num">05 — PAYMENTS</div>
         <div class="feat-icon-wrap"><span class="icon"><i data-lucide="credit-card"></i></span></div>
-        <h3>Paystack Payments</h3>
-        <p>Nigeria's most trusted payment infrastructure. Buyers pay safely. Vendors get paid. Simple.</p>
+        <h3>Monnify Payments</h3>
+        <p>Nigeria's trusted payment infrastructure. Virtual bank accounts for vendors. Instant wallet funding. Secure withdrawals.</p>
       </div>
 
       <div class="feat-card reveal reveal-delay-3">
@@ -1113,7 +1112,7 @@ select.waitlist-input option:disabled {
           <span class="icon"><i data-lucide="message-square"></i></span><div class="step-num-label">4</div>
         </div>
         <h4>Chat. Pay. Deliver.</h4>
-        <p>In-app chat coordinates everything. Paystack handles payment. Done.</p>
+        <p>In-app chat coordinates everything. Monnify handles payment. Done.</p>
       </div>
       <div class="step reveal reveal-delay-2">
         <div class="step-circle">
@@ -1189,24 +1188,24 @@ select.waitlist-input option:disabled {
         <p>We're building in public. Here's where we are.</p>
 
         <div class="progress-item">
-          <div class="progress-label"><span>Product Design</span><span>90%</span></div>
-          <div class="progress-bar"><div class="progress-fill" style="--w:90%"></div></div>
+          <div class="progress-label"><span>Product Design</span><span>95%</span></div>
+          <div class="progress-bar"><div class="progress-fill" style="--w:95%"></div></div>
         </div>
         <div class="progress-item">
-          <div class="progress-label"><span>Backend Architecture</span><span>60%</span></div>
+          <div class="progress-label"><span>Backend Architecture</span><span>85%</span></div>
+          <div class="progress-bar"><div class="progress-fill" style="--w:85%"></div></div>
+        </div>
+        <div class="progress-item">
+          <div class="progress-label"><span>Vendor Verification System</span><span>70%</span></div>
+          <div class="progress-bar"><div class="progress-fill" style="--w:70%"></div></div>
+        </div>
+        <div class="progress-item">
+          <div class="progress-label"><span>Payment Integration (Monnify)</span><span>80%</span></div>
+          <div class="progress-bar"><div class="progress-fill" style="--w:80%"></div></div>
+        </div>
+        <div class="progress-item">
+          <div class="progress-label"><span>Mobile App (React Native)</span><span>60%</span></div>
           <div class="progress-bar"><div class="progress-fill" style="--w:60%"></div></div>
-        </div>
-        <div class="progress-item">
-          <div class="progress-label"><span>Vendor Verification System</span><span>45%</span></div>
-          <div class="progress-bar"><div class="progress-fill" style="--w:45%"></div></div>
-        </div>
-        <div class="progress-item">
-          <div class="progress-label"><span>Payment Integration</span><span>30%</span></div>
-          <div class="progress-bar"><div class="progress-fill" style="--w:30%"></div></div>
-        </div>
-        <div class="progress-item">
-          <div class="progress-label"><span>Mobile App (React Native)</span><span>25%</span></div>
-          <div class="progress-bar"><div class="progress-fill" style="--w:25%"></div></div>
         </div>
 
         <div style="margin-top:32px; padding:20px; background:var(--dark); border-radius:16px; border:1px solid rgba(232,82,26,0.15);">
@@ -1298,19 +1297,20 @@ select.waitlist-input option:disabled {
 </footer>
 
 <script>
-// ── Supabase init
-const { createClient } = supabase;
-const sb = createClient(
-  'https://mbdojwirmtknzpwccthb.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1iZG9qd2lybXRrbnpwd2NjdGhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3OTkxMjEsImV4cCI6MjA4ODM3NTEyMX0.D6VG2ifvmXpCmphZf9pKazrQJaXxNofCM2NMJRk-nOM'
-);
+// ── Vendr backend API
+const API_BASE = 'https://vendr-backend-unlt.onrender.com/api'; // Update with your actual backend URL
 
 // ── Load real waitlist count on page load
 async function loadCount() {
-  const { count } = await sb.from('waitlist').select('*', { count: 'exact', head: true });
-  if (count !== null && count > 0) {
-    document.getElementById('waitlist-count').textContent = count;
-    document.getElementById('waitlist-count2').textContent = count;
+  try {
+    const response = await fetch(`${API_BASE}/waitlist/count`);
+    const data = await response.json();
+    if (data.success && data.data.count > 0) {
+      document.getElementById('waitlist-count').textContent = data.data.count;
+      document.getElementById('waitlist-count2').textContent = data.data.count;
+    }
+  } catch (error) {
+    console.error('Failed to load waitlist count:', error);
   }
 }
 loadCount();
@@ -1397,20 +1397,30 @@ async function joinWaitlist(inputId, btn) {
   btn.textContent = 'Joining...';
   btn.disabled = true;
 
-  const { error } = await sb.from('waitlist').insert({ email });
+  try {
+    const response = await fetch(`${API_BASE}/waitlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
 
-  if (error) {
-    btn.textContent = error.code === '23505' ? 'Already on the list!' : 'Something went wrong';
+    if (!data.success) {
+      btn.textContent = data.message === 'Email already on waitlist' ? 'Already on the list!' : 'Something went wrong';
+      setTimeout(() => { btn.textContent = 'Join the Waitlist →'; btn.disabled = false; }, 3000);
+      return;
+    }
+
+    btn.textContent = "You're in! ✓";
+    btn.classList.add('success');
+    document.getElementById(inputId).value = '';
+    await loadCount();
+    showToast("You're in! We'll hit you up when Vendr launches.");
+    setTimeout(() => { btn.textContent = 'Join the Waitlist →'; btn.classList.remove('success'); btn.disabled = false; }, 4000);
+  } catch (error) {
+    btn.textContent = 'Something went wrong';
     setTimeout(() => { btn.textContent = 'Join the Waitlist →'; btn.disabled = false; }, 3000);
-    return;
   }
-
-  btn.textContent = "You're in! ✓";
-  btn.classList.add('success');
-  document.getElementById(inputId).value = '';
-  await loadCount();
-  showToast("You're in! We'll hit you up when Vendr launches.");
-  setTimeout(() => { btn.textContent = 'Join the Waitlist →'; btn.classList.remove('success'); btn.disabled = false; }, 4000);
 }
 
 // ── Main waitlist form
@@ -1429,23 +1439,33 @@ async function joinMainWaitlist() {
   btn.textContent = 'Securing your spot...';
   btn.disabled = true;
 
-  const { error } = await sb.from('waitlist').insert({ name, email, type });
+  try {
+    const response = await fetch(`${API_BASE}/waitlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, type }),
+    });
+    const data = await response.json();
 
-  if (error) {
-    btn.textContent = error.code === '23505' ? "Already on the list!" : 'Something went wrong — try again';
-    if (error.code === '23505') showToast("You're already on the waitlist. We'll be in touch!");
+    if (!data.success) {
+      btn.textContent = data.message === 'Email already on waitlist' ? "Already on the list!" : 'Something went wrong — try again';
+      if (data.message === 'Email already on waitlist') showToast("You're already on the waitlist. We'll be in touch!");
+      setTimeout(() => { btn.textContent = 'Secure My Spot →'; btn.disabled = false; }, 3000);
+      return;
+    }
+
+    btn.textContent = "You're on the list! ✓";
+    btn.classList.add('success');
+    document.getElementById('wl-name').value = '';
+    document.getElementById('wl-email').value = '';
+    document.getElementById('wl-type').selectedIndex = 0;
+    await loadCount();
+    showToast("You're in! We'll hit you up when Vendr launches.");
+    setTimeout(() => { btn.textContent = 'Secure My Spot →'; btn.classList.remove('success'); btn.disabled = false; }, 4000);
+  } catch (error) {
+    btn.textContent = 'Something went wrong — try again';
     setTimeout(() => { btn.textContent = 'Secure My Spot →'; btn.disabled = false; }, 3000);
-    return;
   }
-
-  btn.textContent = "You're on the list! ✓";
-  btn.classList.add('success');
-  document.getElementById('wl-name').value = '';
-  document.getElementById('wl-email').value = '';
-  document.getElementById('wl-type').selectedIndex = 0;
-  await loadCount();
-  showToast("You're in! We'll hit you up when Vendr launches.");
-  setTimeout(() => { btn.textContent = 'Secure My Spot →'; btn.classList.remove('success'); btn.disabled = false; }, 4000);
 }
 
 // ── Marquee duplicate for seamless loop

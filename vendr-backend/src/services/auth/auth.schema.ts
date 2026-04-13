@@ -2,13 +2,13 @@ import { z } from 'zod'
 
 export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters').trim(),
   full_name: z.string().min(1, 'Full name is required'),
 })
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
+  password: z.string().min(1, 'Password is required').trim(),
 })
 
 export const googleAuthSchema = z.object({
@@ -33,7 +33,7 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Token is required'),
-  new_password: z.string().min(8, 'Password must be at least 8 characters'),
+  new_password: z.string().min(8, 'Password must be at least 8 characters').trim(),
 })
 
 export type RegisterInput = z.infer<typeof registerSchema>
