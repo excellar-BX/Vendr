@@ -62,7 +62,6 @@ export async function createVendor(userId: string, input: CreateVendorInput) {
           is_vendor: true,
           is_buyer: true,
           notifications_enabled: true,
-          location_enabled: true,
           created_at: true,
         }
       }

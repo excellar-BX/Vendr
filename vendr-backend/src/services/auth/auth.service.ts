@@ -310,7 +310,6 @@ export async function getMe(userId: string) {
       is_verified: true,
       is_deleted: true,
       notifications_enabled: true,
-      location_enabled: true,
       created_at: true,
       vendors: {
         where: { is_active: true },
@@ -325,6 +324,6 @@ export async function getMe(userId: string) {
 
   return {
     ...user,
-    vendor: user.vendors[0] || null, // Return first vendor as vendor for compatibility
+    vendor: (user as any).vendors[0] || null, // Return first vendor as vendor for compatibility
   }
 }

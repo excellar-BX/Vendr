@@ -23,14 +23,14 @@ export async function buildServer() {
   // Allow empty JSON bodies for POST/PUT/PATCH requests
   // This handles cases where clients send Content-Type: application/json with no body
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-    if (!body || body.trim() === '') {
+    if (!body || (typeof body === 'string' && body.trim() === '')) {
       done(null, {})
       return
     }
     try {
-      done(null, JSON.parse(body))
+      done(null, JSON.parse(typeof body === 'string' ? body : body.toString()))
     } catch (err) {
-      done(err)
+      done(err as Error | null)
     }
   })
 

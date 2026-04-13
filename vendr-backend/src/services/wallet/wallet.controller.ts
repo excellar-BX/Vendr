@@ -154,8 +154,8 @@ export async function getVirtualAccount(request: FastifyRequest, reply: FastifyR
 export async function getTransactions(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = request.user.id;
-    const { limit = 50, offset = 0 } = request.query as { limit?: string; offset?: string };
-    
+    const { limit = '50', offset = '0' } = request.query as { limit?: string; offset?: string };
+
     const transactions = await prisma.transaction.findMany({
       where: { user_id: userId },
       orderBy: { created_at: 'desc' },
@@ -285,7 +285,7 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
 
     // ── 4. DB transaction: freeze total funds + create pending record ──────────
     // NOTE: No external calls inside here. Pure DB work only.
-    let transaction: { id: string } | null = null;
+    let transaction: { id: string; metadata?: any } | null = null;
 
     try {
       transaction = await prisma.$transaction(async (tx) => {
@@ -336,7 +336,7 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
         where: { id: transaction.id },
         data: {
           metadata: {
-            ...(transaction.metadata as any),
+            ...((transaction as any).metadata || {}),
             disbursementReference: disbursement.reference,
             disbursementStatus: disbursement.status,
           },
@@ -373,7 +373,7 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
           data: {
             status: 'failed',
             metadata: {
-              ...(transaction.metadata as any),
+              ...((transaction as any).metadata || {}),
               error: monnifyErr.message,
               failedAt: new Date().toISOString(),
             },
@@ -690,10 +690,10 @@ export async function processDisbursementWebhook(request: FastifyRequest, reply:
             data: {
               status: 'failed',
               metadata: {
-                ...transaction.metadata,
+                ...(transaction.metadata as any || {}),
                 disbursementStatus: status,
                 failedAt: new Date().toISOString(),
-              },
+              } as any,
             },
           });
           await tx.wallet.update({
@@ -710,7 +710,7 @@ export async function processDisbursementWebhook(request: FastifyRequest, reply:
             where: { id: transaction.id },
             data: {
               metadata: {
-                ...transaction.metadata,
+                ...(transaction.metadata as any),
                 disbursementStatus: status,
               },
             },
@@ -781,7 +781,7 @@ export async function pollPendingWithdrawals() {
             });
           });
           console.log('[Wallet] Withdrawal completed via polling:', transaction.reference);
-        } else if (status.status === 'FAILED' || status.status === 'REVERSED' || status.status === 'EXPIRED') {
+        } else if ((status.status as any) === 'FAILED' || (status.status as any) === 'REVERSED' || (status.status as any) === 'EXPIRED') {
           const withdrawalAmount = (transaction.metadata as any)?.withdrawalAmount || transaction.amount;
 
           await prisma.$transaction(async (tx: any) => {
@@ -790,7 +790,7 @@ export async function pollPendingWithdrawals() {
               data: {
                 status: 'failed',
                 metadata: {
-                  ...transaction.metadata,
+                  ...(transaction.metadata as any),
                   disbursementStatus: status.status,
                   failedAt: new Date().toISOString(),
                   pollingUpdate: true,

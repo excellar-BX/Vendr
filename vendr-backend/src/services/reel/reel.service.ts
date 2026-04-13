@@ -286,7 +286,7 @@ export async function createReel(
   userId: string,
   input: CreateReInput
 ): Promise<ReelOutput> {
-  const vendor = await prisma.vendor.findUnique({
+  const vendor = await prisma.vendor.findFirst({
     where: { user_id: userId }
   })
 
@@ -370,7 +370,7 @@ export async function deleteReel(
     throw { statusCode: 404, message: 'Reel not found' }
   }
 
-  const vendor = await prisma.vendor.findUnique({
+  const vendor = await prisma.vendor.findFirst({
     where: { user_id: userId }
   })
   if (!vendor || vendor.id !== reel.vendor_id) {

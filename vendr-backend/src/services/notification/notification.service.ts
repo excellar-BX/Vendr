@@ -1,5 +1,5 @@
-import { prisma } from '../../lib/prisma';
-import { env } from '../../lib/env';
+import prisma from '../../lib/prisma';
+import { env } from '../../config/env';
 
 // Expo Push API
 const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
@@ -71,9 +71,9 @@ async function sendPushNotification(
     });
 
     const result = await response.json();
-    
-    if (result.errors) {
-      console.error('[Notification] Expo push error:', result.errors);
+
+    if ((result as any).errors) {
+      console.error('[Notification] Expo push error:', (result as any).errors);
     } else {
       console.log('[Notification] Push sent successfully to user:', userId);
     }
@@ -120,7 +120,7 @@ export async function getUserNotifications(userId: string, limit = 50) {
     take: limit,
   });
 
-  return notifications.map(n => ({
+  return notifications.map((n: any) => ({
     id: n.id,
     user_id: n.user_id,
     type: n.type,
