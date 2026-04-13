@@ -4,7 +4,7 @@ import {
   View, ScrollView, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
@@ -40,7 +40,7 @@ export default function HomeScreen() {
   const userId = user?.id;
 
   // Fetch unread notification count
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!userId) return;
     const fetchUnread = async () => {
       try {
@@ -51,7 +51,7 @@ export default function HomeScreen() {
       }
     };
     fetchUnread();
-  }, [userId]);
+  }, [userId]));
 
   const fetchVendors = useCallback(async () => {
     try {

@@ -60,7 +60,6 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0 });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [locationEnabled, setLocationEnabled] = useState(true);
 
   const userId = user?.id;
   const email = user?.email ?? '';
@@ -79,11 +78,9 @@ export default function ProfileScreen() {
           name: data.full_name,
           avatar_url: data.avatar_url,
           notifications_enabled: data.notifications_enabled,
-          location_enabled: data.location_enabled,
           is_vendor: !!data.vendor,
         });
         setNotificationsEnabled(data.notifications_enabled);
-        setLocationEnabled(data.location_enabled);
         setStats({
           orders: data.stats.orders,
           reviews: data.stats.reviews,
@@ -302,18 +299,6 @@ export default function ProfileScreen() {
               <Switch
                 value={notificationsEnabled}
                 onValueChange={v => { setNotificationsEnabled(v); savePreference('notifications_enabled', v); }}
-                trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white"
-              />
-            }
-          />
-          <Divider />
-          <MenuItem
-            icon="location-outline" label="Location Access" sublabel="Used to find nearby vendors"
-            iconBg="#2E2214" iconColor="#2D8653"
-            rightElement={
-              <Switch
-                value={locationEnabled}
-                onValueChange={v => { setLocationEnabled(v); savePreference('location_enabled', v); }}
                 trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white"
               />
             }

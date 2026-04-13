@@ -38,7 +38,7 @@ function formatAmount(n: number) {
   return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string) { 
   return new Date(iso).toLocaleDateString('en-NG', {
     day: 'numeric', month: 'short', year: 'numeric',
   });

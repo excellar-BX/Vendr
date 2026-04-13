@@ -29,7 +29,7 @@ interface ReviewReceived {
 }
 
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
-  return (
+  return (  
     <View style={{ flexDirection: 'row', gap: 3 }}>
       {[1, 2, 3, 4, 5].map(i => (
         <Ionicons key={i} name={i <= rating ? 'star' : 'star-outline'} size={size} color="#F5A623" />

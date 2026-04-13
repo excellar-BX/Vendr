@@ -68,10 +68,10 @@ function RootLayout() {
           // No token = first-time user (or logged out). Will show welcome.
         } else {
           try {
-            console.log("🔍 Validating token with /auth/me...");
+            console.log("🔍 Validating token with /users/me...");
         console.log('[Auth] Access token:', token)
 
-            const response = await apiFetch('/auth/me');
+            const response = await apiFetch('/users/me');
             const userData = response.data;
             console.log("✅ Token valid, user:", userData.email);
 
@@ -199,7 +199,6 @@ function RootLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="vendor/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="confirm" />
         <Stack.Screen name="become-vendor" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="orders" options={{ animation: 'slide_from_right' }} />

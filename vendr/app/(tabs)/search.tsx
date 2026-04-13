@@ -15,6 +15,7 @@ import { calcDistance, formatPrice, formatDistance } from '../../lib/utils';
 import { Vendor, Product, Category } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
+import { ReelCard } from '../../components/reel/ReelCard';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -49,10 +50,10 @@ interface Suggestion {
   rating?: number;
 }
 
-// Unified result from backend - vendor or product
+// Unified result from backend - vendor, product, or reel
 type SearchResultItem = {
   id: string;
-  type: 'vendor' | 'product';
+  type: 'vendor' | 'product' | 'reel';
   vendor_id: string;
   vendor_shop_name: string | null;
   vendor_category: string | null;
@@ -77,6 +78,9 @@ type SearchResultItem = {
   description: string | null;
   price: number | null;
   image_url: string | null;
+  video_url: string | null;
+  thumbnail_url: string | null;
+  product_id: string | null;
   score: number;
   distance: number | null;
 }
@@ -227,8 +231,11 @@ export default function SearchScreen() {
   const [hasSearched, setHasSearched] = useState(false);
   const [vendors, setVendors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [reels, setReels] = useState<any[]>([]);
   const [nearbyVendors, setNearbyVendors] = useState<any[]>([]);
   const [farVendors, setFarVendors] = useState<any[]>([]);
+  const [nearbyReels, setNearbyReels] = useState<any[]>([]);
+  const [farReels, setFarReels] = useState<any[]>([]);
   const [showFarVendors, setShowFarVendors] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [mixedFeed, setMixedFeed] = useState<any[]>([]);
@@ -245,11 +252,11 @@ export default function SearchScreen() {
 
   // Update mixed feed when far vendors toggle changes
   useEffect(() => {
-    if (nearbyVendors.length > 0 || products.length > 0) {
-      const feed = createMixedFeed(nearbyVendors, farVendors, products);
+    if (nearbyVendors.length > 0 || products.length > 0 || reels.length > 0) {
+      const feed = createMixedFeed(nearbyVendors, farVendors, products, nearbyReels, farReels);
       setMixedFeed(feed);
     }
-  }, [showFarVendors, nearbyVendors, farVendors, products]);
+  }, [showFarVendors, nearbyVendors, farVendors, products, nearbyReels, farReels]);
 
   useFocusEffect(useCallback(() => { loadHistory(); }, [user?.id]));
 
@@ -347,20 +354,28 @@ export default function SearchScreen() {
 
       // Separate vendors by distance (5km threshold for hyper-local)
       const allVendors = data?.vendors ?? [];
-      const nearby = allVendors.filter(v => v.distance !== null && v.distance <= 5);
-      const far = allVendors.filter(v => v.distance === null || v.distance > 5);
-      
+      const nearby = allVendors.filter((v: any) => v.distance !== null && v.distance <= 5);
+      const far = allVendors.filter((v: any) => v.distance === null || v.distance > 5);
+
+      // Separate reels by distance
+      const allReels = data?.reels ?? [];
+      const nearbyR = allReels.filter((r: any) => r.distance !== null && r.distance <= 5);
+      const farR = allReels.filter((r: any) => r.distance === null || r.distance > 5);
+
       setNearbyVendors(nearby);
       setFarVendors(far);
       setVendors(allVendors);
       setProducts(data?.products ?? []);
+      setReels(allReels);
+      setNearbyReels(nearbyR);
+      setFarReels(farR);
       setShowFarVendors(false); // Reset far vendors visibility on new search
-      
+
       // Generate mixed feed for display
-      const feed = createMixedFeed(nearby, far, data?.products ?? []);
+      const feed = createMixedFeed(nearby, far, data?.products ?? [], nearbyR, farR);
       setMixedFeed(feed);
-      
-      console.log(`[Search] ${nearby.length} nearby vendors, ${far.length} far vendors, ${feed.length} total feed items`);
+
+      console.log(`[Search] ${nearby.length} nearby vendors, ${far.length} far vendors, ${nearbyR.length} nearby reels, ${farR.length} far reels, ${feed.length} total feed items`);
     } catch (error: any) {
       console.error('Search error:', error);
       vendrAlert({ title: 'Search Failed', message: error.message || 'Something went wrong', type: 'danger' });
@@ -375,8 +390,11 @@ export default function SearchScreen() {
     setHasSearched(false);
     setVendors([]);
     setProducts([]);
+    setReels([]);
     setNearbyVendors([]);
     setFarVendors([]);
+    setNearbyReels([]);
+    setFarReels([]);
     setShowFarVendors(false);
     setMixedFeed([]);
     setSuggestions([]);
@@ -384,34 +402,68 @@ export default function SearchScreen() {
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  // Function to create smart mixed feed (TikTok style)
-  const createMixedFeed = (nearbyVendors: any[], farVendors: any[], products: any[]) => {
+  // Function to create smart mixed feed with 5km distance grouping and shuffling
+  const createMixedFeed = (nearbyVendors: any[], farVendors: any[], products: any[], nearbyReels: any[], farReels: any[]) => {
     const feed: any[] = [];
-    const allVendors = [...nearbyVendors, ...(showFarVendors ? farVendors : [])];
-    const allProducts = [...products];
-    
-    // Shuffle both arrays for variety
-    const shuffledVendors = [...allVendors].sort(() => Math.random() - 0.5);
-    const shuffledProducts = [...allProducts].sort(() => Math.random() - 0.5);
-    
-    let vendorIndex = 0;
-    let productIndex = 0;
-    
-    // Create mixed pattern: 4 vendors, 2 products, repeat
-    while (vendorIndex < shuffledVendors.length || productIndex < shuffledProducts.length) {
-      // Add 4 vendors (or as many as available)
-      for (let i = 0; i < 4 && vendorIndex < shuffledVendors.length; i++) {
-        feed.push({ ...shuffledVendors[vendorIndex], itemType: 'vendor' });
-        vendorIndex++;
+
+    // Shuffle nearby items (within 5km)
+    const shuffledNearbyVendors = [...nearbyVendors].sort(() => Math.random() - 0.5);
+    const shuffledNearbyProducts = [...products].sort(() => Math.random() - 0.5);
+    const shuffledNearbyReels = [...nearbyReels].sort(() => Math.random() - 0.5);
+
+    // Shuffle far items (beyond 5km)
+    const shuffledFarVendors = [...farVendors].sort(() => Math.random() - 0.5);
+    const shuffledFarReels = [...farReels].sort(() => Math.random() - 0.5);
+
+    // Add nearby items first (shuffled mix)
+    let nearbyVendorIndex = 0;
+    let nearbyProductIndex = 0;
+    let nearbyReelIndex = 0;
+
+    while (
+      nearbyVendorIndex < shuffledNearbyVendors.length ||
+      nearbyProductIndex < shuffledNearbyProducts.length ||
+      nearbyReelIndex < shuffledNearbyReels.length
+    ) {
+      // Add 2 vendors (or as many as available)
+      for (let i = 0; i < 2 && nearbyVendorIndex < shuffledNearbyVendors.length; i++) {
+        feed.push({ ...shuffledNearbyVendors[nearbyVendorIndex], itemType: 'vendor' });
+        nearbyVendorIndex++;
       }
-      
-      // Add 2 products (or as many as available)
-      for (let i = 0; i < 2 && productIndex < shuffledProducts.length; i++) {
-        feed.push({ ...shuffledProducts[productIndex], itemType: 'product' });
-        productIndex++;
+
+      // Add 1 product (or as many as available)
+      if (nearbyProductIndex < shuffledNearbyProducts.length) {
+        feed.push({ ...shuffledNearbyProducts[nearbyProductIndex], itemType: 'product' });
+        nearbyProductIndex++;
+      }
+
+      // Add 1 reel (or as many as available)
+      if (nearbyReelIndex < shuffledNearbyReels.length) {
+        feed.push({ ...shuffledNearbyReels[nearbyReelIndex], itemType: 'reel' });
+        nearbyReelIndex++;
       }
     }
-    
+
+    // Add far items below (shuffled mix, only if showFarVendors is true)
+    if (showFarVendors) {
+      let farVendorIndex = 0;
+      let farReelIndex = 0;
+
+      while (farVendorIndex < shuffledFarVendors.length || farReelIndex < shuffledFarReels.length) {
+        // Add 2 vendors (or as many as available)
+        for (let i = 0; i < 2 && farVendorIndex < shuffledFarVendors.length; i++) {
+          feed.push({ ...shuffledFarVendors[farVendorIndex], itemType: 'vendor', isFar: true });
+          farVendorIndex++;
+        }
+
+        // Add 1 reel (or as many as available)
+        if (farReelIndex < shuffledFarReels.length) {
+          feed.push({ ...shuffledFarReels[farReelIndex], itemType: 'reel', isFar: true });
+          farReelIndex++;
+        }
+      }
+    }
+
     return feed;
   };
 
@@ -679,7 +731,7 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {hasSearched && !loading && vendors.length === 0 && products.length === 0 && (
+        {hasSearched && !loading && vendors.length === 0 && products.length === 0 && reels.length === 0 && (
           <View style={{ gap: 20 }}>
             <View style={{ alignItems: 'center', paddingVertical: 20, gap: 12 }}>
               <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
@@ -693,7 +745,7 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {hasSearched && !loading && (vendors.length > 0 || products.length > 0) && (
+        {hasSearched && !loading && (vendors.length > 0 || products.length > 0 || reels.length > 0) && (
           <View>
             <View style={{ marginTop: 8, marginBottom: 4 }}>
               <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50' }}>
@@ -710,7 +762,7 @@ export default function SearchScreen() {
                       <VendorGridCard vendor={item} />
                     </View>
                   );
-                } else {
+                } else if (item.itemType === 'product') {
                   return (
                     <View key={`product-${item.id}`} style={{ width: '100%' }}>
                       <ProductResultCard
@@ -722,27 +774,34 @@ export default function SearchScreen() {
                       />
                     </View>
                   );
+                } else if (item.itemType === 'reel') {
+                  return (
+                    <View key={`reel-${item.id}`} style={{ width: CARD_W }}>
+                      <ReelCard reel={item} cardWidth={CARD_W} />
+                    </View>
+                  );
                 }
+                return null;
               })}
             </View>
 
             {/* Far Vendors Toggle */}
-            {farVendors.length > 0 && !showFarVendors && (
+            {(farVendors.length > 0 || farReels.length > 0) && !showFarVendors && (
               <View style={{ marginTop: 20 }}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setShowFarVendors(true)}
-                  style={{ 
-                    flexDirection: 'row', 
-                    alignItems: 'center', 
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: 'transparent', 
+                    backgroundColor: 'transparent',
                     paddingVertical: 8,
                     gap: 6
                   }}
                 >
                   <Ionicons name="location-outline" size={14} color="#6B5E50" />
                   <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#6B5E50' }}>
-                    Show {farVendors.length} more beyond 5km
+                    Show {farVendors.length + farReels.length} more beyond 5km
                   </Text>
                   <Ionicons name="chevron-down-outline" size={12} color="#6B5E50" />
                 </TouchableOpacity>

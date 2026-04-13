@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
-import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 import { useAuthStore, FontSize } from '../stores/authStore';
 
 const LANGUAGES = ['English', 'Yoruba', 'Igbo', 'Hausa', 'Pidgin'];
@@ -15,26 +15,43 @@ const FONT_SIZES: { label: FontSize; desc: string }[] = [
 ];
 
 export default function AppearanceScreen() {
-  const { session, profile, setProfile, setFontSize } = useAuthStore();
+  const { user, setFontSize } = useAuthStore();
   const [saving, setSaving] = useState(false);
-  const [selectedLang, setSelectedLang] = useState(profile?.language ?? 'English');
-  const [selectedSize, setSelectedSize] = useState<FontSize>((profile?.font_size as FontSize) ?? 'Normal');
+  const [selectedLang, setSelectedLang] = useState('English');
+  const [selectedSize, setSelectedSize] = useState<FontSize>('Normal');
+
+  useEffect(() => {
+    const fetchPreferences = async () => {
+      try {
+        const response = await apiFetch('/users/me');
+        setSelectedLang(response.data.language || 'English');
+        setSelectedSize((response.data.font_size as FontSize) || 'Normal');
+      } catch (error) {
+        console.error('Failed to fetch preferences:', error);
+      }
+    };
+
+    if (user?.id) {
+      fetchPreferences();
+    }
+  }, [user?.id]);
 
   const handleSave = async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     setSaving(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ language: selectedLang, font_size: selectedSize })
-      .eq('id', session.user.id)
-      .select('*')
-      .single();
+    try {
+      const response = await apiFetch('/users/me/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ language: selectedLang, font_size: selectedSize }),
+      });
 
-    if (error) { Alert.alert('Error', error.message); setSaving(false); return; }
-    setProfile(data);
-    setFontSize(selectedSize);
-    setSaving(false);
-    Alert.alert('Saved', 'Appearance updated.', [{ text: 'OK', onPress: () => router.back() }]);
+      setFontSize(selectedSize);
+      setSaving(false);
+      Alert.alert('Saved', 'Appearance updated.', [{ text: 'OK', onPress: () => router.back() }]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update appearance');
+      setSaving(false);
+    }
   };
 
   return (
