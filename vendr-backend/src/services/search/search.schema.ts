@@ -32,7 +32,7 @@ export type SuggestionInput = z.infer<typeof suggestionSchema>
 // Search result types - unified feed
 export const unifiedSearchResultSchema = z.object({
   id: z.string(),
-  type: z.enum(['vendor', 'product']),
+  type: z.enum(['vendor', 'product', 'reel']),
   // Vendor fields (present for both, with product's vendor_name for products)
   vendor_id: z.string(),
   vendor_user_id: z.string().nullable(),
@@ -56,10 +56,14 @@ export const unifiedSearchResultSchema = z.object({
   vendor_rating: z.number().nullable(),
   vendor_review_count: z.number().nullable(),
   // Entity-specific fields
-  name: z.string().nullable(), // vendor shop_name or product name
+  name: z.string().nullable(), // vendor shop_name or product name or reel caption
   description: z.string().nullable(),
   price: z.number().nullable(),
   image_url: z.string().nullable(),
+  // Reel-specific fields
+  video_url: z.string().nullable(),
+  thumbnail_url: z.string().nullable(),
+  product_id: z.string().nullable(),
   // Metadata
   score: z.number(),
   distance: z.number().nullable().optional(),

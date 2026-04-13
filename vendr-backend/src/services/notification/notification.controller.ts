@@ -7,7 +7,7 @@ import * as NotificationService from './notification.service';
 export async function getNotificationsController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = request.user.id;
-    const limit = (request.query as { limit?: number }).limit || 50;
+    const limit = parseInt((request.query as { limit?: string }).limit || '50', 10);
 
     const notifications = await NotificationService.getUserNotifications(userId, limit);
 

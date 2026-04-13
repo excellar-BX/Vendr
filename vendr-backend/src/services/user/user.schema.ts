@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 export const updatePreferencesSchema = z.object({
   notifications_enabled: z.boolean().optional(),
-  location_enabled: z.boolean().optional()
+  language: z.string().optional(),
+  font_size: z.string().optional()
 })
 
 export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>
@@ -23,7 +24,8 @@ export const getMyProfileOutputSchema = z.object({
   phone: z.string().nullable(),
   is_verified: z.boolean(),
   notifications_enabled: z.boolean(),
-  location_enabled: z.boolean(),
+  language: z.string(),
+  font_size: z.string(),
   created_at: z.string(),
   vendor: z.object({
     id: z.string(),

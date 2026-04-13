@@ -12,7 +12,8 @@ export async function getMyProfile(userId: string): Promise<GetMyProfileOutput> 
       phone: true,
       is_verified: true,
       notifications_enabled: true,
-      location_enabled: true,
+      language: true,
+      font_size: true,
       created_at: true,
       vendors: {
         select: { id: true, shop_name: true, is_active: true },
@@ -41,7 +42,8 @@ export async function getMyProfile(userId: string): Promise<GetMyProfileOutput> 
     phone: user.phone,
     is_verified: user.is_verified,
     notifications_enabled: user.notifications_enabled,
-    location_enabled: user.location_enabled,
+    language: user.language,
+    font_size: user.font_size,
     created_at: user.created_at.toISOString(),
     vendor: user.vendors[0] || null,
     stats: {
@@ -58,12 +60,14 @@ export async function updatePreferences(userId: string, input: UpdatePreferences
     where: { id: userId },
     data: {
       ...(input.notifications_enabled !== undefined && { notifications_enabled: input.notifications_enabled }),
-      ...(input.location_enabled !== undefined && { location_enabled: input.location_enabled }),
+      ...(input.language !== undefined && { language: input.language }),
+      ...(input.font_size !== undefined && { font_size: input.font_size }),
     },
     select: {
       id: true,
       notifications_enabled: true,
-      location_enabled: true
+      language: true,
+      font_size: true
     }
   })
 
@@ -86,7 +90,6 @@ export async function updateMyProfile(userId: string, input: UpdateMyProfileInpu
       phone: true,
       is_verified: true,
       notifications_enabled: true,
-      location_enabled: true,
       created_at: true,
       vendors: {
         select: { id: true, shop_name: true, is_active: true },
@@ -104,7 +107,6 @@ export async function updateMyProfile(userId: string, input: UpdateMyProfileInpu
     phone: user.phone,
     is_verified: user.is_verified,
     notifications_enabled: user.notifications_enabled,
-    location_enabled: user.location_enabled,
     created_at: user.created_at.toISOString(),
     vendor: user.vendors[0] || null
   }

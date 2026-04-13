@@ -13,6 +13,11 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1),
   FROM_EMAIL: z.string().default('onboarding@resend.dev'),
 
+  // Brevo SMTP
+  SMTP_KEY: z.string().min(1),
+  BREVO_EMAIL: z.string().min(1),
+  BREVO_FROM_NAME: z.string().default('Vendr'),
+
   // Cloudflare R2
   R2_ACCOUNT_ID: z.string().min(1),
   R2_ACCESS_KEY: z.string().min(1),

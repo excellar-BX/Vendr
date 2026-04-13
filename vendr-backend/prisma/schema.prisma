@@ -25,7 +25,6 @@ model User {
   is_deleted                 Boolean           @default(false)
   deleted_at                 DateTime?
   notifications_enabled      Boolean           @default(true)
-  location_enabled           Boolean           @default(true)
   language                   String            @default("English")
   font_size                  String            @default("Normal")
   push_token                 String?
@@ -183,7 +182,7 @@ model PaymentRequest {
   id               String   @id @default(uuid())
   vendor_id        String
   buyer_id         String
-  conversation_id  String?  @unique
+  conversation_id  String?
   amount           Float
   description      String?
   status           String   @default("pending") // pending, paid, cancelled, expired
@@ -281,7 +280,7 @@ model Conversation {
   buyer   User    @relation("ConversationParticipants", fields: [buyer_id], references: [id], onDelete: Cascade)
   vendor  Vendor  @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
   messages Message[]
-  paymentRequest PaymentRequest? @relation(name: "ConversationPaymentRequest")
+  paymentRequests PaymentRequest[] @relation(name: "ConversationPaymentRequest")
   orders Order[]
 
   @@unique([buyer_id, vendor_id])

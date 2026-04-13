@@ -226,6 +226,32 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
       account_name: string;
     };
 
+    // ── 0. Check user is a vendor ───────────────────────────────────────────────
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { is_vendor: true, role: true },
+    });
+
+    if (!user || !user.is_vendor) {
+      return reply.status(403).send({ success: false, message: 'Only vendors can withdraw funds' });
+    }
+
+    // ── 0.5. Check for pending withdrawal transactions ───────────────────────────
+    const pendingWithdrawal = await prisma.transaction.findFirst({
+      where: {
+        user_id: userId,
+        type: 'withdrawal',
+        status: 'pending',
+      },
+    });
+
+    if (pendingWithdrawal) {
+      return reply.status(400).send({
+        success: false,
+        message: 'You have a pending withdrawal. Please wait for it to complete before initiating another withdrawal.',
+      });
+    }
+
     // ── 1. Validate inputs ────────────────────────────────────────────────────
     if (!amount || amount <= 0) {
       return reply.status(400).send({ success: false, message: 'Invalid amount' });
@@ -380,6 +406,16 @@ export async function addBankAccount(request: FastifyRequest, reply: FastifyRepl
       bank_code: string;
     };
 
+    // Check user is a vendor
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { is_vendor: true },
+    });
+
+    if (!user || !user.is_vendor) {
+      return reply.status(403).send({ success: false, message: 'Only vendors can add bank accounts for withdrawals' });
+    }
+
     const bankAccount = await prisma.bankAccount.create({
       data: {
         user_id: userId,
@@ -405,7 +441,17 @@ export async function addBankAccount(request: FastifyRequest, reply: FastifyRepl
 export async function getBankAccounts(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = request.user.id;
-    
+
+    // Check user is a vendor
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { is_vendor: true },
+    });
+
+    if (!user || !user.is_vendor) {
+      return reply.status(403).send({ success: false, message: 'Only vendors can view bank accounts' });
+    }
+
     const bankAccounts = await prisma.bankAccount.findMany({
       where: { user_id: userId },
       orderBy: { is_default: 'desc' },
@@ -427,7 +473,17 @@ export async function deleteBankAccount(request: FastifyRequest, reply: FastifyR
   try {
     const userId = request.user.id;
     const { id } = request.params as { id: string };
-    
+
+    // Check user is a vendor
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { is_vendor: true },
+    });
+
+    if (!user || !user.is_vendor) {
+      return reply.status(403).send({ success: false, message: 'Only vendors can delete bank accounts' });
+    }
+
     await prisma.bankAccount.deleteMany({
       where: { id, user_id: userId },
     });
@@ -445,7 +501,17 @@ export async function setDefaultBankAccount(request: FastifyRequest, reply: Fast
   try {
     const userId = request.user.id;
     const { id } = request.params as { id: string };
-    
+
+    // Check user is a vendor
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { is_vendor: true },
+    });
+
+    if (!user || !user.is_vendor) {
+      return reply.status(403).send({ success: false, message: 'Only vendors can set default bank accounts' });
+    }
+
     // Remove default from all accounts
     await prisma.bankAccount.updateMany({
       where: { user_id: userId },

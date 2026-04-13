@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
 import { env } from '../config/env'
 
 export interface EmailOptions {
@@ -8,46 +9,77 @@ export interface EmailOptions {
 }
 
 export class EmailService {
-  private resend: Resend | null
+  private resend: Resend | null = null
+  private brevoTransporter: nodemailer.Transporter | null = null
   private fromEmail: string
   private baseUrl: string
+  private useBrevo: boolean
 
   constructor() {
-    const apiKey = env.RESEND_API_KEY
+    const resendApiKey = env.RESEND_API_KEY
+    const brevoSmtpKey = env.SMTP_KEY
+    const brevoEmail = env.BREVO_EMAIL
 
-    if (!apiKey) {
-      console.warn('[Email] Warning: RESEND_API_KEY not configured')
+    // Prefer Brevo if configured, otherwise use Resend
+    this.useBrevo = !!(brevoSmtpKey && brevoEmail)
+
+    if (this.useBrevo) {
+      this.brevoTransporter = nodemailer.createTransport({
+        host: 'smtp-relay.brevo.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: brevoEmail,
+          pass: brevoSmtpKey,
+        },
+      })
+      this.fromEmail = env.FROM_EMAIL || brevoEmail
+      console.log('[Email] Brevo SMTP client initialized')
+    } else if (resendApiKey) {
+      this.resend = new Resend(resendApiKey)
+      this.fromEmail = env.FROM_EMAIL || 'onboarding@resend.dev'
+      console.log('[Email] Resend client initialized')
+    } else {
+      console.warn('[Email] Warning: No email service configured (RESEND_API_KEY or Brevo SMTP credentials)')
       console.warn('[Email] Email functionality will be disabled until this is configured')
       this.resend = null
-    } else {
-      this.resend = new Resend(apiKey)
-      console.log('[Email] Resend client initialized')
+      this.brevoTransporter = null
+      this.fromEmail = 'noreply@vendr.com'
     }
 
-    this.fromEmail = env.FROM_EMAIL || 'onboarding@resend.dev'
     this.baseUrl = 'https://vendr-excellar.vercel.app'
   }
 
   async sendEmail(options: EmailOptions): Promise<void> {
-    if (!this.resend) {
+    if (!this.useBrevo && !this.resend) {
       console.warn('[Email] Email service not configured. Skipping email to:', options.to)
       return
     }
 
     try {
-      const { data, error } = await this.resend.emails.send({
-        from: `Vendr <${this.fromEmail}>`,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-      })
+      if (this.useBrevo && this.brevoTransporter) {
+        const info = await this.brevoTransporter.sendMail({
+          from: `"${env.BREVO_FROM_NAME}" <${this.fromEmail}>`,
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+        })
+        console.log(`[Email] Brevo sent to ${options.to}: ${info.messageId}`)
+      } else if (this.resend) {
+        const { data, error } = await this.resend.emails.send({
+          from: `Vendr <${this.fromEmail}>`,
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+        })
 
-      if (error) {
-        console.error('[Email] Resend error:', error)
-        throw new Error(`Failed to send email: ${error.message}`)
+        if (error) {
+          console.error('[Email] Resend error:', error)
+          throw new Error(`Failed to send email: ${error.message}`)
+        }
+
+        console.log(`[Email] Resend sent to ${options.to}: ${data?.id}`)
       }
-
-      console.log(`[Email] Sent to ${options.to}: ${data?.id}`)
     } catch (error) {
       console.error('[Email] Failed to send:', error)
       throw new Error(`Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -93,7 +125,7 @@ export class EmailService {
   }
 
   isConfigured(): boolean {
-    return this.resend !== null
+    return this.useBrevo || this.resend !== null
   }
 }
 

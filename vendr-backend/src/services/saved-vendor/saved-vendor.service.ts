@@ -42,13 +42,19 @@ export async function saveVendor(userId: string, input: SavedVendorInput): Promi
     },
   })
 
+  // Get user who saved the store for notification
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { full_name: true },
+  })
+
   // Create notification for the vendor (non-blocking)
   try {
     await createNotification({
       userId: vendor.user_id,
       type: 'store_saved',
       title: 'Store saved',
-      body: 'Someone saved your store',
+      body: `${user?.full_name || 'Someone'} saved your store`,
       data: { vendor_id: vendorId },
     })
   } catch (notifError) {

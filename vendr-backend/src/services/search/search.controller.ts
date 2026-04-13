@@ -20,8 +20,10 @@ export async function searchController(request: FastifyRequest, reply: FastifyRe
       data: {
         vendors: result.vendors,
         products: result.products,
+        reels: result.reels,
         totalVendors: result.totalVendors,
         totalProducts: result.totalProducts,
+        totalReels: result.totalReels,
         extractedTerm: SearchService.extractSearchTerm(input.q),
       },
       query: input.q,
