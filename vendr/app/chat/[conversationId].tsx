@@ -1107,7 +1107,7 @@ export default function ChatScreen() {
             </View>
             <View>
               <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>Request Payment</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>from {vendorName}</Text>
+              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Send a payment request to the buyer</Text>
             </View>
           </View>
 

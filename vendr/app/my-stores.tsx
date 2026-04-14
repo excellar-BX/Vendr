@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
+import { VerificationStatusBanner } from '../components/ui/VerificationStatusBanner';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
@@ -17,10 +18,17 @@ interface Store {
   review_count: number;
 }
 
+interface VerificationStatus {
+  status: 'pending' | 'approved' | 'rejected' | null;
+  rejection_reason?: string;
+}
+
 export default function MyStoresScreen() {
   const { user } = useAuthStore();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus | null>(null);
+  const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     const fetch = async () => {
@@ -31,17 +39,41 @@ export default function MyStoresScreen() {
         // The backend returns an array of vendor objects
         const vendors = response.data;
         if (vendors && Array.isArray(vendors)) {
-          setStores(vendors.map((vendor: any) => ({
+          const mappedStores = vendors.map((vendor: any) => ({
             id: vendor.id,
             business_name: vendor.shop_name,
             category: vendor.category,
             is_active: vendor.is_active,
-            is_verified: vendor.is_verified,
+            is_verified: vendor.user?.is_vendor_verified,
             rating: vendor.rating,
             review_count: vendor.review_count,
-          })));
+          }));
+          setStores(mappedStores);
+          
+          // Set primary store for verification status
+          if (mappedStores.length > 0) {
+            setPrimaryStoreId(mappedStores[0].id);
+            
+            // Fetch verification status for the primary store
+            try {
+              const verifResponse = await apiFetch(`/verification/status/${mappedStores[0].id}`, { method: 'GET' });
+              const verifData = verifResponse.data;
+              if (verifData?.latest_request) {
+                setVerificationStatus({
+                  status: verifData.latest_request.status,
+                  rejection_reason: verifData.latest_request.rejection_reason,
+                });
+              } else {
+                setVerificationStatus({ status: null });
+              }
+            } catch (verifErr) {
+              console.error('Failed to fetch verification status:', verifErr);
+              setVerificationStatus({ status: null });
+            }
+          }
         } else {
           setStores([]);
+          setVerificationStatus({ status: null });
         }
       } catch (err) {
         console.error('Failed to fetch stores:', err);
@@ -71,6 +103,16 @@ export default function MyStoresScreen() {
           <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: 'white', fontSize: 13 }}>New Store</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Verification Status Banner */}
+      {!loading && stores.length > 0 && primaryStoreId && (
+        <VerificationStatusBanner
+          isVerified={stores[0].is_verified}
+          verificationStatus={verificationStatus?.status}
+          rejectionReason={verificationStatus?.rejection_reason}
+          vendorId={primaryStoreId}
+        />
+      )}
 
       {loading ? (
         <View className="flex-1 items-center justify-center">

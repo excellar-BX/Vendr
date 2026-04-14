@@ -1306,8 +1306,9 @@ async function loadCount() {
     const response = await fetch(`${API_BASE}/waitlist/count`);
     const data = await response.json();
     if (data.success && data.data.count > 0) {
-      document.getElementById('waitlist-count').textContent = data.data.count;
-      document.getElementById('waitlist-count2').textContent = data.data.count;
+      const count = data.data.count < 247 ? `${100 + data.data.count}+` : data.data.count;
+      document.getElementById('waitlist-count').textContent = count;
+      document.getElementById('waitlist-count2').textContent = count;
     }
   } catch (error) {
     console.error('Failed to load waitlist count:', error);

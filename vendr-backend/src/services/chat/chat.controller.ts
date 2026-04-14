@@ -33,7 +33,7 @@ export async function getConversationController(request: FastifyRequest, reply: 
       vendor: actingAsVendor ? null : {
         id: vendor.id,
         business_name: vendor.business_name,
-        is_verified: vendor.is_verified,
+        is_verified: vendor.user?.is_vendor_verified,
         user_id: vendor.user_id,
         ...(vendor.user && {
           owner_name: vendor.user.full_name,

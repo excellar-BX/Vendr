@@ -23,6 +23,7 @@ interface Transaction {
   description: string;
   reference: string;
   created_at: string;
+  updated_at: string;
   counterparty_id?: string;
 }
 
@@ -71,7 +72,7 @@ function groupByDate(txs: Transaction[]) {
 }
 
 export default function WalletScreen() {
-  const { user } = useAuthStore();
+  const { user, isVendor } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
@@ -212,7 +213,7 @@ export default function WalletScreen() {
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: '#2A1F14' }}>
               {[
                 { label: 'Fund', icon: 'add-circle-outline', onPress: () => router.push('/fund-wallet') },
-                { label: 'Withdraw', icon: 'arrow-up-circle-outline', onPress: () => router.push('/withdraw') },
+                ...(isVendor ? [{ label: 'Withdraw', icon: 'arrow-up-circle-outline', onPress: () => router.push('/withdraw') }] : []),
                 { label: 'History', icon: 'time-outline', onPress: () => router.push('/wallet-transactions') },
               ].map((action, i) => (
                 <TouchableOpacity
@@ -221,7 +222,7 @@ export default function WalletScreen() {
                   activeOpacity={0.75}
                   style={{
                     flex: 1, alignItems: 'center', paddingVertical: 16, gap: 6,
-                    borderRightWidth: i < 2 ? 1 : 0, borderColor: '#2A1F14',
+                    borderRightWidth: i < (isVendor ? 2 : 1) ? 1 : 0, borderColor: '#2A1F14',
                   }}
                 >
                   <Ionicons name={action.icon as any} size={22} color="#E8521A" />
@@ -345,35 +346,37 @@ export default function WalletScreen() {
           )}
         </View>
 
-        {/* ── Quick Actions ── */}
-        <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC', marginBottom: 12 }}>Quick Actions</Text>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <TouchableOpacity
-              onPress={() => router.push('/withdraw')}
-              activeOpacity={0.85}
-              style={{ flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
-            >
-              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(232,85,85,0.12)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="arrow-up-circle-outline" size={22} color="#E85555" />
-              </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Withdraw</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570', textAlign: 'center' }}>Send to your bank</Text>
-            </TouchableOpacity>
+        {/* ── Quick Actions (Vendor Only) ── */}
+        {user?.is_vendor && (
+          <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
+            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC', marginBottom: 12 }}>Quick Actions</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => router.push('/withdraw')}
+                activeOpacity={0.85}
+                style={{ flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(232,85,85,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="arrow-up-circle-outline" size={22} color="#E85555" />
+                </View>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Withdraw</Text>
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570', textAlign: 'center' }}>Send to your bank</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => router.push('/add-bank-account')}
-              activeOpacity={0.85}
-              style={{ flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
-            >
-              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(245,166,35,0.12)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="card-outline" size={22} color="#F5A623" />
-              </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Bank Accounts</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570', textAlign: 'center' }}>Manage withdrawal accounts</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push('/add-bank-account')}
+                activeOpacity={0.85}
+                style={{ flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(245,166,35,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="card-outline" size={22} color="#F5A623" />
+                </View>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Bank Accounts</Text>
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570', textAlign: 'center' }}>Manage withdrawal accounts</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* ── Recent Transactions ── */}
         <View style={{ marginHorizontal: 20 }}>

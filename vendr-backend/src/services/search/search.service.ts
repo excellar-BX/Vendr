@@ -142,7 +142,7 @@ function scoreReel(caption: string | null, vendorShopName: string | null, produc
  */
 function vendorBoost(vendor: any): number {
   let boost = 0;
-  if (vendor.is_verified) boost += 5;
+  if (vendor.user?.is_vendor_verified) boost += 5;
   if (vendor.rating >= 4.5) boost += 10;
   else if (vendor.rating >= 4.0) boost += 7;
   else if (vendor.rating >= 3.0) boost += 3;
@@ -269,11 +269,19 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
     // Get all active vendors, prioritized by distance
     const vendorWhere: any = { is_active: true }
     if (verified_only) {
-      vendorWhere.is_verified = true
+      vendorWhere.user = { is_vendor_verified: true }
     }
     
     const vendorsRaw = await prisma.vendor.findMany({
       where: vendorWhere,
+      include: {
+        user: {
+          select: {
+            id: true,
+            is_vendor_verified: true,
+          },
+        },
+      },
       select: {
         id: true,
         user_id: true,
@@ -362,7 +370,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
 
       // Base score on proximity and verification
       let baseScore = 20 // Base score for all vendors in special search
-      if (v.is_verified) baseScore += 10
+      if (v.user?.is_vendor_verified) baseScore += 10
       if (v.products && v.products.length > 0) baseScore += Math.min(v.products.length, 5) // Boost for having products
       
       const distMult = distanceMultiplier(vDist)
@@ -602,6 +610,14 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   const VENDOR_FETCH_MULT = 3
   const vendorsRaw = await prisma.vendor.findMany({
     where: vendorWhere,
+    include: {
+      user: {
+        select: {
+          id: true,
+          is_vendor_verified: true,
+        },
+      },
+    },
     select: {
       id: true,
       user_id: true,

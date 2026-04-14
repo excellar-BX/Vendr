@@ -5,24 +5,12 @@ export async function getVendorsController(_request: FastifyRequest, reply: Fast
   try {
     const vendors = await prisma.vendor.findMany({
       where: { is_active: true },
-      select: {
-        id: true,
-        user_id: true,
-        shop_name: true,
-        description: true,
-        category: true,
-        city: true,
-        address: true,
-        logo_url: true,
-        lat: true,
-        lng: true,
-        is_verified: true,
-        is_active: true,
-        created_at: true,
+      include: {
         user: {
           select: {
             full_name: true,
-            avatar_url: true
+            avatar_url: true,
+            is_vendor_verified: true,
           }
         }
       }
@@ -54,7 +42,7 @@ export async function getVendorsController(_request: FastifyRequest, reply: Fast
         address: v.address,
         logo_url: v.logo_url,
         is_active: v.is_active,
-        is_verified: v.is_verified,
+        is_verified: v.user?.is_vendor_verified,
         lat: v.lat ?? 0,
         lng: v.lng ?? 0,
         rating: reviews ? parseFloat(reviews.avg.toFixed(1)) : 0,

@@ -64,10 +64,10 @@ export function VendorCard({ vendor }: VendorCardProps) {
         </View>
 
         {/* Verified badge */}
-        {vendor.is_verified && (
-          <View className="absolute top-3 right-3 bg-brand-green/20 border border-brand-green/40 px-2 py-1 rounded-full flex-row items-center gap-1">
-            <Ionicons name="checkmark-circle" size={12} color="#2D8653" />
-            <Text className="text-xs text-brand-green" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+        {vendor.user?.is_vendor_verified && (
+          <View className="absolute top-3 right-3 bg-brand-green/60 border border-brand-green/40 px-2 py-1 rounded-full flex-row items-center gap-1">
+            <Ionicons name="shield-checkmark" size={12} color="#fff" />
+            <Text className="text-xs text-white" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
               Verified
             </Text>
           </View>

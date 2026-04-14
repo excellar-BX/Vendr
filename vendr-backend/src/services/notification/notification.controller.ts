@@ -160,3 +160,36 @@ export async function clearPushTokenController(request: FastifyRequest, reply: F
     });
   }
 }
+
+/**
+ * Test endpoint for push notifications (no auth required for testing)
+ */
+export async function testPushNotificationController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { userId, title, body, type } = request.body as {
+      userId: string;
+      title: string;
+      body: string;
+      type?: string;
+    };
+
+    if (!userId || !title || !body) {
+      return reply.status(400).send({
+        success: false,
+        message: 'userId, title, and body are required',
+      });
+    }
+
+    await NotificationService.sendPushNotification(userId, title, body, type || 'test');
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Test notification sent',
+    });
+  } catch (err: any) {
+    return reply.status(500).send({
+      success: false,
+      message: err.message || 'Failed to send test notification',
+    });
+  }
+}

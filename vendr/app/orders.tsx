@@ -1,12 +1,14 @@
 import { useState, useCallback } from 'react';
 import {
-  View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
+  View, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, TextInput,
 } from 'react-native';
+import { Modal } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { orderApi } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -16,11 +18,13 @@ interface Order {
   id: string;
   amount: number;
   description: string | null;
-  status: 'completed' | 'refunded' | 'disputed';
+  status: 'completed' | 'refunded' | 'disputed' | 'pending';
+  escrow_status: 'held' | 'released' | 'refunded';
   created_at: string;
   buyer_id: string;
   vendor_user_id: string;
   conversation_id: string | null;
+  auto_release_at?: string;
   // joined
   vendor_name?: string;
   vendor_id?: string;
@@ -32,6 +36,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: Ionico
   completed: { label: 'Completed', color: '#2D8653', icon: 'checkmark-circle-outline' },
   refunded:  { label: 'Refunded',  color: '#5599E8', icon: 'refresh-circle-outline'  },
   disputed:  { label: 'Disputed',  color: '#E85555', icon: 'alert-circle-outline'     },
+  pending:   { label: 'Pending',   color: '#F5A623', icon: 'time-outline'            },
 };
 
 function formatAmount(n: number) {
@@ -67,13 +72,18 @@ function groupByDate(orders: Order[]) {
   return groups;
 }
 
-function OrderCard({ order, mode, onOpenChat }: {
+function OrderCard({ order, mode, onOpenChat, onConfirmDelivery, onDispute, confirmingDelivery }: {
   order: Order;
   mode: OrderTab;
   onOpenChat: (conversationId: string) => void;
+  onConfirmDelivery: (orderId: string) => void;
+  onDispute: (orderId: string) => void;
+  confirmingDelivery: string | null;
 }) {
   const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.completed;
   const isBought = mode === 'bought';
+  const showConfirmButton = isBought && order.escrow_status === 'held';
+  const showDisputeButton = isBought && order.escrow_status === 'held' && order.status !== 'disputed';
 
   return (
     <View style={{
@@ -106,6 +116,20 @@ function OrderCard({ order, mode, onOpenChat }: {
         </View>
       </View>
 
+      {/* Escrow status for buyers */}
+      {isBought && order.escrow_status === 'held' && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 6,
+          backgroundColor: 'rgba(45,134,83,0.1)', borderWidth: 1, borderColor: 'rgba(45,134,83,0.2)',
+          paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+        }}>
+          <Ionicons name="shield-checkmark-outline" size={12} color="#2D8653" />
+          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#2D8653' }}>
+            Payment held in escrow until delivery
+          </Text>
+        </View>
+      )}
+
       {/* Description */}
       {order.description ? (
         <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 18 }}>
@@ -125,21 +149,62 @@ function OrderCard({ order, mode, onOpenChat }: {
           {isBought ? '−' : '+'}{formatAmount(order.amount)}
         </Text>
 
-        {order.conversation_id && (
-          <TouchableOpacity
-            onPress={() => onOpenChat(order.conversation_id!)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6,
-              paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
-              backgroundColor: 'rgba(232,82,26,0.1)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.2)',
-            }}
-          >
-            <Ionicons name="chatbubble-outline" size={14} color="#E8521A" />
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>
-              View Chat
-            </Text>
-          </TouchableOpacity>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {order.conversation_id && (
+            <TouchableOpacity
+              onPress={() => onOpenChat(order.conversation_id!)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                backgroundColor: 'rgba(232,82,26,0.1)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.2)',
+              }}
+            >
+              <Ionicons name="chatbubble-outline" size={14} color="#E8521A" />
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>
+                View Chat
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }} >
+         {showConfirmButton && (
+            <TouchableOpacity
+              onPress={() => onConfirmDelivery(order.id)}
+              disabled={confirmingDelivery === order.id}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                backgroundColor: confirmingDelivery === order.id ? '#1A150F' : '#2D8653',
+                borderWidth: 1, borderColor: '#2D8653',
+              }}
+            >
+              {confirmingDelivery === order.id ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Ionicons name="checkmark-circle" size={14} color="white" />
+              )}
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: 'white' }}>
+                {confirmingDelivery === order.id ? 'Confirming...' : 'Confirm Delivery'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {showDisputeButton && (
+            <TouchableOpacity
+              onPress={() => onDispute(order.id)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+                backgroundColor: 'rgba(232,85,85,0.1)', borderWidth: 1, borderColor: 'rgba(232,85,85,0.2)',
+              }}
+            >
+              <Ionicons name="alert-circle-outline" size={14} color="#E85555" />
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E85555' }}>
+                Dispute
+              </Text>
+            </TouchableOpacity>
+          )}
       </View>
     </View>
   );
@@ -152,6 +217,7 @@ export default function OrdersScreen() {
   const [soldOrders, setSoldOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [confirmingDelivery, setConfirmingDelivery] = useState<string | null>(null);
 
   const userId = user?.id;
 
@@ -191,6 +257,55 @@ export default function OrdersScreen() {
 
   const handleOpenChat = (conversationId: string) => {
     router.push({ pathname: '/chat/[conversationId]', params: { conversationId } });
+  };
+
+  const handleConfirmDelivery = async (orderId: string) => {
+    setConfirmingDelivery(orderId);
+    try {
+      const response = await orderApi.confirmDelivery(orderId);
+      if (response.success) {
+        // Refresh orders to update status
+        await fetchOrders();
+      }
+    } catch (error) {
+      console.error('Failed to confirm delivery:', error);
+      alert('Failed to confirm delivery. Please try again.');
+    } finally {
+      setConfirmingDelivery(null);
+    }
+  };
+
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  const handleDispute = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setShowDisputeModal(true);
+  };
+
+  const handleDisputeReason = (reason: string) => {
+    setShowDisputeModal(false);
+    if (selectedOrderId) {
+      submitDispute(selectedOrderId, reason);
+    }
+    setSelectedOrderId(null);
+  };
+
+  const submitDispute = async (orderId: string, reason: string) => {
+    try {
+      await apiFetch('/disputes', {
+        method: 'POST',
+        body: JSON.stringify({
+          order_id: orderId,
+          reason,
+          description: '',
+        }),
+      });
+      Alert.alert('Success', 'Your dispute has been submitted. Our team will review it shortly.');
+      fetchOrders();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to submit dispute');
+    }
   };
 
   const activeOrders = tab === 'bought' ? boughtOrders : soldOrders;
@@ -321,6 +436,9 @@ export default function OrdersScreen() {
                     order={order}
                     mode={tab}
                     onOpenChat={handleOpenChat}
+                    onConfirmDelivery={handleConfirmDelivery}
+                    onDispute={handleDispute}
+                    confirmingDelivery={confirmingDelivery}
                   />
                 ))}
               </View>
@@ -328,6 +446,57 @@ export default function OrdersScreen() {
           )}
         />
       )}
+
+      {/* Dispute Reason Modal */}
+      <Modal
+        visible={showDisputeModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDisputeModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <View style={{ backgroundColor: '#1A1208', borderRadius: 20, borderWidth: 1, borderColor: '#2A1F14', width: '100%', maxWidth: 360, padding: 20 }}>
+            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 8 }}>
+              Dispute Order
+            </Text>
+            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', marginBottom: 20 }}>
+              Please select a reason for disputing this order:
+            </Text>
+            <View style={{ gap: 10 }}>
+              {[
+                'Product not received',
+                'Product not as described',
+                'Quality issues',
+                'Other',
+              ].map(reason => (
+                <TouchableOpacity
+                  key={reason}
+                  onPress={() => handleDisputeReason(reason)}
+                  style={{
+                    backgroundColor: '#0F0A06',
+                    borderRadius: 12,
+                    padding: 14,
+                    borderWidth: 1,
+                    borderColor: '#2A1F14',
+                  }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowDisputeModal(false)}
+              style={{ marginTop: 16, alignItems: 'center' }}
+            >
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#9A8570' }}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

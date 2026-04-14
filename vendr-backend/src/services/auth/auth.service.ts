@@ -86,7 +86,26 @@ export async function register(input: RegisterInput) {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 export async function login(input: LoginInput) {
-  const user = await prisma.user.findUnique({ where: { email: input.email } })
+  const user = await prisma.user.findUnique({
+    where: { email: input.email },
+    select: {
+      id: true,
+      email: true,
+      full_name: true,
+      avatar_url: true,
+      phone: true,
+      is_verified: true,
+      is_vendor_verified: true,
+      is_deleted: true,
+      notifications_enabled: true,
+      created_at: true,
+      password: true,
+      vendors: {
+        where: { is_active: true },
+        select: { id: true, shop_name: true, is_active: true },
+      },
+    },
+  })
 
   if (!user || !user.password) {
     throw { statusCode: 401, message: 'Invalid email or password' }
@@ -104,8 +123,15 @@ export async function login(input: LoginInput) {
     data: { token: refreshToken, user_id: user.id, expires_at: getRefreshTokenExpiry() },
   })
 
-  const { password: _pw, ...safeUser } = user
-  return { user: safeUser, accessToken, refreshToken }
+  const { password: _pw, vendors, ...safeUser } = user as any
+  return {
+    user: {
+      ...safeUser,
+      vendor: vendors && vendors.length > 0 ? vendors[0] : null,
+    },
+    accessToken,
+    refreshToken
+  }
 }
 
 // ─── Google OAuth ─────────────────────────────────────────────────────────────
@@ -121,7 +147,26 @@ export async function googleAuth(input: GoogleAuthInput) {
     throw { statusCode: 401, message: 'Invalid Google token' }
   }
 
-  let user = await prisma.user.findUnique({ where: { email: payload.email } })
+  let user = await prisma.user.findUnique({
+    where: { email: payload.email },
+    select: {
+      id: true,
+      email: true,
+      full_name: true,
+      avatar_url: true,
+      phone: true,
+      is_verified: true,
+      is_vendor_verified: true,
+      is_deleted: true,
+      notifications_enabled: true,
+      created_at: true,
+      google_id: true,
+      vendors: {
+        where: { is_active: true },
+        select: { id: true, shop_name: true, is_active: true },
+      },
+    },
+  })
 
   if (!user) {
     user = await prisma.user.create({
@@ -131,6 +176,22 @@ export async function googleAuth(input: GoogleAuthInput) {
         avatar_url: payload.picture ?? null,
         google_id: payload.sub,
         is_verified: true, // Google accounts are pre-verified
+      },
+      select: {
+        id: true,
+        email: true,
+        full_name: true,
+        avatar_url: true,
+        phone: true,
+        is_verified: true,
+        is_vendor_verified: true,
+        is_deleted: true,
+        notifications_enabled: true,
+        created_at: true,
+        vendors: {
+          where: { is_active: true },
+          select: { id: true, shop_name: true, is_active: true },
+        },
       },
     })
 
@@ -147,6 +208,22 @@ export async function googleAuth(input: GoogleAuthInput) {
     user = await prisma.user.update({
       where: { id: user.id },
       data: { google_id: payload.sub, is_verified: true },
+      select: {
+        id: true,
+        email: true,
+        full_name: true,
+        avatar_url: true,
+        phone: true,
+        is_verified: true,
+        is_vendor_verified: true,
+        is_deleted: true,
+        notifications_enabled: true,
+        created_at: true,
+        vendors: {
+          where: { is_active: true },
+          select: { id: true, shop_name: true, is_active: true },
+        },
+      },
     })
   }
 
@@ -157,8 +234,15 @@ export async function googleAuth(input: GoogleAuthInput) {
     data: { token: refreshToken, user_id: user.id, expires_at: getRefreshTokenExpiry() },
   })
 
-  const { password: _pw, ...safeUser } = user
-  return { user: safeUser, accessToken, refreshToken }
+  const { vendors, ...safeUser } = user as any
+  return {
+    user: {
+      ...safeUser,
+      vendor: vendors && vendors.length > 0 ? vendors[0] : null,
+    },
+    accessToken,
+    refreshToken
+  }
 }
 
 // ─── Verify Email ─────────────────────────────────────────────────────────────
@@ -308,6 +392,7 @@ export async function getMe(userId: string) {
       avatar_url: true,
       phone: true,
       is_verified: true,
+      is_vendor_verified: true,
       is_deleted: true,
       notifications_enabled: true,
       created_at: true,
@@ -322,8 +407,9 @@ export async function getMe(userId: string) {
     throw { statusCode: 404, message: 'User not found' }
   }
 
+  const { vendors, ...userData } = user as any
   return {
-    ...user,
-    vendor: (user as any).vendors[0] || null, // Return first vendor as vendor for compatibility
+    ...userData,
+    vendor: vendors && vendors.length > 0 ? vendors[0] : null,
   }
 }

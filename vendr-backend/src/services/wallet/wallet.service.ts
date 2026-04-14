@@ -3,6 +3,9 @@ import prisma from '../../lib/prisma'
 // Notification service
 const { createNotification } = require('../notification/notification.service')
 
+// Escrow service
+const { createEscrowHold } = require('../escrow/escrow.service')
+
 /**
  * Get user's wallet balance
  */
@@ -82,39 +85,36 @@ export async function processPayment(
         data: { available_balance: { decrement: amount } },
       })
 
-      // 2. Credit vendor (available for withdrawal)
-      await tx.wallet.update({
-        where: { user_id: vendorId },
-        data: { available_balance: { increment: amount } },
+      // 2. Create transaction record for buyer
+      await tx.transaction.create({
+        data: {
+          user_id: buyerId,
+          type: 'payment_sent',
+          amount,
+          status: 'success',
+          reference: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          description: description || 'Payment to vendor (held in escrow)',
+          counterparty_id: vendorId,
+          provider: 'monnify',
+        },
       })
 
-      // 3. Create transaction records (both sides)
-      await tx.transaction.createMany({
-        data: [
-          {
-            user_id: buyerId,
-            type: 'payment_sent',
-            amount,
-            status: 'success',
-            reference: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            description: description || 'Payment to vendor',
-            counterparty_id: vendorId,
-            provider: 'monnify',
-          },
-          {
-            user_id: vendorId,
-            type: 'payment_received',
-            amount,
-            status: 'success',
-            reference: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            description: description || 'Payment from buyer',
-            counterparty_id: buyerId,
-            provider: 'monnify',
-          },
-        ],
+      // 3. Create transaction record for vendor (pending until escrow release)
+      await tx.transaction.create({
+        data: {
+          user_id: vendorId,
+          type: 'payment_received',
+          amount,
+          status: 'pending',
+          reference: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          description: description || 'Payment from buyer (held in escrow)',
+          counterparty_id: buyerId,
+          provider: 'monnify',
+        },
       })
 
-      // 4. Update payment request status if ID provided and create Order record
+      // 4. Update payment request status if ID provided and create Order record with escrow
+      let orderId: string | null = null;
       if (paymentRequestId) {
         const paymentRequest = await tx.paymentRequest.findUnique({
           where: { id: paymentRequestId },
@@ -126,55 +126,73 @@ export async function processPayment(
             data: { status: 'paid', paid_at: new Date() },
           });
 
-          // Create Order record to track bought/sold counts
-          // vendorId parameter is now vendor.user_id, so we use paymentRequest.vendor_id for the actual vendor ID
+          // Create Order record with escrow status
           const order = await tx.order.create({
             data: {
               buyer_id: buyerId,
               vendor_id: paymentRequest.vendor_id,
-              vendor_user_id: vendorId, // This is the vendor's user_id
+              vendor_user_id: vendorId,
               payment_request_id: paymentRequestId,
               conversation_id: paymentRequest.conversation_id,
               amount: paymentRequest.amount,
               description: paymentRequest.description,
-              status: 'completed',
+              status: 'pending',
+              escrow_status: 'held',
+              auto_release_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
             },
           });
-          console.log('[Wallet] Order created:', order.id, 'for buyer:', buyerId, 'vendor:', vendorId);
+          orderId = order.id;
+          console.log('[Wallet] Order created with escrow:', order.id, 'for buyer:', buyerId, 'vendor:', vendorId);
 
-          // Create notification for buyer (order_placed)
-          try {
-            await createNotification({
-              userId: buyerId,
-              type: 'order_placed',
-              title: 'Order placed successfully',
-              body: `Your order of ₦${paymentRequest.amount.toLocaleString()} has been placed`,
-              data: { order_id: order.id, conversation_id: paymentRequest.conversation_id },
-            })
-          } catch (notifError) {
-            console.error('[Wallet] Notification error for order_placed:', notifError)
-          }
-
-          // Create notification for vendor (new_order)
-          try {
-            await createNotification({
-              userId: vendorId,
-              type: 'new_order',
-              title: 'New order received',
-              body: `New order of ₦${paymentRequest.amount.toLocaleString()} received`,
-              data: { order_id: order.id, conversation_id: paymentRequest.conversation_id },
-            })
-          } catch (notifError) {
-            console.error('[Wallet] Notification error for new_order:', notifError)
-          }
+          // Create escrow hold transaction
+          await tx.walletTransaction.create({
+            data: {
+              vendor_id: paymentRequest.vendor_id,
+              order_id: order.id,
+              amount: paymentRequest.amount,
+              tx_type: 'escrow_hold',
+              status: 'pending',
+              notes: 'Payment held in escrow pending delivery confirmation',
+            },
+          });
         } else {
           console.log('[Wallet] Payment request not found for order creation:', paymentRequestId);
         }
       }
-    })
 
-    console.log('[Wallet] Payment transaction completed successfully');
-    return { success: true, message: 'Payment processed successfully' }
+      return { orderId };
+    });
+
+    console.log('[Wallet] Payment transaction completed successfully with escrow');
+
+    // Send notifications outside transaction (after commit)
+    if (paymentRequestId) {
+      try {
+        await createNotification({
+          userId: buyerId,
+          type: 'order_placed',
+          title: 'Order placed successfully',
+          body: `Your order of ₦${amount.toLocaleString()} has been placed. Payment held in escrow until delivery.`,
+          data: { order_id: result.orderId, conversation_id: null },
+        })
+      } catch (notifError) {
+        console.error('[Wallet] Notification error for order_placed:', notifError)
+      }
+
+      try {
+        await createNotification({
+          userId: vendorId,
+          type: 'new_order',
+          title: 'New order received',
+          body: `New order of ₦${amount.toLocaleString()} received. Payment will be released after delivery confirmation.`,
+          data: { order_id: result.orderId, conversation_id: null },
+        })
+      } catch (notifError) {
+        console.error('[Wallet] Notification error for new_order:', notifError)
+      }
+    }
+
+    return { success: true, message: 'Payment processed and held in escrow' }
   } catch (err: any) {
     console.error('[Wallet] Payment transaction failed:', err);
     throw err;

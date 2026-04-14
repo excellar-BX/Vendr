@@ -22,6 +22,7 @@ interface Transaction {
   description: string;
   reference: string;
   created_at: string;
+  updated_at: string;
   counterparty_id?: string;
 }
 
@@ -315,7 +316,7 @@ export default function WalletTransactionsScreen() {
                 {[
                   { label: 'Type',        value: cfg.label },
                   { label: 'Description', value: selectedTx.description },
-                  { label: 'Date',        value: formatFullDate(selectedTx.created_at) },
+                  { label: 'Date',        value: formatFullDate(selectedTx.updated_at || selectedTx.created_at) },
                   { label: 'Reference',   value: selectedTx.reference },
                 ].map((row, i, arr) => (
                   <View key={row.label} style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderColor: '#1A1208', gap: 12 }}>

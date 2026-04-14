@@ -27,7 +27,7 @@ async function enrichReels(
     vendor: r.vendor ? {
       business_name: r.vendor.shop_name,
       logo_url: r.vendor.logo_url,
-      is_verified: r.vendor.is_verified,
+      is_verified: r.vendor.user?.is_vendor_verified,
       category: r.vendor.category,
     } : null,
     product: r.product ? {
@@ -85,7 +85,15 @@ export async function getReelFeed(params: {
   const reels = await prisma.reel.findMany({
     where: { is_active: true },
     include: {
-      vendor: true,
+      vendor: {
+        include: {
+          user: {
+            select: {
+              is_vendor_verified: true,
+            },
+          },
+        },
+      },
       product: true,
     },
     orderBy: { created_at: 'desc' },
@@ -120,7 +128,15 @@ export async function getReelsByVendor(
   const reels = await prisma.reel.findMany({
     where,
     include: {
-      vendor: true,
+      vendor: {
+        include: {
+          user: {
+            select: {
+              is_vendor_verified: true,
+            },
+          },
+        },
+      },
       product: true,
     },
     orderBy: { created_at: 'desc' },
@@ -343,7 +359,15 @@ export async function getSavedReels(
     include: {
       reel: {
         include: {
-          vendor: true,
+          vendor: {
+            include: {
+              user: {
+                select: {
+                  is_vendor_verified: true,
+                },
+              },
+            },
+          },
           product: true,
         },
       },

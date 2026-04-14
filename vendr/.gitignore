@@ -43,3 +43,7 @@ yarn-error.*
 
 .env.local
 .env.migrate
+
+
+credentials.json
+vendr-e29d6-75f9a963eb60.json

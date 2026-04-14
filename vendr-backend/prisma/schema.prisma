@@ -19,7 +19,8 @@ model User {
   avatar_url                 String?
   phone                      String?
   google_id                  String?           @unique
-  is_verified                Boolean           @default(false)
+  is_verified                Boolean           @default(false) // Email verification
+  is_vendor_verified         Boolean           @default(false) // Vendor identity verification (CAC, NIN, etc.)
   is_buyer                   Boolean           @default(true)
   is_vendor                  Boolean           @default(false)
   is_deleted                 Boolean           @default(false)
@@ -29,6 +30,9 @@ model User {
   font_size                  String            @default("Normal")
   push_token                 String?
   role                       String            @default("buyer")
+  plan                       String            @default("free") // free, pro
+  plan_started_at            DateTime?
+  plan_expires_at            DateTime?
   created_at                 DateTime          @default(now())
   updated_at                 DateTime          @updatedAt
 
@@ -48,6 +52,7 @@ model User {
   wallet                     Wallet?
   paymentRequests            PaymentRequest[]
   searchHistories            SearchHistory[]
+  disputes                   Dispute[]
   reelsPosted                Reel[]
   reelLikes                  ReelLike[]
   reelSaves                  ReelSave[]
@@ -118,10 +123,17 @@ model Vendor {
   open_days          String[] @default(["Mon", "Tue", "Wed", "Thu", "Fri"])
   open_time          String   @default("08:00")
   close_time         String   @default("20:00")
-  is_verified        Boolean  @default(false)
+  verification_tier  String?  // basic, premium
+  plan               String   @default("free") // free, pro
+  plan_started_at    DateTime?
+  plan_expires_at    DateTime?
   is_active          Boolean  @default(true)
   rating             Float    @default(0)
   review_count       Int      @default(0)
+  is_fraud_flagged   Boolean  @default(false)
+  fraud_flag_reason  String?
+  fraud_flagged_at   DateTime?
+  last_withdrawal_at DateTime?
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 
@@ -133,6 +145,9 @@ model Vendor {
   conversations     Conversation[]
   reels             Reel[]
   paymentRequests   PaymentRequest[]
+  verificationRequests VerificationRequest[]
+  walletTransactions WalletTransaction[]
+  disputes          Dispute[]
 
   @@map("vendors")
 }
@@ -167,15 +182,77 @@ model Order {
   conversation_id  String?
   amount           Float
   description      String?
-  status           String   @default("completed") // completed, refunded, disputed
+  status           String   @default("pending") // pending, completed, refunded, disputed
+  escrow_status    String   @default("held") // held, released, refunded
+  delivery_confirmed_at DateTime?
+  auto_release_at  DateTime?
   created_at       DateTime @default(now())
 
   buyer   User      @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
   vendor  Vendor    @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
   paymentRequest PaymentRequest? @relation(fields: [payment_request_id], references: [id], onDelete: SetNull)
+  disputes Dispute[]
 
   @@map("orders")
+}
+
+model VerificationRequest {
+  id                String   @id @default(uuid())
+  vendor_id         String
+  status            String   @default("pending") // pending, approved, rejected
+  submitted_at      DateTime @default(now())
+  reviewed_at       DateTime?
+  reviewer_id       String?
+  rejection_reason  String?
+  cac_number        String?
+  nin_number       String?
+  business_address  String?
+  documents         Json?    @default("{}") // Store document URLs
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("verification_requests")
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  vendor_id   String
+  order_id    String?
+  amount      Float
+  tx_type     String   // escrow_hold, escrow_release, debit, refund
+  status      String   @default("pending") // pending, completed, frozen
+  notes       String?
+  metadata    Json?    @default("{}")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("wallet_transactions")
+}
+
+model Dispute {
+  id           String   @id @default(uuid())
+  order_id     String
+  buyer_id     String
+  vendor_id    String
+  reason       String
+  description  String?
+  status       String   @default("open") // open, resolved
+  resolution   String?  // refund_buyer, release_vendor
+  admin_notes  String?
+  resolved_at  DateTime?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  order  Order  @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  buyer  User   @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("disputes")
 }
 
 model PaymentRequest {
@@ -209,6 +286,7 @@ model Transaction {
   counterparty_id String?
   metadata        Json?    @default("{}")
   created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
   provider        String   @default("monnify")
 
   user User @relation(name: "UserTransactions", fields: [user_id], references: [id], onDelete: Cascade)

@@ -253,20 +253,38 @@ export default function ProfileViewScreen() {
           </TouchableOpacity>
 
           {isVendor && vendorId && (
-            <TouchableOpacity
-              onPress={() => router.push('/my-stores')}
-              activeOpacity={0.85}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(232,82,26,0.08)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.25)', borderRadius: 18, padding: 16 }}
-            >
-              <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(232,82,26,0.15)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="storefront-outline" size={20} color="#E8521A" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Manage Store</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 1 }}>Products, orders and store settings</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#E8521A" />
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                onPress={() => router.push('/my-stores')}
+                activeOpacity={0.85}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(232,82,26,0.08)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.25)', borderRadius: 18, padding: 16 }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(232,82,26,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="storefront-outline" size={20} color="#E8521A" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Manage Store</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 1 }}>Products, orders and store settings</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#E8521A" />
+              </TouchableOpacity>
+
+              {/* Pro Plan Upgrade */}
+              <TouchableOpacity
+                onPress={() => Alert.alert('Upgrade to Pro', 'Pro plan features coming soon!')}
+                activeOpacity={0.85}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(45,134,83,0.08)', borderWidth: 1, borderColor: 'rgba(45,134,83,0.25)', borderRadius: 18, padding: 16 }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(45,134,83,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="diamond-outline" size={20} color="#2D8653" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Upgrade to Pro</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 1 }}>Unlock premium features & boost visibility</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#2D8653" />
+              </TouchableOpacity>
+            </>
           )}
         </View>
 

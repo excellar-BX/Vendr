@@ -139,6 +139,18 @@ export default function NotificationsScreen() {
 
   useFocusEffect(useCallback(() => { fetchNotifications(); }, [userId]));
 
+  // Mark all as read when leaving the screen
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        const currentUnread = notifications.filter(n => !n.is_read).length;
+        if (currentUnread > 0) {
+          markAllRead();
+        }
+      };
+    }, [notifications])
+  );
+
   // Remove Supabase realtime - will use polling or Socket.io later if needed
   // For now, notifications will refresh on screen focus
 

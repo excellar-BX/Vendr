@@ -297,6 +297,11 @@ export const reelApi = {
   toggleSave: (reelId: string) => apiFetch(`/reels/${reelId}/save`, { method: 'POST' }),
 
   /**
+   * Get saved reels for current user (authenticated)
+   */
+  getSavedReels: () => apiFetch('/reels/saved'),
+
+  /**
    * Delete a reel
    */
   deleteReel: (reelId: string) => apiFetch(`/reels/${reelId}`, { method: 'DELETE' }),
@@ -647,4 +652,34 @@ export const orderApi = {
    * Get order statistics for current user
    */
   getStats: () => apiFetch('/orders/me/stats'),
+
+  /**
+   * Confirm delivery for an order (buyer only)
+   * This releases the escrow funds to the vendor
+   */
+  confirmDelivery: (orderId: string) =>
+    apiFetch(`/escrow/confirm-delivery/${orderId}`, { method: 'POST' }),
+}
+
+export const verificationApi = {
+  /**
+   * Submit verification request for a vendor
+   */
+  submitVerification: (data: {
+    vendor_id: string;
+    cac_number: string;
+    nin_number: string;
+    business_address: string;
+    documents: Record<string, any>;
+  }) => apiFetch('/verification/submit', { method: 'POST', body: data }),
+
+  /**
+   * Get verification status for a vendor
+   */
+  getStatus: (vendorId: string) => apiFetch(`/verification/status/${vendorId}`),
+
+  /**
+   * Get verification details by vendor ID
+   */
+  getByVendorId: (vendorId: string) => apiFetch(`/verification/vendor/${vendorId}`),
 }

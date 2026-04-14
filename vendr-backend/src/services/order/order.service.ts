@@ -39,6 +39,7 @@ export async function getBoughtOrders(userId: string): Promise<OrderOutput[]> {
     amount: order.amount,
     description: order.description,
     status: order.status,
+    escrow_status: order.escrow_status,
     created_at: order.created_at.toISOString(),
     buyer_id: order.buyer_id,
     vendor_id: order.vendor_id,

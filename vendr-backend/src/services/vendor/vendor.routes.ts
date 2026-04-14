@@ -90,6 +90,7 @@ export async function vendorRoutes(app: FastifyInstance) {
               id: true,
               full_name: true,
               avatar_url: true,
+              is_vendor_verified: true,
             }
           }
         },

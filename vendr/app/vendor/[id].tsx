@@ -566,11 +566,11 @@ export default function VendorProfileScreen() {
             <View className="flex-1 mr-3">
               <View className="flex-row items-center gap-2 mb-1">
                 <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                  {vendor.shop_name}
-                </Text>
-                {vendor.is_verified && (
-                  <Ionicons name="checkmark-circle" size={18} color="#2D8653" />
+                  {vendor.shop_name} {vendor.user?.is_vendor_verified && (
+                  <Ionicons name="shield-checkmark" size={18} color="#2D8653" />
                 )}
+                </Text>
+                
               </View>
 
               <View className="flex-row items-center gap-1 mb-2">
@@ -803,7 +803,7 @@ export default function VendorProfileScreen() {
                   value={vendor.is_active ? 'Open now' : 'Closed'}
                   iconColor={vendor.is_active ? '#2D8653' : '#9A8570'}
                 />
-                {vendor.is_verified && (
+                {vendor.user?.is_vendor_verified && (
                   <>
                     <View className="h-px bg-faint" />
                     <InfoRow icon="shield-checkmark-outline" label="Verification" value="Verified vendor" iconColor="#2D8653" />
@@ -883,7 +883,7 @@ export default function VendorProfileScreen() {
                         Member since {new Date(vendor.user.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
                       </Text>
                     </View>
-                    {vendor.is_verified && (
+                    {vendor.user.is_vendor_verified && (
                       <View className="flex-row items-center gap-1 mt-1">
                         <Ionicons name="shield-checkmark" size={12} color="#2D8653" />
                         <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#2D8653' }}>Verified seller</Text>

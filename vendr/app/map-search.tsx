@@ -259,7 +259,7 @@ function VendorMapCard({ vendor, userLat, userLng, onClose, onOpen }: {
             <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>
               {vendor.shop_name}
             </Text>
-            {vendor.is_verified && <Ionicons name="checkmark-circle" size={14} color="#F5A623" />}
+            {vendor.user?.is_vendor_verified && <Ionicons name="checkmark-circle" size={14} color="#F5A623" />}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>

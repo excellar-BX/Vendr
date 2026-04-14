@@ -14,6 +14,10 @@ import { walletRoutes } from './services/wallet/wallet.routes'
 import { orderRoutes } from './services/order/order.routes'
 import { notificationRoutes } from './services/notification/notification.routes'
 import { waitlistRoutes } from './services/waitlist/waitlist.controller'
+import { verificationRoutes } from './services/verification/verification.routes'
+import { escrowRoutes } from './services/escrow/escrow.routes'
+import { disputeRoutes } from './services/dispute/dispute.routes'
+import { adminRoutes } from './services/admin/admin.routes'
 import { initSocket } from './lib/socket'
 
 export async function buildServer() {
@@ -57,6 +61,10 @@ export async function buildServer() {
   await app.register(storageRoutes, { prefix: '/api' })
   await app.register(notificationRoutes, { prefix: '/api' })
   await app.register(waitlistRoutes, { prefix: '/api' })
+  await app.register(verificationRoutes, { prefix: '/api' })
+  await app.register(escrowRoutes, { prefix: '/api' })
+  await app.register(disputeRoutes, { prefix: '/api' })
+  await app.register(adminRoutes, { prefix: '/api' })
 
   // ─── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

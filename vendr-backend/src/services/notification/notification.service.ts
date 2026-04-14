@@ -35,7 +35,7 @@ export async function createNotification(input: CreateNotificationInput) {
 /**
  * Send a push notification via Expo
  */
-async function sendPushNotification(
+export async function sendPushNotification(
   userId: string,
   title: string,
   body: string,

@@ -236,7 +236,60 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
       return reply.status(403).send({ success: false, message: 'Only vendors can withdraw funds' });
     }
 
-    // ── 0.5. Check for pending withdrawal transactions ───────────────────────────
+    // ── 0.1. Get vendor record for fraud check ────────────────────────────────────
+    const vendor = await prisma.vendor.findFirst({
+      where: { user_id: userId },
+    });
+
+    if (!vendor) {
+      return reply.status(403).send({ success: false, message: 'Vendor record not found' });
+    }
+
+    // ── 0.2. Check fraud flag ────────────────────────────────────────────────────
+    if (vendor.is_fraud_flagged) {
+      return reply.status(403).send({ 
+        success: false, 
+        message: 'Your account has been flagged for review. Withdrawals are temporarily disabled.' 
+      });
+    }
+
+    // ── 0.3. Check minimum withdrawal threshold ───────────────────────────────────
+    const MIN_WITHDRAWAL_THRESHOLD = 5000; // ₦5,000
+    if (amount < MIN_WITHDRAWAL_THRESHOLD) {
+      return reply.status(400).send({ 
+        success: false, 
+        message: `Minimum withdrawal amount is ₦${MIN_WITHDRAWAL_THRESHOLD.toLocaleString()}` 
+      });
+    }
+
+    // ── 0.4. Check withdrawal cooldown (48 hours) ────────────────────────────────
+    if (vendor.last_withdrawal_at) {
+      const cooldownHours = 48;
+      const cooldownExpiry = new Date(vendor.last_withdrawal_at.getTime() + cooldownHours * 60 * 60 * 1000);
+      const now = new Date();
+      
+      if (now < cooldownExpiry) {
+        const hoursRemaining = Math.ceil((cooldownExpiry.getTime() - now.getTime()) / (60 * 60 * 1000));
+        return reply.status(400).send({ 
+          success: false, 
+          message: `You must wait ${hoursRemaining} hours before making another withdrawal` 
+        });
+      }
+    }
+
+    // ── 0.5. Check bank account verification (must have at least one saved account) ─
+    const bankAccounts = await prisma.bankAccount.findMany({
+      where: { user_id: userId },
+    });
+
+    if (bankAccounts.length === 0) {
+      return reply.status(400).send({ 
+        success: false, 
+        message: 'Please add and verify a bank account before withdrawing' 
+      });
+    }
+
+    // ── 0.6. Check for pending withdrawal transactions ───────────────────────────
     const pendingWithdrawal = await prisma.transaction.findFirst({
       where: {
         user_id: userId,
@@ -295,6 +348,12 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
             available_balance: { decrement: totalDeduction },
             frozen_balance: { increment: totalDeduction },
           },
+        });
+
+        // Update vendor's last withdrawal timestamp
+        await tx.vendor.updateMany({
+          where: { user_id: userId },
+          data: { last_withdrawal_at: new Date() },
         });
 
         return tx.transaction.create({

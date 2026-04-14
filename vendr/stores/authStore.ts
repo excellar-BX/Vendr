@@ -15,6 +15,7 @@ export interface AuthUser {
   avatar_url: string | null
   phone: string | null
   is_verified: boolean
+  is_vendor_verified: boolean
   is_deleted?: boolean
   notifications_enabled?: boolean
   location_enabled?: boolean

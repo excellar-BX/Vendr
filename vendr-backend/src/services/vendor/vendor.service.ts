@@ -96,6 +96,7 @@ export async function getVendorByUserId(userId: string) {
           email: true,
           full_name: true,
           avatar_url: true,
+          is_vendor_verified: true,
         }
       }
     }
@@ -118,6 +119,7 @@ export async function getAllVendorsByUserId(userId: string) {
           email: true,
           full_name: true,
           avatar_url: true,
+          is_vendor_verified: true,
         }
       }
     },
@@ -141,6 +143,7 @@ export async function getVendorById(vendorId: string) {
           full_name: true,
           avatar_url: true,
           created_at: true,
+          is_vendor_verified: true,
         }
       }
     }
@@ -210,21 +213,8 @@ export async function updateVendor(userId: string, input: Partial<CreateVendorIn
     }
   });
 
-  // Create notification if vendor is verified (non-blocking)
-  if (input.is_verified === true && !existingVendor.is_verified) {
-    try {
-      await createNotification({
-        userId: userId,
-        type: 'vendor_verified',
-        title: 'Vendor verified',
-        body: 'Your store has been verified',
-        data: { vendor_id: vendor.id },
-      })
-    } catch (notifError) {
-      console.error('[Vendor] Notification error for vendor_verified:', notifError)
-      // Don't throw - vendor was successfully updated
-    }
-  }
+  // Note: Vendor verification is now handled via user.is_vendor_verified
+  // No notification needed here since verification is managed through the verification service
 
   return vendor;
 }

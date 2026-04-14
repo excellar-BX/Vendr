@@ -37,4 +37,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
   fastify.delete('/notifications/clear-token', {
     preHandler: authenticate,
   }, NotificationController.clearPushTokenController);
+
+  // Test endpoint (no auth for testing purposes)
+  fastify.post('/notifications/test', NotificationController.testPushNotificationController);
 }

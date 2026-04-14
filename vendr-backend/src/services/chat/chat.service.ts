@@ -147,7 +147,7 @@ export async function getConversation(
   const vendorOutput = conversation.vendor ? {
     id: conversation.vendor.id,
     business_name: conversation.vendor.shop_name, // alias
-    is_verified: conversation.vendor.is_verified,
+    is_verified: conversation.vendor.user?.is_vendor_verified,
     user_id: conversation.vendor.user_id,
     ...(conversation.vendor.user && {
       owner_name: conversation.vendor.user.full_name,
@@ -199,10 +199,14 @@ export async function getUserConversations(userId: string): Promise<any[]> {
           select: {
             id: true,
             shop_name: true,
-            is_verified: true,
             user_id: true,
-          }
-        }
+            user: {
+              select: {
+                is_vendor_verified: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { last_message_at: 'desc' },
     }),
@@ -235,7 +239,7 @@ export async function getUserConversations(userId: string): Promise<any[]> {
     vendor: c.vendor ? {
       id: c.vendor.id,
       business_name: c.vendor.shop_name, // alias
-      is_verified: c.vendor.is_verified,
+      is_verified: c.vendor.user?.is_vendor_verified,
       user_id: c.vendor.user_id,
     } : null,
     buyer: null,

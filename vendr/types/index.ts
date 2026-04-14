@@ -37,6 +37,7 @@ export interface Vendor {
     full_name?: string | null;
     avatar_url?: string | null;
     created_at: string;
+    is_vendor_verified?: boolean;
   };
   // computed client-side
   distance?: number;
