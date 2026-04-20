@@ -78,7 +78,7 @@ export async function apiFetch(
   path: string,
   options: ApiFetchOptions = {},
   retry = true
-): Promise<any> {
+): Promise<any> { 
   const accessToken = await getAccessToken()
 
   const headers: Record<string, string> = {

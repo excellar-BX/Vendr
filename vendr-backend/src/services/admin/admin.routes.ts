@@ -1,12 +1,19 @@
 import { FastifyInstance } from 'fastify';
 import {
+  adminLogin,
+  adminMe,
   getDashboardStats,
   getVerificationRequests,
   approveVerificationRequest,
   rejectVerificationRequest,
   getUsers,
+  getUser,
+  updateUser,
   softDeleteUser,
   getVendors,
+  getVendor,
+  flagVendor,
+  unflagVendor,
   toggleVendorFraudFlag,
   suspendVendor,
   getOrders,
@@ -15,10 +22,38 @@ import {
   getWaitlist,
   getTransactions,
   getWalletTransactions,
+  getDisputes,
+  resolveDispute,
 } from './admin.service';
 import { authenticate } from '../../middlewares/authenticate';
 
 export async function adminRoutes(fastify: FastifyInstance) {
+  // Admin Login (public)
+  fastify.post('/admin/login', {
+    handler: async (request, reply) => {
+      const { email, password } = request.body as { email: string; password: string };
+      try {
+        const result = await adminLogin(email, password);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(401).send({ message: error.message });
+      }
+    },
+  });
+
+  // Get current admin user (protected)
+  fastify.get('/admin/me', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      try {
+        const result = await adminMe(request.user.id);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(401).send({ message: error.message });
+      }
+    },
+  });
+
   // Dashboard Stats
   fastify.get('/admin/stats', {
     preHandler: [authenticate],
@@ -33,19 +68,49 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   // Verification Requests
-  fastify.get('/admin/verification-requests', {
+  fastify.get('/admin/verifications', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
+      const { status, limit = '50', offset = '0' } = request.query as {
+        status?: string;
+        limit?: string;
+        offset?: string;
+      };
       try {
-        const requests = await getVerificationRequests();
-        return reply.send(requests);
+        let requests = await getVerificationRequests();
+        // Filter by status if specified
+        if (status) {
+          requests = requests.filter((r: any) => r.status === status);
+        }
+        // Apply pagination
+        const offsetNum = parseInt(offset);
+        const limitNum = parseInt(limit);
+        const paginated = requests.slice(offsetNum, offsetNum + limitNum);
+        return reply.send({ items: paginated, total: requests.length });
       } catch (error: any) {
         reply.status(500).send({ message: error.message });
       }
     },
   });
 
-  fastify.post('/admin/verification-requests/:id/approve', {
+  fastify.get('/admin/verifications/:id', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const requests = await getVerificationRequests();
+        const request = requests.find((r: any) => r.id === id);
+        if (!request) {
+          return reply.status(404).send({ message: 'Verification request not found' });
+        }
+        return reply.send({ verification: request });
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
+  fastify.post('/admin/verifications/:id/approve', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -58,7 +123,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
   });
 
-  fastify.post('/admin/verification-requests/:id/reject', {
+  fastify.post('/admin/verifications/:id/reject', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -76,16 +141,18 @@ export async function adminRoutes(fastify: FastifyInstance) {
   fastify.get('/admin/users', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
-      const { limit = '50', offset = '0', search } = request.query as {
+      const { limit = '50', offset = '0', search, role } = request.query as {
         limit?: string;
         offset?: string;
         search?: string;
+        role?: string;
       };
       try {
         const result = await getUsers(
           parseInt(limit),
           parseInt(offset),
-          search
+          search,
+          role
         );
         return reply.send(result);
       } catch (error: any) {
@@ -107,14 +174,41 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
   });
 
+  fastify.get('/admin/users/:id', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const result = await getUser(id);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(404).send({ message: error.message });
+      }
+    },
+  });
+
+  fastify.patch('/admin/users/:id', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const result = await updateUser(id, request.body);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
   // Vendors
   fastify.get('/admin/vendors', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
-      const { limit = '50', offset = '0', search } = request.query as {
+      const { limit = '50', offset = '0', search, is_fraud_flagged } = request.query as {
         limit?: string;
         offset?: string;
         search?: string;
+        is_fraud_flagged?: string;
       };
       try {
         const result = await getVendors(
@@ -122,6 +216,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
           parseInt(offset),
           search
         );
+        // Filter by fraud flag if specified
+        if (is_fraud_flagged !== undefined) {
+          const isFlagged = is_fraud_flagged === 'true';
+          result.vendors = result.vendors.filter((v: any) => v.is_fraud_flagged === isFlagged);
+        }
         return reply.send(result);
       } catch (error: any) {
         reply.status(500).send({ message: error.message });
@@ -129,16 +228,26 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
   });
 
-  fastify.patch('/admin/vendors/:id/fraud-flag', {
+  fastify.get('/admin/vendors/:id', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      const { is_fraud_flagged, fraud_reason } = request.body as {
-        is_fraud_flagged: boolean;
-        fraud_reason?: string;
-      };
       try {
-        const result = await toggleVendorFraudFlag(id, is_fraud_flagged, fraud_reason);
+        const result = await getVendor(id);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(404).send({ message: error.message });
+      }
+    },
+  });
+
+  fastify.post('/admin/vendors/:id/flag', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { reason } = request.body as { reason: string };
+      try {
+        const result = await flagVendor(id, reason);
         return reply.send(result);
       } catch (error: any) {
         reply.status(500).send({ message: error.message });
@@ -146,7 +255,20 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
   });
 
-  fastify.patch('/admin/vendors/:id/suspend', {
+  fastify.post('/admin/vendors/:id/unflag', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const result = await unflagVendor(id);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
+  fastify.post('/admin/vendors/:id/suspend', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -163,18 +285,18 @@ export async function adminRoutes(fastify: FastifyInstance) {
   fastify.get('/admin/orders', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
-      const { limit = '50', offset = '0', escrowStatus } = request.query as {
+      const { limit = '50', offset = '0', status } = request.query as {
         limit?: string;
         offset?: string;
-        escrowStatus?: string;
+        status?: string;
       };
       try {
         const result = await getOrders(
           parseInt(limit),
           parseInt(offset),
-          escrowStatus
+          status
         );
-        return reply.send(result);
+        return reply.send({ items: result.orders, total: result.total });
       } catch (error: any) {
         reply.status(500).send({ message: error.message });
       }
@@ -214,6 +336,42 @@ export async function adminRoutes(fastify: FastifyInstance) {
       try {
         const entries = await getWaitlist();
         return reply.send(entries);
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
+  // Disputes
+  fastify.get('/admin/disputes', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { status, limit = '50', offset = '0' } = request.query as {
+        status?: string;
+        limit?: string;
+        offset?: string;
+      };
+      try {
+        const result = await getDisputes(
+          parseInt(limit),
+          parseInt(offset),
+          status
+        );
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
+  fastify.post('/admin/disputes/:id/resolve', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { resolution } = request.body as { resolution: string };
+      try {
+        const result = await resolveDispute(id, resolution);
+        return reply.send(result);
       } catch (error: any) {
         reply.status(500).send({ message: error.message });
       }

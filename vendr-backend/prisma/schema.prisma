@@ -29,7 +29,7 @@ model User {
   language                   String            @default("English")
   font_size                  String            @default("Normal")
   push_token                 String?
-  role                       String            @default("buyer")
+  role                       String            @default("user")
   plan                       String            @default("free") // free, pro
   plan_started_at            DateTime?
   plan_expires_at            DateTime?
