@@ -24,6 +24,7 @@ import {
   getWalletTransactions,
   getDisputes,
   resolveDispute,
+  broadcastNotification,
 } from './admin.service';
 import { authenticate } from '../../middlewares/authenticate';
 
@@ -371,6 +372,24 @@ export async function adminRoutes(fastify: FastifyInstance) {
       const { resolution } = request.body as { resolution: string };
       try {
         const result = await resolveDispute(id, resolution);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
+  // Broadcast notification
+  fastify.post('/admin/notifications/broadcast', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { title, body, audience } = request.body as {
+        title: string;
+        body: string;
+        audience: 'all' | 'buyers' | 'vendors';
+      };
+      try {
+        const result = await broadcastNotification(title, body, audience);
         return reply.send(result);
       } catch (error: any) {
         reply.status(500).send({ message: error.message });

@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import prisma from '../../lib/prisma'
 import { env } from '../../config/env'
+import { createNotification, sendPushNotification } from '../notification/notification.service'
 
 // ─── Admin Auth ──────────────────────────────────────────────────────────────────
 
@@ -384,13 +385,27 @@ export async function toggleVendorFraudFlag(vendorId: string, isFlagged: boolean
 
 // Flag vendor
 export async function flagVendor(vendorId: string, reason: string) {
-  await prisma.vendor.update({
+  const vendor = await prisma.vendor.update({
     where: { id: vendorId },
     data: {
       is_fraud_flagged: true,
       fraud_flag_reason: reason,
       fraud_flagged_at: new Date(),
     },
+    include: {
+      user: {
+        select: { id: true, email: true },
+      },
+    },
+  })
+
+  // Send notification to vendor
+  await createNotification({
+    userId: vendor.user_id,
+    type: 'account_flagged',
+    title: 'Your account has been flagged',
+    body: `Your vendor account has been flagged for review. Reason: ${reason}`,
+    data: { vendorId, reason },
   })
 
   return { success: true }
@@ -398,13 +413,27 @@ export async function flagVendor(vendorId: string, reason: string) {
 
 // Unflag vendor
 export async function unflagVendor(vendorId: string) {
-  await prisma.vendor.update({
+  const vendor = await prisma.vendor.update({
     where: { id: vendorId },
     data: {
       is_fraud_flagged: false,
       fraud_flag_reason: null,
       fraud_flagged_at: null,
     },
+    include: {
+      user: {
+        select: { id: true, email: true },
+      },
+    },
+  })
+
+  // Send notification to vendor
+  await createNotification({
+    userId: vendor.user_id,
+    type: 'account_unflagged',
+    title: 'Your account flag has been removed',
+    body: 'The fraud flag on your vendor account has been removed.',
+    data: { vendorId },
   })
 
   return { success: true }
@@ -412,9 +441,23 @@ export async function unflagVendor(vendorId: string) {
 
 // Suspend vendor
 export async function suspendVendor(vendorId: string) {
-  await prisma.vendor.update({
+  const vendor = await prisma.vendor.update({
     where: { id: vendorId },
     data: { is_active: false },
+    include: {
+      user: {
+        select: { id: true, email: true },
+      },
+    },
+  })
+
+  // Send notification to vendor
+  await createNotification({
+    userId: vendor.user_id,
+    type: 'account_suspended',
+    title: 'Your account has been suspended',
+    body: 'Your vendor account has been suspended. Please contact support for more information.',
+    data: { vendorId },
   })
 
   return { success: true }
@@ -559,14 +602,85 @@ export async function getDisputes(limit = 50, offset = 0, status?: string) {
 
 // Resolve dispute
 export async function resolveDispute(disputeId: string, resolution: string) {
-  await prisma.dispute.update({
+  const dispute = await prisma.dispute.update({
     where: { id: disputeId },
     data: {
       status: 'resolved',
       resolution,
       resolved_at: new Date(),
     },
+    include: {
+      buyer: {
+        select: { id: true, email: true },
+      },
+      vendor: {
+        include: {
+          user: {
+            select: { id: true, email: true },
+          },
+        },
+      },
+    },
+  })
+
+  // Send notification to buyer
+  await createNotification({
+    userId: dispute.buyer_id,
+    type: 'dispute_resolved',
+    title: 'Your dispute has been resolved',
+    body: `Your dispute has been resolved. Resolution: ${resolution}`,
+    data: { disputeId, resolution },
+  })
+
+  // Send notification to vendor
+  await createNotification({
+    userId: dispute.vendor.user_id,
+    type: 'dispute_resolved',
+    title: 'A dispute has been resolved',
+    body: `A dispute involving your store has been resolved. Resolution: ${resolution}`,
+    data: { disputeId, resolution },
   })
 
   return { success: true }
+}
+
+// Broadcast notification to all users or specific audience
+export async function broadcastNotification(title: string, body: string, audience: 'all' | 'buyers' | 'vendors') {
+  let users
+  if (audience === 'all') {
+    users = await prisma.user.findMany({
+      where: { is_deleted: false, notifications_enabled: true },
+      select: { id: true, push_token: true },
+    })
+  } else if (audience === 'buyers') {
+    users = await prisma.user.findMany({
+      where: { is_deleted: false, notifications_enabled: true, is_buyer: true },
+      select: { id: true, push_token: true },
+    })
+  } else if (audience === 'vendors') {
+    users = await prisma.user.findMany({
+      where: { is_deleted: false, notifications_enabled: true, is_vendor: true },
+      select: { id: true, push_token: true },
+    })
+  }
+
+  // Create in-app notifications for all users
+  await prisma.notification.createMany({
+    data: users.map((u) => ({
+      user_id: u.id,
+      type: 'broadcast',
+      title,
+      body,
+      data: { audience },
+    })),
+  })
+
+  // Send push notifications to users with push tokens
+  for (const user of users) {
+    if (user.push_token) {
+      await sendPushNotification(user.id, title, body, { type: 'broadcast', audience })
+    }
+  }
+
+  return { success: true, recipientCount: users.length }
 }

@@ -1,21 +1,45 @@
 import { useState } from 'react'
-import { Search, RefreshCw, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+import { Search, RefreshCw, ArrowUpRight, ArrowDownLeft, Clipboard, Check } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import Badge, { StatusBadge } from '../components/Badge'
+// @ts-ignore - TypeScript false positive on named import
+import { StatusBadge } from '../components/Badge'
 import Avatar from '../components/Avatar'
 import { useQuery } from '../hooks/useQuery'
 import { adminApi, type Transaction } from '../lib/api'
 import { formatCurrency, formatDateTime, timeAgo } from '../lib/utils'
 
-type TxFilter = 'all' | 'deposit' | 'withdrawal' | 'payment' | 'escrow_release'
+// These are the actual type values stored in your transactions table
+const INCOMING_TYPES = new Set(['credit', 'payment_received', 'refund', 'deposit'])
+
+function isIncoming(type: string): boolean {
+  return INCOMING_TYPES.has(type)
+}
+
+// Filter tabs mapped to actual backend type values
+type TxFilter = 'all' | 'credit' | 'debit' | 'withdrawal' | 'payment_sent' | 'payment_received' | 'refund' | 'escrow_release'
+
+const FILTER_LABELS: Record<TxFilter, string> = {
+  all: 'All',
+  credit: 'Credit',
+  debit: 'Debit',
+  withdrawal: 'Withdrawal',
+  payment_sent: 'Payment Sent',
+  payment_received: 'Payment Received',
+  refund: 'Refund',
+  escrow_release: 'Escrow Release',
+}
 
 export default function TransactionsPage() {
   const [filter, setFilter] = useState<TxFilter>('all')
   const [search, setSearch] = useState('')
+  const [copiedRef, setCopiedRef] = useState<string | null>(null)
 
   const { data, loading, refetch } = useQuery<{ transactions: Transaction[]; total: number }>(
-    () => adminApi.getTransactions({ limit: 100, type: filter === 'all' ? undefined : filter }),
+    () => adminApi.getTransactions({
+      limit: 100,
+      type: filter === 'all' ? undefined : filter,
+    }),
     [filter]
   )
 
@@ -25,32 +49,49 @@ export default function TransactionsPage() {
     return (
       t.reference?.toLowerCase().includes(q) ||
       t.description?.toLowerCase().includes(q) ||
-      t.user?.email?.toLowerCase().includes(q)
+      t.user?.email?.toLowerCase().includes(q) ||
+      (t.user?.full_name ?? '').toLowerCase().includes(q) ||
+      t.type.toLowerCase().includes(q)
     )
   })
 
   const totalVolume = items.reduce((sum, t) => sum + t.amount, 0)
+  const incomingVolume = items.filter((t) => isIncoming(t.type)).reduce((sum, t) => sum + t.amount, 0)
+  const outgoingVolume = items.filter((t) => !isIncoming(t.type)).reduce((sum, t) => sum + t.amount, 0)
+
+  const copyReference = (ref: string) => {
+    navigator.clipboard.writeText(ref)
+    setCopiedRef(ref)
+    setTimeout(() => setCopiedRef(null), 2000)
+  }
 
   const columns = [
     {
       key: 'type',
       label: 'Type',
-      render: (row: Transaction) => (
-        <div className="flex items-center gap-2">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-            row.type === 'deposit' ? 'bg-brand-green/10' : 'bg-orange/10'
-          }`}>
-            {row.type === 'deposit'
-              ? <ArrowDownLeft size={14} className="text-brand-greenLight" />
-              : <ArrowUpRight size={14} className="text-orange" />
-            }
+      render: (row: Transaction) => {
+        const incoming = isIncoming(row.type)
+        return (
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+              incoming
+                ? 'bg-brand-green/10 border border-brand-green/20'
+                : 'bg-orange/10 border border-orange/20'
+            }`}>
+              {incoming
+                ? <ArrowDownLeft size={15} className="text-brand-greenLight" />
+                : <ArrowUpRight size={15} className="text-orange" />
+              }
+            </div>
+            <div>
+              <p className="text-sm text-cream font-medium capitalize">
+                {row.type.replace(/_/g, ' ')}
+              </p>
+              <p className="text-xs text-muted">{row.provider}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-cream capitalize">{row.type.replace(/_/g, ' ')}</p>
-            <p className="text-xs text-muted">{row.provider}</p>
-          </div>
-        </div>
-      ),
+        )
+      },
     },
     {
       key: 'user',
@@ -68,20 +109,36 @@ export default function TransactionsPage() {
     {
       key: 'amount',
       label: 'Amount',
-      render: (row: Transaction) => (
-        <p className={`font-semibold ${
-          row.type === 'deposit' ? 'text-brand-greenLight' : 'text-cream'
-        }`}>
-          {row.type === 'deposit' ? '+' : '-'}{formatCurrency(row.amount)}
-        </p>
-      ),
+      render: (row: Transaction) => {
+        const incoming = isIncoming(row.type)
+        return (
+          <p className={`font-semibold tabular-nums ${incoming ? 'text-brand-greenLight' : 'text-cream'}`}>
+            {incoming ? '+' : '−'}{formatCurrency(row.amount)}
+          </p>
+        )
+      },
     },
     {
       key: 'reference',
       label: 'Reference',
-      render: (row: Transaction) => (
-        <p className="font-mono text-xs text-muted truncate max-w-[120px]">{row.reference ?? '—'}</p>
-      ),
+      render: (row: Transaction) => {
+        if (!row.reference) return <span className="text-muted text-sm">—</span>
+        const isCopied = copiedRef === row.reference
+        return (
+          <div className="flex items-center gap-2">
+            <p className="font-mono text-xs text-muted truncate max-w-[140px]" title={row.reference}>
+              {row.reference}
+            </p>
+            <button
+              onClick={(e) => { e.stopPropagation(); copyReference(row.reference!) }}
+              className="shrink-0 p-1 rounded hover:bg-dark-5 text-muted hover:text-cream transition-colors"
+              title="Copy reference"
+            >
+              {isCopied ? <Check size={13} className="text-brand-greenLight" /> : <Clipboard size={13} />}
+            </button>
+          </div>
+        )
+      },
     },
     {
       key: 'status',
@@ -116,42 +173,58 @@ export default function TransactionsPage() {
       {/* Volume summary */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="stat-card">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Filtered Volume</p>
-          <p className="text-xl font-bold text-cream">{formatCurrency(totalVolume)}</p>
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">Total Volume</p>
+          <p className="text-xl font-bold text-cream tabular-nums">{formatCurrency(totalVolume)}</p>
+          <p className="text-xs text-muted mt-1">{items.length} transactions</p>
         </div>
         <div className="stat-card">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Total Count</p>
-          <p className="text-xl font-bold text-cream">{items.length}</p>
+          <div className="flex items-center gap-2 mb-2">
+            <ArrowDownLeft size={13} className="text-brand-greenLight" />
+            <p className="text-xs text-muted uppercase tracking-wider">Incoming</p>
+          </div>
+          <p className="text-xl font-bold text-brand-greenLight tabular-nums">
+            {formatCurrency(incomingVolume)}
+          </p>
+          <p className="text-xs text-muted mt-1">
+            {items.filter((t) => isIncoming(t.type)).length} transactions
+          </p>
         </div>
         <div className="stat-card">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Average</p>
-          <p className="text-xl font-bold text-cream">
-            {items.length > 0 ? formatCurrency(totalVolume / items.length) : '—'}
+          <div className="flex items-center gap-2 mb-2">
+            <ArrowUpRight size={13} className="text-orange" />
+            <p className="text-xs text-muted uppercase tracking-wider">Outgoing</p>
+          </div>
+          <p className="text-xl font-bold text-orange tabular-nums">
+            {formatCurrency(outgoingVolume)}
+          </p>
+          <p className="text-xs text-muted mt-1">
+            {items.filter((t) => !isIncoming(t.type)).length} transactions
           </p>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
+      {/* Filters + search */}
+      <div className="flex items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-1 bg-dark-2 border border-dark-5 rounded-xl p-1 flex-wrap">
-          {(['all', 'deposit', 'withdrawal', 'payment', 'escrow_release'] as TxFilter[]).map((f) => (
+          {(Object.keys(FILTER_LABELS) as TxFilter[]).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 filter === f ? 'bg-dark-4 text-cream' : 'text-muted hover:text-cream'
               }`}
             >
-              {f.replace(/_/g, ' ')}
+              {FILTER_LABELS[f]}
             </button>
           ))}
         </div>
-        <div className="relative">
+        <div className="relative shrink-0">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by ref, email..."
+            placeholder="Search by ref, name, email..."
             className="input pl-9 w-64"
           />
         </div>

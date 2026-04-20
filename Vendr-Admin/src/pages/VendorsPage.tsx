@@ -7,7 +7,7 @@ import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
 import { useQuery } from '../hooks/useQuery'
 import { adminApi, type Vendor } from '../lib/api'
-import { formatDate, timeAgo } from '../lib/utils'
+import { formatDate } from '../lib/utils'
 
 type VendorFilter = 'all' | 'active' | 'flagged' | 'suspended'
 
