@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Search, Eye, Flag, ShieldOff, RefreshCw, AlertTriangle } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import Badge, { StatusBadge } from '../components/Badge'
+import Badge from '../components/Badge'
 import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
 import { useQuery } from '../hooks/useQuery'
@@ -30,7 +30,7 @@ export default function VendorsPage() {
 
   const items = (data?.vendors ?? []).filter((v) => {
     if (filter === 'active' && !v.is_active) return false
-    if (filter === 'suspended' && v.is_active) return false
+    if (filter === 'suspended' && !v.is_suspended) return false
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -85,6 +85,20 @@ export default function VendorsPage() {
     }
   }
 
+  const handleUnsuspend = async (v: Vendor) => {
+    setActionLoading(true)
+    setActionError(null)
+    try {
+      await adminApi.unsuspendVendor(v.id)
+      refetch()
+      setSelected(null)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to unsuspend vendor')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const columns = [
     {
       key: 'vendor',
@@ -123,9 +137,10 @@ export default function VendorsPage() {
       label: 'Status',
       render: (row: Vendor) => (
         <div className="flex items-center gap-1.5 flex-wrap">
-          <StatusBadge status={row.is_active ? 'active' : 'suspended'} />
+          {row.is_suspended && <Badge variant="red">Suspended</Badge>}
+          {!row.is_active && <Badge variant="muted">Inactive</Badge>}
+          {row.user?.is_vendor_verified && <Badge variant="green">Verified</Badge>}
           {row.is_fraud_flagged && <Badge variant="red">Flagged</Badge>}
-          {row.verification_tier && <Badge variant="green">{row.verification_tier}</Badge>}
         </div>
       ),
     },
@@ -230,7 +245,8 @@ export default function VendorsPage() {
                 <p className="text-sm text-muted">{selected.category} · {selected.city}</p>
                 <p className="text-xs text-muted mt-1">{selected.address}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <StatusBadge status={selected.is_active ? 'active' : 'suspended'} />
+                  {selected.is_suspended && <Badge variant="red">Suspended</Badge>}
+                  {selected.user?.is_vendor_verified && <Badge variant="green">Verified</Badge>}
                   {selected.is_fraud_flagged && <Badge variant="red">Fraud Flagged</Badge>}
                   <Badge variant={selected.plan === 'pro' ? 'gold' : 'muted'}>{selected.plan}</Badge>
                 </div>
@@ -290,7 +306,16 @@ export default function VendorsPage() {
                   Flag for Fraud
                 </button>
               )}
-              {selected.is_active && (
+              {selected.is_suspended ? (
+                <button
+                  onClick={() => handleUnsuspend(selected)}
+                  disabled={actionLoading}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-green/10 border border-brand-green/30 text-brand-greenLight rounded-lg text-sm font-medium hover:bg-brand-green/20 transition-colors disabled:opacity-50"
+                >
+                  <ShieldOff size={15} />
+                  Unsuspend Vendor
+                </button>
+              ) : (
                 <button
                   onClick={() => handleSuspend(selected)}
                   disabled={actionLoading}

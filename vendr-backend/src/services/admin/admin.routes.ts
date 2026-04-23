@@ -282,6 +282,19 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
   });
 
+  fastify.post('/admin/vendors/:id/unsuspend', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const result = await unsuspendVendor(id);
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
   // Orders & Escrow
   fastify.get('/admin/orders', {
     preHandler: [authenticate],

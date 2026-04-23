@@ -263,9 +263,9 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
     }
 
     // ── 0.4. Check withdrawal cooldown (48 hours) ────────────────────────────────
-    if (vendor.last_withdrawal_at) {
+    if (user.last_withdrawal_at) {
       const cooldownHours = 48;
-      const cooldownExpiry = new Date(vendor.last_withdrawal_at.getTime() + cooldownHours * 60 * 60 * 1000);
+      const cooldownExpiry = new Date(user.last_withdrawal_at.getTime() + cooldownHours * 60 * 60 * 1000);
       const now = new Date();
       
       if (now < cooldownExpiry) {
@@ -350,9 +350,9 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
           },
         });
 
-        // Update vendor's last withdrawal timestamp
-        await tx.vendor.updateMany({
-          where: { user_id: userId },
+        // Update user's last withdrawal timestamp
+        await tx.user.update({
+          where: { id: userId },
           data: { last_withdrawal_at: new Date() },
         });
 

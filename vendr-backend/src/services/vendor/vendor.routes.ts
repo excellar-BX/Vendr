@@ -66,7 +66,7 @@ export async function vendorRoutes(app: FastifyInstance) {
         lng?: string;
       };
 
-      const where: any = { is_active: true };
+      const where: any = { is_active: true, is_suspended: false };
       if (category) where.category = category;
       if (is_verified !== undefined) where.is_verified = is_verified === 'true';
       if (ids) {
@@ -77,6 +77,8 @@ export async function vendorRoutes(app: FastifyInstance) {
         where.lat = { not: null };
         where.lng = { not: null };
       }
+      // Exclude fraud-flagged vendors from public listings
+      where.is_fraud_flagged = false;
 
       // Parse lat/lng for distance-based ordering
       const uLat = lat ? parseFloat(lat as string) : null;

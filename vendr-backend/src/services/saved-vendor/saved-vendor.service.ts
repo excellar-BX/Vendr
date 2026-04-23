@@ -117,6 +117,7 @@ export async function getSavedVendors(userId: string): Promise<(SavedVendorOutpu
     orderBy: { created_at: 'desc' },
     include: {
       vendor: {
+        where: { is_suspended: false },
         select: {
           id: true,
           shop_name: true,

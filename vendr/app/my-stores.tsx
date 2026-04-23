@@ -30,60 +30,76 @@ export default function MyStoresScreen() {
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus | null>(null);
   const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(null);
 
-  useFocusEffect(useCallback(() => {
-    const fetch = async () => {
-      if (!user?.id) return;
-      setLoading(true);
-      try {
-        const response = await apiFetch('/vendors/me/all', { method: 'GET' });
-        // The backend returns an array of vendor objects
-        const vendors = response.data;
-        if (vendors && Array.isArray(vendors)) {
-          const mappedStores = vendors.map((vendor: any) => ({
-            id: vendor.id,
-            business_name: vendor.shop_name,
-            category: vendor.category,
-            is_active: vendor.is_active,
-            is_verified: vendor.user?.is_vendor_verified,
-            rating: vendor.rating,
-            review_count: vendor.review_count,
-          }));
-          setStores(mappedStores);
-          
-          // Set primary store for verification status
-          if (mappedStores.length > 0) {
-            setPrimaryStoreId(mappedStores[0].id);
+  useFocusEffect(
+    useCallback(() => {
+      const fetch = async () => {
+        if (!user?.id) return;
+        setLoading(true);
+        try {
+          const response = await apiFetch('/vendors/me/all', { method: 'GET' });
+          // The backend returns an array of vendor objects
+          const vendors = response.data;
+          if (vendors && Array.isArray(vendors)) {
+            const mappedStores = vendors.map((vendor: any) => ({
+              id: vendor.id,
+              business_name: vendor.shop_name,
+              category: vendor.category,
+              is_active: vendor.is_active,
+              is_verified: vendor.user?.is_vendor_verified,
+              rating: vendor.rating,
+              review_count: vendor.review_count,
+            }));
             
-            // Fetch verification status for the primary store
-            try {
-              const verifResponse = await apiFetch(`/verification/status/${mappedStores[0].id}`, { method: 'GET' });
-              const verifData = verifResponse.data;
-              if (verifData?.latest_request) {
-                setVerificationStatus({
-                  status: verifData.latest_request.status,
-                  rejection_reason: verifData.latest_request.rejection_reason,
-                });
-              } else {
-                setVerificationStatus({ status: null });
+            // Set primary store for verification status
+            if (mappedStores.length > 0) {
+              const primaryId = mappedStores[0].id;
+              
+              // Fetch verification status for the primary store
+              let verifStatus: VerificationStatus = { status: null };
+              try {
+                console.log('Fetching verification status for vendor:', primaryId);
+                const verifResponse = await apiFetch(`/verification/status/${primaryId}`, { method: 'GET' });
+                console.log('Verification API response:', verifResponse);
+                // apiFetch returns response directly, not wrapped in .data
+                if (verifResponse?.latest_request) {
+                  verifStatus = {
+                    status: verifResponse.latest_request.status,
+                    rejection_reason: verifResponse.latest_request.rejection_reason,
+                  };
+                } else {
+                  console.log('No latest_request found in response');
+                }
+              } catch (verifErr) {
+                console.error('Failed to fetch verification status:', verifErr);
               }
-            } catch (verifErr) {
-              console.error('Failed to fetch verification status:', verifErr);
+              
+              // Batch all state updates together
+              setStores(mappedStores);
+              setPrimaryStoreId(primaryId);
+              setVerificationStatus(verifStatus);
+              console.log('Verification status fetched:', verifStatus);
+            } else {
+              setStores([]);
+              setPrimaryStoreId(null);
               setVerificationStatus({ status: null });
             }
+          } else {
+            setStores([]);
+            setPrimaryStoreId(null);
+            setVerificationStatus({ status: null });
           }
-        } else {
+        } catch (err) {
+          console.error('Failed to fetch stores:', err);
           setStores([]);
+          setPrimaryStoreId(null);
           setVerificationStatus({ status: null });
+        } finally {
+          setLoading(false);
         }
-      } catch (err) {
-        console.error('Failed to fetch stores:', err);
-        setStores([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, [user]));
+      };
+      fetch();
+    }, [user?.id])
+  );
 
   return (
     <View className="flex-1 bg-dark">

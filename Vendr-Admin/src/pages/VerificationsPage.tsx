@@ -18,11 +18,17 @@ export default function VerificationsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [rejectModalOpen, setRejectModalOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null) 
 
   const { data, loading, refetch } = useQuery<{ items: VerificationRequest[]; total: number }>(
     () => adminApi.getVerifications({ status: filter === 'all' ? undefined : filter, limit: 50 }),
     [filter]
+  )
+
+  // Fetch all verifications for accurate filter counts
+  const { data: allData } = useQuery<{ items: VerificationRequest[]; total: number }>(
+    () => adminApi.getVerifications({ limit: 50 }),
+    []
   )
 
   const items = (data?.items ?? []).filter((v) => {
@@ -36,9 +42,9 @@ export default function VerificationsPage() {
   })
 
   const filterCounts = {
-    pending: data?.items.filter((v) => v.status === 'pending').length ?? 0,
-    approved: data?.items.filter((v) => v.status === 'approved').length ?? 0,
-    rejected: data?.items.filter((v) => v.status === 'rejected').length ?? 0,
+    pending: allData?.items.filter((v) => v.status === 'pending').length ?? 0,
+    approved: allData?.items.filter((v) => v.status === 'approved').length ?? 0,
+    rejected: allData?.items.filter((v) => v.status === 'rejected').length ?? 0,
   }
 
   const handleApprove = async (v: VerificationRequest) => {

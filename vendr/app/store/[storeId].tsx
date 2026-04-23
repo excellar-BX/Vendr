@@ -10,6 +10,7 @@ import { uploadFile, deleteFiles } from '../../lib/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Text } from '../../components/ui/StyledText';
 import { apiFetch } from '../../lib/api';
+import { useVendrAlert } from '../../components/ui/VendrAlert';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_H = 160;
@@ -116,6 +117,7 @@ async function pickImage() {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function StoreDashboardScreen() {
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
+  const { alert, alertElement } = useVendrAlert();
 
   const [store, setStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -151,13 +153,24 @@ export default function StoreDashboardScreen() {
         // Fetch vendor, products, and reels in parallel
         const [vendorRes, productsRes, reelsRes] = await Promise.all([
           apiFetch(`/vendors/${storeId}`),
-          apiFetch(`/products?vendor_id=${storeId}&include_all=true`), // include all products for vendor management
+          apiFetch(`/products?vendor_id=${storeId}&include_all=true`),
           apiFetch(`/reels?vendor_id=${storeId}`),
         ]);
 
-        setStore(vendorRes.data);
+        const vendorData = vendorRes.data;
+        setStore(vendorData);
         setProducts(productsRes.data);
         setReels(reelsRes.data);
+
+        // Check if vendor is suspended
+        if (vendorData.is_suspended) {
+          alert(
+            'Account Suspended',
+            'Your vendor account has been suspended and is under review. Please contact support for assistance.',
+            [{ text: 'Go Back', onPress: () => router.back() }],
+            { type: 'danger' }
+          );
+        }
       } catch (error: any) {
         Alert.alert('Error', error.message ?? 'Failed to load store data');
       } finally {
@@ -214,6 +227,15 @@ export default function StoreDashboardScreen() {
 
   // ─── Product Modal ───────────────────────────────────────────────────────
   const openAddProduct = () => {
+    if (store?.is_suspended) {
+      alert(
+        'Account Suspended',
+        'Your vendor account has been suspended and is under review. Please contact support for assistance.',
+        undefined,
+        { type: 'danger' }
+      );
+      return;
+    }
     setEditingProduct(null);
     setPName(''); setPDesc(''); setPPrice(''); setPAvailable(true);
     setPImageUri(null); setPImageUrl(null);
@@ -232,6 +254,15 @@ export default function StoreDashboardScreen() {
   };
 
   const saveProduct = async () => {
+    if (store?.is_suspended) {
+      alert(
+        'Account Suspended',
+        'Your vendor account has been suspended and is under review. Please contact support for assistance.',
+        undefined,
+        { type: 'danger' }
+      );
+      return;
+    }
     if (!pName.trim() || !pPrice.trim()) {
       Alert.alert('Missing info', 'Please enter a product name and price.');
       return;
@@ -413,6 +444,7 @@ export default function StoreDashboardScreen() {
 
   return (
     <View className="flex-1 bg-dark">
+      {alertElement}
       <StatusBar style="light" />
 
       {/* Header */}
@@ -618,7 +650,18 @@ export default function StoreDashboardScreen() {
           {activeTab === 'Reels' && (
             <View style={{ gap: 12 }}>
               <TouchableOpacity
-                onPress={() => router.push('/reel-upload')}
+                onPress={() => {
+                  if (store?.is_suspended) {
+                    alert(
+                      'Account Suspended',
+                      'Your vendor account has been suspended and is under review. Please contact support for assistance.',
+                      undefined,
+                      { type: 'danger' }
+                    );
+                    return;
+                  }
+                  router.push('/reel-upload');
+                }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#E8521A', borderRadius: 14, paddingVertical: 13 }}
               >
                 <Ionicons name="add" size={18} color="white" />

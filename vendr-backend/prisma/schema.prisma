@@ -33,6 +33,7 @@ model User {
   plan                       String            @default("free") // free, pro
   plan_started_at            DateTime?
   plan_expires_at            DateTime?
+  last_withdrawal_at         DateTime?
   created_at                 DateTime          @default(now())
   updated_at                 DateTime          @updatedAt
 
@@ -128,12 +129,14 @@ model Vendor {
   plan_started_at    DateTime?
   plan_expires_at    DateTime?
   is_active          Boolean  @default(true)
+  is_suspended       Boolean  @default(false)
+  suspended_at       DateTime?
+  suspended_reason   String?
   rating             Float    @default(0)
   review_count       Int      @default(0)
   is_fraud_flagged   Boolean  @default(false)
   fraud_flag_reason  String?
   fraud_flagged_at   DateTime?
-  last_withdrawal_at DateTime?
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 

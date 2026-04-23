@@ -83,7 +83,7 @@ export async function getReelFeed(params: {
   const { userId, limit = 20, offset = 0 } = params
 
   const reels = await prisma.reel.findMany({
-    where: { is_active: true },
+    where: { is_active: true, vendor: { is_suspended: false } },
     include: {
       vendor: {
         include: {

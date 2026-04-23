@@ -337,8 +337,18 @@ export default function HomeScreen() {
                       title={section.title}
                       icon={section.icon}
                       onSeeAll={() => {
-                        // Push to a filtered list screen or just scroll
-                        // For now we trigger the matching category filter if applicable
+                        if (section.key === 'has_reels') {
+                          router.push('/(tabs)/reels');
+                        } else {
+                          const sortParam = section.key === 'nearby' ? 'distance' 
+                            : section.key === 'top_rated' ? 'rating'
+                            : section.key === 'new' ? 'newest'
+                            : undefined;
+                          router.push({
+                            pathname: '/vendors/list',
+                            params: sortParam ? { sort: sortParam } : undefined,
+                          });
+                        }
                       }}
                       count={sectionVendors.length}
                     />

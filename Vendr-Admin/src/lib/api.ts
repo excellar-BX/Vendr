@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://unfoisted-annabel-virilocally.ngrok-free.dev/api'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
 
 // ─── Auth token helpers ───────────────────────────────────────────────────────
 
@@ -84,6 +84,7 @@ export interface User {
   created_at: string
   google_id?: string | null
   notifications_enabled?: boolean
+  last_withdrawal_at?: string | null
 }
 
 export interface Vendor {
@@ -96,6 +97,9 @@ export interface Vendor {
   address: string | null
   logo_url: string | null
   is_active: boolean
+  is_suspended: boolean
+  suspended_at: string | null
+  suspended_reason: string | null
   is_fraud_flagged: boolean
   fraud_flag_reason: string | null
   rating: number
@@ -206,6 +210,9 @@ export const adminApi = {
 
   suspendVendor: (id: string) =>
     adminFetch(`/admin/vendors/${id}/suspend`, { method: 'POST' }),
+
+  unsuspendVendor: (id: string) =>
+    adminFetch(`/admin/vendors/${id}/unsuspend`, { method: 'POST' }),
 
   // Verification
   getVerifications: (params?: { status?: string; limit?: number; offset?: number }) =>

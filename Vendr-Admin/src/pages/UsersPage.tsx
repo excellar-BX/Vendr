@@ -238,6 +238,10 @@ export default function UsersPage() {
                   <p className="text-xs text-muted mb-1">Notifications</p>
                   <p className="text-cream">{selected.notifications_enabled ? 'Enabled' : 'Disabled'}</p>
                 </div>
+                <div className="p-3 bg-dark-3 rounded-lg border border-dark-5">
+                  <p className="text-xs text-muted mb-1">Last Withdrawal</p>
+                  <p className="text-cream">{selected.last_withdrawal_at ? formatDate(selected.last_withdrawal_at) : 'Never'}</p>
+                </div>
               </div>
 
               {actionError && (

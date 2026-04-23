@@ -267,21 +267,13 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
     const uLng = lng;
     
     // Get all active vendors, prioritized by distance
-    const vendorWhere: any = { is_active: true }
+    const vendorWhere: any = { is_active: true, is_suspended: false, is_fraud_flagged: false }
     if (verified_only) {
       vendorWhere.user = { is_vendor_verified: true }
     }
     
     const vendorsRaw = await prisma.vendor.findMany({
       where: vendorWhere,
-      include: {
-        user: {
-          select: {
-            id: true,
-            is_vendor_verified: true,
-          },
-        },
-      },
       select: {
         id: true,
         user_id: true,
@@ -302,10 +294,17 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
         open_time: true,
         close_time: true,
         city: true,
-        is_verified: true,
         rating: true,
         review_count: true,
-        user: { select: { id: true, full_name: true, avatar_url: true, created_at: true } },
+        user: {
+          select: {
+            id: true,
+            full_name: true,
+            avatar_url: true,
+            created_at: true,
+            is_vendor_verified: true,
+          },
+        },
         products: {
           where: { is_available: true },
           select: { id: true, name: true, description: true, price: true, image_url: true },
@@ -318,7 +317,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
     const productsRaw = await prisma.product.findMany({
       where: {
         is_available: true,
-        vendor: { is_active: true, ...(verified_only && { is_verified: true }) },
+        vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) },
       },
       include: {
         vendor: {
@@ -326,8 +325,8 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
             id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
             logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
             whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
-            close_time: true, city: true, is_verified: true, rating: true, review_count: true,
-            user: { select: { id: true, full_name: true, avatar_url: true, created_at: true } }
+            close_time: true, city: true, rating: true, review_count: true,
+            user: { select: { is_vendor_verified: true } }
           }
         }
       },
@@ -338,7 +337,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
     const reelsRaw = await prisma.reel.findMany({
       where: {
         is_active: true,
-        vendor: { is_active: true, ...(verified_only && { is_verified: true }) },
+        vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) },
       },
       include: {
         vendor: {
@@ -346,8 +345,8 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
             id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
             logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
             whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
-            close_time: true, city: true, is_verified: true, rating: true, review_count: true,
-            user: { select: { id: true, full_name: true, avatar_url: true, created_at: true } }
+            close_time: true, city: true, rating: true, review_count: true,
+            user: { select: { is_vendor_verified: true } }
           }
         },
         product: {
@@ -397,7 +396,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
         vendor_open_time: v.open_time,
         vendor_close_time: v.close_time,
         vendor_city: v.city,
-        vendor_is_verified: v.is_verified,
+        vendor_is_verified: v.user?.is_vendor_verified,
         vendor_rating: v.rating,
         vendor_review_count: v.review_count,
         name: v.shop_name,
@@ -420,7 +419,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
         : null;
 
       let baseScore = 15 // Base score for all products in special search
-      if (v.is_verified) baseScore += 5
+      if (v.user?.is_vendor_verified) baseScore += 5
       if (v.rating >= 4.0) baseScore += 5
 
       const distMult = distanceMultiplier(vDist)
@@ -470,7 +469,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
         : null;
 
       let baseScore = 10 // Base score for all reels in special search
-      if (v.is_verified) baseScore += 5
+      if (v.user?.is_vendor_verified) baseScore += 5
       if (v.rating >= 4.0) baseScore += 5
       if (r.like_count > 0) baseScore += Math.min(r.like_count, 10) // Boost for engagement
 
@@ -575,7 +574,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   }
 
   // ── Regular search continues below ───────────────────────────────────────
-  const vendorWhere: any = { is_active: true }
+  const vendorWhere: any = { is_active: true, is_suspended: false, is_fraud_flagged: false }
   const vendorAnd: any[] = []
 
   if (words.length > 0) {
@@ -610,14 +609,6 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   const VENDOR_FETCH_MULT = 3
   const vendorsRaw = await prisma.vendor.findMany({
     where: vendorWhere,
-    include: {
-      user: {
-        select: {
-          id: true,
-          is_vendor_verified: true,
-        },
-      },
-    },
     select: {
       id: true,
       user_id: true,
@@ -638,10 +629,17 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
       open_time: true,
       close_time: true,
       city: true,
-      is_verified: true,
       rating: true,
       review_count: true,
-      user: { select: { id: true, full_name: true, avatar_url: true, created_at: true } },
+      user: {
+        select: {
+          id: true,
+          full_name: true,
+          avatar_url: true,
+          created_at: true,
+          is_vendor_verified: true,
+        },
+      },
       products: {
         where: { is_available: true },
         select: { id: true, name: true, description: true, price: true, image_url: true },
@@ -653,7 +651,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   // ── Product query ───────────────────────────────────────────────────────
   const productWhere: any = {
     is_available: true,
-    vendor: { is_active: true },
+    vendor: { is_active: true, is_suspended: false },
   }
 
   const productAnd: any[] = []
@@ -686,7 +684,8 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
           id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
           logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
           whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
-          close_time: true, city: true, is_verified: true, rating: true, review_count: true,
+          close_time: true, city: true, rating: true, review_count: true,
+          user: { select: { is_vendor_verified: true } }
         },
       },
     },
@@ -696,7 +695,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   // ── Reel query ─────────────────────────────────────────────────────────
   const reelWhere: any = {
     is_active: true,
-    vendor: { is_active: true },
+    vendor: { is_active: true, is_suspended: false },
   }
 
   const reelAnd: any[] = []
@@ -723,7 +722,8 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
           id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
           logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
           whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
-          close_time: true, city: true, is_verified: true, rating: true, review_count: true,
+          close_time: true, city: true, rating: true, review_count: true,
+          user: { select: { is_vendor_verified: true } }
         },
       },
       product: {
@@ -801,7 +801,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
       : null;
 
     const baseScore = scoreProduct(p.name, p.description, v.shop_name, termLower, words);
-    const vendorV = v.is_verified ? 5 : 0;
+    const vendorV = v.user?.is_vendor_verified ? 5 : 0;
     const ratingB = v.rating >= 4.5 ? 10 : v.rating >= 4.0 ? 7 : v.rating >= 3.0 ? 3 : 0;
 
     // Boost score if product vendor matches selected category (TikTok-style ranking)
@@ -857,7 +857,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
       : null;
 
     const baseScore = scoreReel(r.caption, v.shop_name, r.product?.name ?? null, termLower, words);
-    const vendorV = v.is_verified ? 5 : 0;
+    const vendorV = v.user?.is_vendor_verified ? 5 : 0;
     const ratingB = v.rating >= 4.5 ? 10 : v.rating >= 4.0 ? 7 : v.rating >= 3.0 ? 3 : 0;
 
     // Boost score if reel vendor matches selected category
@@ -1048,7 +1048,7 @@ export async function getSearchSuggestions(input: SuggestionInput): Promise<{
   const products = await prisma.product.findMany({
     where: {
       is_available: true,
-      vendor: { is_active: true },
+      vendor: { is_active: true, is_suspended: false },
       name: { contains: term, mode: 'insensitive' }
     },
     select: {
@@ -1066,6 +1066,8 @@ export async function getSearchSuggestions(input: SuggestionInput): Promise<{
   const vendors = await prisma.vendor.findMany({
     where: {
       is_active: true,
+      is_suspended: false,
+      is_fraud_flagged: false,
       shop_name: { contains: term, mode: 'insensitive' }
     },
     select: {

@@ -23,7 +23,7 @@ export function VerificationStatusBanner({
   if (!verificationStatus) {
     return (
       <TouchableOpacity
-        onPress={() => router.push('/verification/submit')}
+        onPress={() => vendorId ? router.push({ pathname: '/verification/submit', params: { vendorId } }) : null}
         className="bg-orange/10 border border-orange/30 rounded-2xl p-4 mx-4 mt-4"
       >
         <View className="flex-row items-center gap-3">
@@ -68,7 +68,7 @@ export function VerificationStatusBanner({
   if (verificationStatus === 'rejected') {
     return (
       <TouchableOpacity
-        onPress={() => router.push('/verification/submit')}
+        onPress={() => router.push({ pathname: '/verification/submit', params: { vendorId } })}
         className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 mx-4 mt-4"
       >
         <View className="flex-row items-center gap-3">

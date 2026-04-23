@@ -4,7 +4,11 @@ import prisma from '../../lib/prisma'
 export async function getVendorsController(_request: FastifyRequest, reply: FastifyReply) {
   try {
     const vendors = await prisma.vendor.findMany({
-      where: { is_active: true },
+      where: { 
+        is_active: true,
+        is_suspended: false,
+        is_fraud_flagged: false,
+      },
       include: {
         user: {
           select: {

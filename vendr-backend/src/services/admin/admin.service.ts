@@ -193,7 +193,7 @@ export async function getVerificationRequests() {
 
 // Approve verification request
 export async function approveVerificationRequest(requestId: string) {
-  const request = await prisma.verification_request.findUnique({
+  const request = await prisma.verificationRequest.findUnique({
     where: { id: requestId },
     include: { vendor: { include: { user: true } } },
   })
@@ -201,7 +201,7 @@ export async function approveVerificationRequest(requestId: string) {
   if (!request) throw new Error('Verification request not found')
 
   await prisma.$transaction([
-    prisma.verification_request.update({
+    prisma.verificationRequest.update({
       where: { id: requestId },
       data: {
         status: 'approved',
@@ -219,7 +219,7 @@ export async function approveVerificationRequest(requestId: string) {
 
 // Reject verification request
 export async function rejectVerificationRequest(requestId: string, reason?: string) {
-  await prisma.verification_request.update({
+  await prisma.verificationRequest.update({
     where: { id: requestId },
     data: {
       status: 'rejected',
@@ -243,7 +243,13 @@ export async function getUsers(limit = 50, offset = 0, search?: string, role?: s
   }
 
   if (role) {
-    where.role = role
+    if (role === 'vendor') {
+      where.is_vendor = true
+    } else if (role === 'buyer') {
+      where.is_buyer = true
+    } else {
+      where.role = role
+    }
   }
 
   const [users, total] = await Promise.all([
@@ -259,8 +265,12 @@ export async function getUsers(limit = 50, offset = 0, search?: string, role?: s
         plan: true,
         is_verified: true,
         is_vendor_verified: true,
+        is_vendor: true,
+        is_buyer: true,
         created_at: true,
         is_deleted: true,
+        notifications_enabled: true,
+        last_withdrawal_at: true,
       },
       orderBy: { created_at: 'desc' },
     }),
@@ -358,6 +368,7 @@ export async function getVendors(limit = 50, offset = 0, search?: string) {
           select: {
             full_name: true,
             email: true,
+            is_vendor_verified: true,
           },
         },
       },
@@ -443,7 +454,11 @@ export async function unflagVendor(vendorId: string) {
 export async function suspendVendor(vendorId: string) {
   const vendor = await prisma.vendor.update({
     where: { id: vendorId },
-    data: { is_active: false },
+    data: { 
+      is_suspended: true,
+      suspended_at: new Date(),
+      suspended_reason: 'Account suspended by admin',
+    },
     include: {
       user: {
         select: { id: true, email: true },
@@ -457,6 +472,34 @@ export async function suspendVendor(vendorId: string) {
     type: 'account_suspended',
     title: 'Your account has been suspended',
     body: 'Your vendor account has been suspended. Please contact support for more information.',
+    data: { vendorId },
+  })
+
+  return { success: true }
+}
+
+// Unsuspend vendor
+export async function unsuspendVendor(vendorId: string) {
+  const vendor = await prisma.vendor.update({
+    where: { id: vendorId },
+    data: { 
+      is_suspended: false,
+      suspended_at: null,
+      suspended_reason: null,
+    },
+    include: {
+      user: {
+        select: { id: true, email: true },
+      },
+    },
+  })
+
+  // Send notification to vendor
+  await createNotification({
+    userId: vendor.user_id,
+    type: 'account_unsuspended',
+    title: 'Your account has been reinstated',
+    body: 'Your vendor account has been reinstated and you can now resume operations.',
     data: { vendorId },
   })
 

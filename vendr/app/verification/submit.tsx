@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert, Image
+  ActivityIndicator, Image
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -10,12 +10,25 @@ import * as DocumentPicker from 'expo-document-picker';
 import { verificationApi } from '../../lib/api';
 import { Text as StyledText } from '../../components/ui/StyledText';
 import { apiFetch } from '../../lib/api';
+import { useVendrAlert } from '../../components/ui/VendrAlert';
+import { useAuthStore } from '../../stores/authStore';
 
 export default function VerificationSubmitScreen() {
-  const { vendorId } = useLocalSearchParams<{ vendorId?: string }>();
+  const { vendorId: paramVendorId } = useLocalSearchParams<{ vendorId?: string }>();
+  const { user } = useAuthStore();
+  
+  // Use vendorId from params, fallback to auth store vendor
+  const vendorId = paramVendorId || user?.vendor?.id;
   
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(true);
+  const [existingStatus, setExistingStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+  const [uploading, setUploading] = useState<{
+    cac_certificate?: boolean;
+    nin_card?: boolean;
+    proof_of_address?: boolean;
+  }>({});
+  const { alert, alertElement } = useVendrAlert();
   const [formData, setFormData] = useState({
     cac_number: '',
     nin_number: '',
@@ -26,6 +39,47 @@ export default function VerificationSubmitScreen() {
     nin_card?: string;
     proof_of_address?: string;
   }>({});
+
+  // Check existing verification status on mount
+  useEffect(() => {
+    const checkStatus = async () => {
+      if (!vendorId) {
+        setCheckingStatus(false);
+        return;
+      }
+
+      try {
+        const response = await apiFetch(`/verification/status/${vendorId}`, { method: 'GET' });
+        const data = response.data;
+        
+        if (data?.latest_request) {
+          setExistingStatus(data.latest_request.status);
+          
+          if (data.latest_request.status === 'pending') {
+            alert(
+              'Verification Pending',
+              'You already have a verification request in review. Please wait 3-4 business days for approval.',
+              [{ text: 'OK', onPress: () => router.back() }],
+              { type: 'info' }
+            );
+          } else if (data.latest_request.status === 'approved') {
+            alert(
+              'Already Verified',
+              'Your business is already verified!',
+              [{ text: 'OK', onPress: () => router.back() }],
+              { type: 'success' }
+            );
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check verification status:', err);
+      } finally {
+        setCheckingStatus(false);
+      }
+    };
+
+    checkStatus();
+  }, [vendorId]);
 
   const handleUploadDocument = async (docType: 'cac_certificate' | 'nin_card' | 'proof_of_address') => {
     try {
@@ -39,7 +93,7 @@ export default function VerificationSubmitScreen() {
       }
 
       const file = result.assets[0];
-      setUploading(true);
+      setUploading(prev => ({ ...prev, [docType]: true }));
 
       // Get signed upload URL from backend
       const fileName = `verification/${vendorId}_${docType}_${Date.now()}.${file.mimeType?.split('/')[1] || 'pdf'}`;
@@ -70,26 +124,26 @@ export default function VerificationSubmitScreen() {
         [docType]: signRes.data.publicUrl,
       }));
 
-      Alert.alert('Success', 'Document uploaded successfully');
+      alert('Success', 'Document uploaded successfully', undefined, { type: 'success' });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to upload document');
+      alert('Error', error.message || 'Failed to upload document', undefined, { type: 'danger' });
     } finally {
-      setUploading(false);
+      setUploading(prev => ({ ...prev, [docType]: false }));
     }
   };
 
   const handleSubmit = async () => {
     // Validation
     if (!formData.cac_number.trim()) {
-      Alert.alert('Error', 'Please enter your CAC registration number');
+      alert('Error', 'Please enter your CAC registration number', undefined, { type: 'warning' });
       return;
     }
     if (!formData.nin_number.trim()) {
-      Alert.alert('Error', 'Please enter your NIN number');
+      alert('Error', 'Please enter your NIN number', undefined, { type: 'warning' });
       return;
     }
     if (!formData.business_address.trim()) {
-      Alert.alert('Error', 'Please enter your business address');
+      alert('Error', 'Please enter your business address', undefined, { type: 'warning' });
       return;
     }
 
@@ -103,13 +157,14 @@ export default function VerificationSubmitScreen() {
         documents,
       });
       
-      Alert.alert(
+      alert(
         'Success',
         'Your verification request has been submitted. You will be notified within 3-4 business days.',
-        [{ text: 'OK', onPress: () => router.back() }]
+        [{ text: 'OK', onPress: () => router.back() }],
+        { type: 'success' }
       );
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to submit verification request');
+      alert('Error', error.message || 'Failed to submit verification request', undefined, { type: 'danger' });
     } finally {
       setLoading(false);
     }
@@ -117,7 +172,18 @@ export default function VerificationSubmitScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
+      {alertElement}
       <StatusBar style="light" />
+
+      {checkingStatus ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#E8521A" />
+          <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', marginTop: 16 }}>
+            Checking verification status...
+          </StyledText>
+        </View>
+      ) : (
+        <>
 
       {/* Header */}
       <View style={{
@@ -253,7 +319,7 @@ export default function VerificationSubmitScreen() {
               ) : (
                 <TouchableOpacity
                   onPress={() => handleUploadDocument('cac_certificate')}
-                  disabled={uploading}
+                  disabled={uploading.cac_certificate}
                   style={{
                     backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
                     borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -261,7 +327,7 @@ export default function VerificationSubmitScreen() {
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color="#E8521A" />
                   <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC' }}>
-                    {uploading ? 'Uploading...' : 'Upload CAC Certificate'}
+                    {uploading.cac_certificate ? 'Uploading...' : 'Upload CAC Certificate'}
                   </StyledText>
                 </TouchableOpacity>
               )}
@@ -288,7 +354,7 @@ export default function VerificationSubmitScreen() {
               ) : (
                 <TouchableOpacity
                   onPress={() => handleUploadDocument('nin_card')}
-                  disabled={uploading}
+                  disabled={uploading.nin_card}
                   style={{
                     backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
                     borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -296,7 +362,7 @@ export default function VerificationSubmitScreen() {
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color="#E8521A" />
                   <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC' }}>
-                    {uploading ? 'Uploading...' : 'Upload NIN Card'}
+                    {uploading.nin_card ? 'Uploading...' : 'Upload NIN Card'}
                   </StyledText>
                 </TouchableOpacity>
               )}
@@ -323,7 +389,7 @@ export default function VerificationSubmitScreen() {
               ) : (
                 <TouchableOpacity
                   onPress={() => handleUploadDocument('proof_of_address')}
-                  disabled={uploading}
+                  disabled={uploading.proof_of_address}
                   style={{
                     backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
                     borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -331,7 +397,7 @@ export default function VerificationSubmitScreen() {
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color="#E8521A" />
                   <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC' }}>
-                    {uploading ? 'Uploading...' : 'Upload Proof of Address'}
+                    {uploading.proof_of_address ? 'Uploading...' : 'Upload Proof of Address'}
                   </StyledText>
                 </TouchableOpacity>
               )}
@@ -369,6 +435,8 @@ export default function VerificationSubmitScreen() {
           </StyledText>
         </View>
       </ScrollView>
+        </>
+      )}
     </View>
   );
 }
