@@ -117,7 +117,6 @@ export async function getSavedVendors(userId: string): Promise<(SavedVendorOutpu
     orderBy: { created_at: 'desc' },
     include: {
       vendor: {
-        where: { is_suspended: false },
         select: {
           id: true,
           shop_name: true,
@@ -126,6 +125,7 @@ export async function getSavedVendors(userId: string): Promise<(SavedVendorOutpu
           rating: true,
           review_count: true,
           is_active: true,
+          is_suspended: true,
           logo_url: true,
           banner_url: true,
           lat: true,
@@ -148,7 +148,10 @@ export async function getSavedVendors(userId: string): Promise<(SavedVendorOutpu
     },
   })
 
-  return savedList.map((s: any) => ({
+  // Filter out suspended vendors
+  const filteredList = savedList.filter((s: any) => !s.vendor.is_suspended)
+
+  return filteredList.map((s: any) => ({
     id: s.id,
     user_id: s.user_id,
     vendor_id: s.vendor_id,

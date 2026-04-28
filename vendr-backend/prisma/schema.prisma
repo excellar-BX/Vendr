@@ -59,6 +59,7 @@ model User {
   reelSaves                  ReelSave[]
   messages                   Message[]
   conversations              Conversation[] @relation("ConversationParticipants")
+  vendorReports              VendorReport[]
 
   @@map("users")
 }
@@ -151,6 +152,7 @@ model Vendor {
   verificationRequests VerificationRequest[]
   walletTransactions WalletTransaction[]
   disputes          Dispute[]
+  vendorReports     VendorReport[]
 
   @@map("vendors")
 }
@@ -519,4 +521,28 @@ model Waitlist {
   created_at DateTime @default(now())
 
   @@map("waitlist")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VENDOR REPORTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model VendorReport {
+  id          String   @id @default(uuid())
+  vendor_id   String
+  user_id     String
+  reason      String   // fraud, fake_products, inappropriate_content, harassment, other
+  description String?
+  status      String   @default("pending") // pending, reviewed, resolved, dismissed
+  admin_notes String?
+  reviewed_at DateTime?
+  reviewed_by String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, vendor_id])
+  @@map("vendor_reports")
 }

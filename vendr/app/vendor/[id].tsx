@@ -22,6 +22,8 @@ import {
   useToggleSaveVendor,
   useSubmitReview,
   useDeleteReview,
+  useHasReportedVendor,
+  useSubmitVendorReport,
 } from '../../hooks/useQueries';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -230,6 +232,164 @@ function WriteReviewModal({
   );
 }
 
+// ─── Report Vendor Modal ───────────────────────────────────────────────────────
+function ReportVendorModal({
+  visible, vendorName, hasReported, onClose, onSubmit,
+}: {
+  visible: boolean;
+  vendorName: string;
+  hasReported: boolean;
+  onClose: () => void;
+  onSubmit: (reason: string, description: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState('');
+  const [description, setDescription] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setReason('');
+      setDescription('');
+    }
+  }, [visible]);
+
+  const reasons = [
+    { value: 'fraud', label: 'Fraud or scam' },
+    { value: 'fake_products', label: 'Fake or misleading products' },
+    { value: 'inappropriate_content', label: 'Inappropriate content' },
+    { value: 'harassment', label: 'Harassment or abuse' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const handleSubmit = async () => {
+    if (!reason) return;
+    setSubmitting(true);
+    await onSubmit(reason, description.trim());
+    setSubmitting(false);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
+        <View style={{
+          backgroundColor: '#120E07', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+          borderWidth: 1, borderColor: '#2A1F14', padding: 24, paddingBottom: 40,
+        }}>
+          {/* Handle */}
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#3D3026', alignSelf: 'center', marginBottom: 20 }} />
+
+          {hasReported ? (
+            <>
+              <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(45,134,83,0.15)', borderWidth: 1, borderColor: 'rgba(45,134,83,0.3)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="checkmark-circle" size={32} color="#2D8653" />
+                </View>
+                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginTop: 16 }}>
+                  Report Already Submitted
+                </Text>
+                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', marginTop: 8, paddingHorizontal: 20 }}>
+                  You have already reported {vendorName}. Our team is reviewing your report.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={onClose}
+                style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14' }}
+              >
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Close</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 4 }}>
+                Report Vendor
+              </Text>
+              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', marginBottom: 24 }}>
+                {vendorName}
+              </Text>
+
+              {/* Reason selection */}
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#9A8570', marginBottom: 12, letterSpacing: 0.5 }}>
+                REASON FOR REPORT
+              </Text>
+              <View style={{ gap: 8, marginBottom: 20 }}>
+                {reasons.map((r) => (
+                  <TouchableOpacity
+                    key={r.value}
+                    onPress={() => setReason(r.value)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', padding: 14,
+                      borderRadius: 12, borderWidth: 1,
+                      borderColor: reason === r.value ? '#E8521A' : '#2A1F14',
+                      backgroundColor: reason === r.value ? 'rgba(232,82,26,0.1)' : '#1A1208',
+                    }}
+                  >
+                    <View style={{
+                      width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+                      borderColor: reason === r.value ? '#E8521A' : '#3D3026',
+                      alignItems: 'center', justifyContent: 'center', marginRight: 12,
+                    }}>
+                      {reason === r.value && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#E8521A' }} />}
+                    </View>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: reason === r.value ? '#E8521A' : '#FDF6EC' }}>
+                      {r.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Description */}
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#9A8570', marginBottom: 12, letterSpacing: 0.5 }}>
+                DESCRIPTION (OPTIONAL)
+              </Text>
+              <View style={{
+                backgroundColor: '#1A1208', borderWidth: 1,
+                borderColor: description ? '#E8521A' : '#2A1F14',
+                borderRadius: 16, padding: 14, marginBottom: 20, minHeight: 100,
+              }}>
+                <RNTextInput
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Provide more details about your report..."
+                  placeholderTextColor="#6B5E50"
+                  multiline
+                  style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, lineHeight: 22, backgroundColor: 'transparent' }}
+                />
+              </View>
+
+              {/* Buttons */}
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity
+                  onPress={onClose}
+                  style={{ flex: 1, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14' }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSubmit}
+                  disabled={!reason || submitting}
+                  style={{
+                    flex: 2, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: reason ? '#E8521A' : '#2A1F14',
+                    shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: reason ? 0.3 : 0, shadowRadius: 10, elevation: reason ? 6 : 0,
+                  }}
+                >
+                  {submitting
+                    ? <ActivityIndicator size="small" color="white" />
+                    : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: reason ? 'white' : '#6B5E50' }}>
+                        Submit Report
+                      </Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 
 // ─── Static Store Locator Map ─────────────────────────────────────────────────
 function StoreLocatorMap({ lat, lng, vendorName }: { lat: number; lng: number; vendorName: string }) {
@@ -318,6 +478,7 @@ export default function VendorProfileScreen() {
 
   const [activeTab, setActiveTab] = useState<'products' | 'reviews' | 'about' | 'reels'>('products');
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
 
   // React Query hooks
   const { data: vendor, isLoading: vendorLoading } = useVendor(id);
@@ -325,9 +486,11 @@ export default function VendorProfileScreen() {
   const { data: reels } = useVendorReels(id);
   const { data: reviews } = useVendorReviews(id);
   const { data: saved } = useIsVendorSaved(id, user?.id);
+  const { data: hasReported } = useHasReportedVendor(id, user?.id);
   const toggleSaveMutation = useToggleSaveVendor();
   const submitReviewMutation = useSubmitReview();
   const deleteReviewMutation = useDeleteReview();
+  const submitReportMutation = useSubmitVendorReport();
 
   const loading = vendorLoading;
 
@@ -405,6 +568,17 @@ export default function VendorProfileScreen() {
         }},
       ],
     });
+  };
+
+  const handleSubmitReport = async (reason: string, description: string) => {
+    if (!user?.id || !vendor) return;
+    try {
+      await submitReportMutation.mutateAsync({ vendorId: id, reason, description });
+      setShowReportModal(false);
+      vendrAlert({ title: 'Report Submitted', message: 'Thank you for your report. Our team will review it.', type: 'success' });
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
   };
   const headerBg = scrollY.interpolate({
     inputRange: [BANNER_HEIGHT - HEADER_HEIGHT - 20, BANNER_HEIGHT - HEADER_HEIGHT],
@@ -731,6 +905,24 @@ export default function VendorProfileScreen() {
           {/* About tab */}
           {activeTab === 'about' && (
             <View className="gap-4">
+              {/* Report button - only for non-owners */}
+              {!isOwner && user?.id && (
+                <TouchableOpacity
+                  onPress={() => setShowReportModal(true)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                    gap: 8, paddingVertical: 14, borderRadius: 16,
+                    backgroundColor: 'rgba(232,82,26,0.1)',
+                    borderWidth: 1, borderColor: 'rgba(232,82,26,0.3)',
+                  }}
+                >
+                  <Ionicons name="flag-outline" size={18} color="#E8521A" />
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#E8521A' }}>
+                    {hasReported ? 'View Report Status' : 'Report Vendor'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               <View className="bg-dark-2 border border-faint rounded-3xl overflow-hidden">
               {vendor.description && (
                 <View className="p-4 border-b border-faint">
@@ -911,6 +1103,15 @@ export default function VendorProfileScreen() {
         existingReview={null}
         onClose={() => setShowReviewModal(false)}
         onSubmit={handleSubmitReview}
+      />
+
+      {/* Report Vendor Modal */}
+      <ReportVendorModal
+        visible={showReportModal}
+        vendorName={vendor?.shop_name ?? ''}
+        hasReported={hasReported ?? false}
+        onClose={() => setShowReportModal(false)}
+        onSubmit={handleSubmitReport}
       />
 
       {alertElement}

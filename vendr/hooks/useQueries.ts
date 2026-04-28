@@ -277,3 +277,35 @@ export function useMyVendor() {
     staleTime: 1000 * 60 * 10,
   });
 }
+
+// ─── Vendor Reports ────────────────────────────────────────────────────────────
+
+export function useHasReportedVendor(vendorId: string, userId?: string) {
+  return useQuery({
+    queryKey: ['vendor-report', vendorId, userId],
+    queryFn: async () => {
+      const response = await apiFetch(`/vendor-reports/${vendorId}/check`);
+      return response.data.has_reported;
+    },
+    staleTime: 1000 * 60 * 5,
+    enabled: !!vendorId && !!userId,
+    retry: false,
+  });
+}
+
+export function useSubmitVendorReport() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ vendorId, reason, description }: { vendorId: string; reason: string; description?: string }) => {
+      const response = await apiFetch('/vendor-reports', {
+        method: 'POST',
+        body: JSON.stringify({ vendor_id: vendorId, reason, description }),
+      });
+      return response.data;
+    },
+    onSuccess: (_, { vendorId }) => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-report', vendorId] });
+    },
+  });
+}

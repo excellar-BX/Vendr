@@ -169,6 +169,22 @@ export interface Dispute {
   vendor?: Vendor
 }
 
+export interface VendorReport {
+  id: string
+  vendor_id: string
+  user_id: string
+  reason: string
+  description: string | null
+  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed'
+  admin_notes: string | null
+  reviewed_at: string | null
+  reviewed_by: string | null
+  created_at: string
+  updated_at: string
+  user?: User
+  vendor?: Vendor
+}
+
 export interface DashboardStats {
   users: { total: number; buyers: number; vendors: number; new_this_week: number }
   transactions: { total_volume: number; count: number; today_volume: number }
@@ -244,4 +260,13 @@ export const adminApi = {
 
   // Waitlist
   getWaitlist: () => adminFetch('/admin/waitlist'),
+
+  // Vendor Reports
+  getVendorReports: (params?: { status?: string; limit?: number; offset?: number }) =>
+    adminFetch('/admin/vendor-reports', { query: params }),
+
+  getVendorReport: (id: string) => adminFetch(`/admin/vendor-reports/${id}`),
+
+  updateVendorReport: (id: string, data: { status: string; admin_notes?: string }) =>
+    adminFetch(`/admin/vendor-reports/${id}`, { method: 'PATCH', body: data }),
 }

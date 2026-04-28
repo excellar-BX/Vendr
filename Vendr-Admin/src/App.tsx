@@ -11,6 +11,7 @@ import TransactionsPage from './pages/TransactionsPage'
 import DisputesPage from './pages/DisputesPage'
 import WaitlistPage from './pages/WaitlistPage'
 import NotificationsPage from './pages/NotificationsPage'
+import ReportedVendorsPage from './pages/ReportedVendorsPage'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedLayout() {
@@ -56,6 +57,7 @@ function AppRoutes() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/vendors" element={<VendorsPage />} />
+        <Route path="/vendor-reports" element={<ReportedVendorsPage />} />
         <Route path="/verifications" element={<VerificationsPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
