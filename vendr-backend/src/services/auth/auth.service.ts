@@ -188,6 +188,7 @@ export async function googleAuth(input: GoogleAuthInput) {
         is_deleted: true,
         notifications_enabled: true,
         created_at: true,
+        google_id: true,
         vendors: {
           where: { is_active: true },
           select: { id: true, shop_name: true, is_active: true },
@@ -219,12 +220,17 @@ export async function googleAuth(input: GoogleAuthInput) {
         is_deleted: true,
         notifications_enabled: true,
         created_at: true,
+        google_id: true,
         vendors: {
           where: { is_active: true },
           select: { id: true, shop_name: true, is_active: true },
         },
       },
     })
+  }
+
+  if (!user) {
+    throw { statusCode: 404, message: 'User not found' }
   }
 
   const accessToken = generateAccessToken({ id: user.id, email: user.email })

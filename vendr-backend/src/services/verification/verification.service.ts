@@ -136,7 +136,6 @@ export async function reviewVerification(
     await prisma.vendor.update({
       where: { id: verification.vendor_id },
       data: {
-        verified_at: new Date(),
         verification_tier: input.verification_tier || 'basic',
       },
     });
@@ -198,7 +197,6 @@ export async function getVerificationStatus(vendorId: string) {
 
   return {
     is_verified: vendor.user.is_vendor_verified,
-    verified_at: vendor.verified_at,
     verification_tier: vendor.verification_tier,
     latest_request: latestRequest,
   };

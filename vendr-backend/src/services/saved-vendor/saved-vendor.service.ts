@@ -125,7 +125,6 @@ export async function getSavedVendors(userId: string): Promise<(SavedVendorOutpu
           address: true,
           rating: true,
           review_count: true,
-          is_verified: true,
           is_active: true,
           logo_url: true,
           banner_url: true,
@@ -139,12 +138,17 @@ export async function getSavedVendors(userId: string): Promise<(SavedVendorOutpu
           open_time: true,
           close_time: true,
           description: true,
+          user: {
+            select: {
+              is_vendor_verified: true,
+            }
+          }
         },
       },
     },
   })
 
-  return savedList.map(s => ({
+  return savedList.map((s: any) => ({
     id: s.id,
     user_id: s.user_id,
     vendor_id: s.vendor_id,

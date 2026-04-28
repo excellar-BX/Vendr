@@ -76,6 +76,7 @@ export interface User {
   avatar_url: string | null
   phone: string | null
   is_verified: boolean
+  is_vendor_verified: boolean
   is_buyer: boolean
   is_vendor: boolean
   is_deleted: boolean

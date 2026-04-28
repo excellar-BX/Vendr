@@ -229,7 +229,7 @@ export async function withdrawToBank(request: FastifyRequest, reply: FastifyRepl
     // ── 0. Check user is a vendor ───────────────────────────────────────────────
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { is_vendor: true, role: true },
+      select: { is_vendor: true, role: true, last_withdrawal_at: true },
     });
 
     if (!user || !user.is_vendor) {

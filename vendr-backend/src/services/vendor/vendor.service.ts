@@ -46,7 +46,6 @@ export async function createVendor(userId: string, input: CreateVendorInput) {
       logo_url: input.logo_url,
       banner_url: input.banner_url,
       is_active: true,
-      is_verified: false,
       rating: 0,
       review_count: 0,
     },
@@ -199,7 +198,6 @@ export async function updateVendor(userId: string, input: Partial<CreateVendorIn
       ...(input.logo_url !== undefined && { logo_url: input.logo_url }),
       ...(input.banner_url !== undefined && { banner_url: input.banner_url }),
       ...(input.is_active !== undefined && { is_active: input.is_active }),
-      ...(input.is_verified !== undefined && { is_verified: input.is_verified }),
     },
     include: {
       user: {
@@ -281,7 +279,6 @@ export async function updateVendorById(vendorId: string, userId: string, input: 
       ...(input.logo_url !== undefined && { logo_url: input.logo_url }),
       ...(input.banner_url !== undefined && { banner_url: input.banner_url }),
       ...(input.is_active !== undefined && { is_active: input.is_active }),
-      ...(input.is_verified !== undefined && { is_verified: input.is_verified }),
     },
     include: {
       user: {

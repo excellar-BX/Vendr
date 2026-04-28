@@ -180,7 +180,7 @@ export async function testPushNotificationController(request: FastifyRequest, re
       });
     }
 
-    await NotificationService.sendPushNotification(userId, title, body, type || 'test');
+    await NotificationService.sendPushNotification(userId, title, body, { type: type || 'test' });
 
     return reply.status(200).send({
       success: true,
