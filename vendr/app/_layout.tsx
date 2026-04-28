@@ -13,6 +13,10 @@ import {
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
 import * as Sentry from '@sentry/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Custom API & Stores
 import { apiFetch, getAccessToken, clearTokens } from '../lib/api';
@@ -26,6 +30,23 @@ import {
 } from '../lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
+
+// React Query Setup
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes - data is fresh
+      gcTime: 1000 * 60 * 10, // 10 minutes - keep in cache after unmount
+      retry: 2,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+const persister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'vendr-query-cache',
+});
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
@@ -165,8 +186,10 @@ function RootLayout() {
   // 3. Handle Splash visibility
   useEffect(() => {
     if (appReady && (fontsLoaded || fontError)) {
-      SplashScreen.hideAsync();
-      const timer = setTimeout(() => setShowSplash(false), 1200);
+      const timer = setTimeout(() => {
+        SplashScreen.hideAsync();
+        setShowSplash(false);
+      }, 1200);
       return () => clearTimeout(timer);
     }
   }, [appReady, fontsLoaded, fontError]);
@@ -193,38 +216,43 @@ function RootLayout() {
   }
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="vendor/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="become-vendor" options={{ animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="orders" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="saved" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="reviews" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="chat/[conversationId]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="appearance" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="help-center" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="about-app" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="profile-view" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="reel-upload" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-        <Stack.Screen name="reel/[reelId]" options={{ animation: 'fade', headerShown: false }} />
-        <Stack.Screen name="contact-support" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="privacy-policy" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="terms-of-service" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="my-stores" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="store/[storeId]" options={{ animation: "slide_from_right" }} />
-        <Stack.Screen name="map-search" options={{ animation: "slide_from_bottom", presentation: "fullScreenModal" }} />
-        <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="withdraw" options={{ animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="add-bank-account" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="wallet-transactions" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="fund-wallet" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-      </Stack>
-    </View>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister }}
+    >
+      <View className="flex-1 bg-dark">
+        <StatusBar style="light" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="vendor/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="become-vendor" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="orders" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="saved" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="reviews" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="chat/[conversationId]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="appearance" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="help-center" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="about-app" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="profile-view" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="reel-upload" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
+          <Stack.Screen name="reel/[reelId]" options={{ animation: 'fade', headerShown: false }} />
+          <Stack.Screen name="contact-support" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="privacy-policy" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="terms-of-service" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="my-stores" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="store/[storeId]" options={{ animation: "slide_from_right" }} />
+          <Stack.Screen name="map-search" options={{ animation: "slide_from_bottom", presentation: "fullScreenModal" }} />
+          <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="withdraw" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="add-bank-account" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="wallet-transactions" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="fund-wallet" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
+        </Stack>
+      </View>
+    </PersistQueryClientProvider>
   );
 }
 

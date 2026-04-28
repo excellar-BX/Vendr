@@ -1,3 +1,4 @@
+// search.controller.ts
 import { FastifyRequest, FastifyReply } from 'fastify'
 import * as SearchService from './search.service'
 import { searchSchema, suggestionSchema, searchHistorySchema } from './search.schema'
@@ -8,7 +9,7 @@ export async function searchController(request: FastifyRequest, reply: FastifyRe
     if (!parsed.success) {
       return reply.status(400).send({
         success: false,
-        errors: parsed.error.flatten().fieldErrors
+        errors: parsed.error.flatten().fieldErrors,
       })
     }
 
@@ -24,14 +25,14 @@ export async function searchController(request: FastifyRequest, reply: FastifyRe
         totalVendors: result.totalVendors,
         totalProducts: result.totalProducts,
         totalReels: result.totalReels,
-        extractedTerm: SearchService.extractSearchTerm(input.q),
+        extractedTerm: result.extractedTerm,
       },
       query: input.q,
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({
       success: false,
-      message: err.message
+      message: err.message,
     })
   }
 }
@@ -42,12 +43,16 @@ export async function suggestionsController(request: FastifyRequest, reply: Fast
     if (!parsed.success) {
       return reply.status(400).send({
         success: false,
-        errors: parsed.error.flatten().fieldErrors
+        errors: parsed.error.flatten().fieldErrors,
       })
     }
 
     const { q, limit } = parsed.data
-    const suggestions = await SearchService.getSearchSuggestions({ q, limit })
+
+    // userId is optional — if authenticated, pass it for personalised history suggestions
+    const userId = (request as any).user?.id as string | undefined
+
+    const suggestions = await SearchService.getSearchSuggestions({ q, limit, userId })
 
     return reply.status(200).send({
       success: true,
@@ -56,14 +61,14 @@ export async function suggestionsController(request: FastifyRequest, reply: Fast
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({
       success: false,
-      message: err.message
+      message: err.message,
     })
   }
 }
 
 export async function searchHistoryController(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = request.user.id
+    const userId = (request as any).user.id
     const history = await SearchService.getUserSearchHistory(userId)
 
     return reply.status(200).send({
@@ -73,7 +78,7 @@ export async function searchHistoryController(request: FastifyRequest, reply: Fa
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({
       success: false,
-      message: err.message
+      message: err.message,
     })
   }
 }
@@ -84,11 +89,11 @@ export async function saveSearchHistoryController(request: FastifyRequest, reply
     if (!parsed.success) {
       return reply.status(400).send({
         success: false,
-        errors: parsed.error.flatten().fieldErrors
+        errors: parsed.error.flatten().fieldErrors,
       })
     }
 
-    const userId = request.user.id
+    const userId = (request as any).user.id
     await SearchService.saveSearchQuery(userId, parsed.data.query)
 
     return reply.status(200).send({
@@ -98,26 +103,25 @@ export async function saveSearchHistoryController(request: FastifyRequest, reply
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({
       success: false,
-      message: err.message
+      message: err.message,
     })
   }
 }
 
 export async function clearSearchHistoryController(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = request.user.id
+    const userId = (request as any).user.id
     const { query } = request.query as { query?: string }
     await SearchService.clearSearchHistory(userId, query)
 
-    const message = query ? 'Search history item deleted' : 'Search history cleared'
     return reply.status(200).send({
       success: true,
-      message,
+      message: query ? 'Search history item deleted' : 'Search history cleared',
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({
       success: false,
-      message: err.message
+      message: err.message,
     })
   }
 }

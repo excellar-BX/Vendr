@@ -606,7 +606,7 @@ export async function getWalletTransactions(limit = 50, offset = 0, txType?: str
   const where = txType ? { tx_type: txType } : {}
 
   const [transactions, total] = await Promise.all([
-    prisma.wallet_transaction.findMany({
+    prisma.walletTransaction.findMany({
       where,
       take: limit,
       skip: offset,
@@ -615,7 +615,7 @@ export async function getWalletTransactions(limit = 50, offset = 0, txType?: str
       },
       orderBy: { created_at: 'desc' },
     }),
-    prisma.wallet_transaction.count({ where }),
+    prisma.walletTransaction.count({ where }),
   ])
 
   return { transactions, total }
@@ -689,7 +689,7 @@ export async function resolveDispute(disputeId: string, resolution: string) {
 
 // Broadcast notification to all users or specific audience
 export async function broadcastNotification(title: string, body: string, audience: 'all' | 'buyers' | 'vendors') {
-  let users
+  let users: any[] = []
   if (audience === 'all') {
     users = await prisma.user.findMany({
       where: { is_deleted: false, notifications_enabled: true },

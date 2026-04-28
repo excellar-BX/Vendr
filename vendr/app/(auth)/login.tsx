@@ -14,10 +14,7 @@ import { StyledInput as RNTextInput } from '../../components/ui/StyledInput'
 import { apiFetch, saveTokens } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useVendrAlert } from '../../components/ui/VendrAlert'
-import * as Google from 'expo-auth-session/providers/google'
-import * as WebBrowser from 'expo-web-browser'
-
-WebBrowser.maybeCompleteAuthSession()
+import { useGoogleAuth } from '../../hooks/useGoogleAuth'
 
 function GoogleIcon() {
   return (
@@ -33,6 +30,7 @@ function GoogleIcon() {
 export default function LoginScreen() {
   const { setUser } = useAuthStore()
   const { showAlert, alertElement } = useVendrAlert()
+  const { signInWithGoogle } = useGoogleAuth()
   const { expired } = useLocalSearchParams<{ expired?: string }>();
 
   // Show alert if session expired
@@ -52,12 +50,6 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
-
-  const [_request, _response, promptAsync] = Google.useAuthRequest({
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  })
 
   const validate = () => {
     const errs: typeof errors = {}
@@ -88,10 +80,8 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true)
     try {
-      const result = await promptAsync()
-      if (result.type !== 'success') return
-      const idToken = result.authentication?.idToken
-      if (!idToken) throw new Error('No ID token from Google')
+      const idToken = await signInWithGoogle()
+      if (!idToken) return // user cancelled
       const data = await apiFetch('/auth/google', {
         method: 'POST',
         body: JSON.stringify({ id_token: idToken }),

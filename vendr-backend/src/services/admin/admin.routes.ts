@@ -16,6 +16,7 @@ import {
   unflagVendor,
   toggleVendorFraudFlag,
   suspendVendor,
+  unsuspendVendor,
   getOrders,
   manualReleaseEscrow,
   cancelOrder,

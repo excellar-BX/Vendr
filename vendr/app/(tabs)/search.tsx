@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, Image, Dimensions,
@@ -9,13 +9,22 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/ui/StyledText';
-import { searchApi, vendorApi } from '../../lib/api';
+import { searchApi } from '../../lib/api';
 import { useLocation } from '../../hooks/useLocation';
 import { calcDistance, formatPrice, formatDistance } from '../../lib/utils';
+import { getPlaceSuggestions } from '../../lib/geocoding';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Vendor, Product, Category } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
 import { ReelCard } from '../../components/reel/ReelCard';
+import {
+  useSearchSuggestions,
+  useSearchHistory,
+  useSaveSearchHistory,
+  useClearSearchHistory,
+  useMyVendor,
+} from '../../hooks/useQueries';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -42,15 +51,19 @@ const categoryConfig: Record<string, { color: string; icon: IoniconsName }> = {
   'Groceries':      { color: '#2D8653', icon: 'basket-outline' },
 };
 
-interface Suggestion {
-  suggestion: string;
-  source: string;
-  subtitle?: string;
+// ── Suggestion row types ────────────────────────────────────────────────────
+type SuggestionSource = 'history' | 'trending' | 'product' | 'vendor';
+
+interface SuggestionRow {
+  key: string;
+  source: SuggestionSource;
+  label: string;        // main text shown in the row
+  subtitle?: string;    // e.g. price or category
   image_url?: string;
   rating?: number;
 }
 
-// Unified result from backend - vendor, product, or reel
+// ── Search result item ───────────────────────────────────────────────────────
 type SearchResultItem = {
   id: string;
   type: 'vendor' | 'product' | 'reel';
@@ -85,7 +98,9 @@ type SearchResultItem = {
   distance: number | null;
 }
 
-function VendorGridCard({ vendor }: { vendor: SearchResultItem & { type: 'vendor' } }) {
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+function VendorGridCard({ vendor }: { vendor: any }) {
   const cfg = categoryConfig[vendor.vendor_category ?? ''] ?? { color: '#E8521A', icon: 'storefront-outline' as IoniconsName };
   return (
     <TouchableOpacity
@@ -148,16 +163,7 @@ function VendorGridCard({ vendor }: { vendor: SearchResultItem & { type: 'vendor
   );
 }
 
-function SectionHeader({ title,}: { title: string }) {
-  return (
-    <Text className="text-muted text-xs pt-5 pb-2 tracking-widest uppercase" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-      {title}
-    </Text>
-  );
-}
-
-
-function ProductResultCard({ product, onEnquire }: { product: SearchResultItem & { type: 'product' }; onEnquire: () => void }) {
+function ProductResultCard({ product, onEnquire }: { product: any; onEnquire: () => void }) {
   return (
     <TouchableOpacity
       activeOpacity={0.85} onPress={onEnquire}
@@ -210,6 +216,17 @@ function ProductResultCard({ product, onEnquire }: { product: SearchResultItem &
   );
 }
 
+// ── Suggestion row icon helper ───────────────────────────────────────────────
+function suggestionIcon(source: SuggestionSource): { name: IoniconsName; color: string; bg: string } {
+  switch (source) {
+    case 'history':  return { name: 'time-outline',       color: '#E8521A', bg: 'rgba(232,82,26,0.15)' };
+    case 'trending': return { name: 'trending-up-outline', color: '#F5A623', bg: 'rgba(245,166,35,0.15)' };
+    case 'product':  return { name: 'cube-outline',        color: '#9A8570', bg: '#2A1F14' };
+    case 'vendor':   return { name: 'storefront-outline',  color: '#9A8570', bg: '#2A1F14' };
+  }
+}
+
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function SearchScreen() {
   const { lat, lng } = useLocation();
   const { user } = useAuthStore();
@@ -226,7 +243,7 @@ export default function SearchScreen() {
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [dropdownVisible, setDropdownVisible] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestionRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [vendors, setVendors] = useState<any[]>([]);
@@ -238,90 +255,153 @@ export default function SearchScreen() {
   const [farReels, setFarReels] = useState<any[]>([]);
   const [showFarVendors, setShowFarVendors] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // mixedFeed is computed once per search result and stored stably
   const [mixedFeed, setMixedFeed] = useState<any[]>([]);
   const [myVendorIds, setMyVendorIds] = useState<string[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  
+  // Location picker state
+  const [locationMode, setLocationMode] = useState<'gps' | 'destination'>('gps');
+  const [searchLat, setSearchLat] = useState<number | null>(null);
+  const [searchLng, setSearchLng] = useState<number | null>(null);
+  const [destinationName, setDestinationName] = useState<string | null>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState<any[]>([]);
+  const [recentDestinations, setRecentDestinations] = useState<any[]>([]);
 
-  const DROPDOWN_TOP = insets.top + 56 + 40 + 52 + 10;
+  const DROPDOWN_TOP = insets.top + 56 + 40 + 48 + 52 + 10;
+
+  // React Query hooks
+  const { data: suggestionsData } = useSearchSuggestions(query);
+  const { data: searchHistoryData, refetch: refetchHistory } = useSearchHistory();
+  const { data: myVendorData } = useMyVendor();
+  const saveHistoryMutation = useSaveSearchHistory();
+  const clearHistoryMutation = useClearSearchHistory();
+
+  // Sync React Query data to local state
+  useEffect(() => {
+    if (searchHistoryData) setRecentSearches(searchHistoryData);
+  }, [searchHistoryData]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    loadMyVendors();
-    loadHistory();
-  }, [user?.id]);
+    if (myVendorData) setMyVendorIds([myVendorData.id]);
+    else setMyVendorIds([]);
+  }, [myVendorData]);
 
-  // Update mixed feed when far vendors toggle changes
+  useFocusEffect(useCallback(() => { refetchHistory(); }, [refetchHistory]));
+
+  // Load recent destinations on mount
   useEffect(() => {
-    if (nearbyVendors.length > 0 || products.length > 0 || reels.length > 0) {
-      const feed = createMixedFeed(nearbyVendors, farVendors, products, nearbyReels, farReels);
-      setMixedFeed(feed);
-    }
-  }, [showFarVendors, nearbyVendors, farVendors, products, nearbyReels, farReels]);
+    loadRecentDestinations();
+  }, []);
 
-  useFocusEffect(useCallback(() => { loadHistory(); }, [user?.id]));
-
-  const loadHistory = async () => {
-    if (!user?.id) return;
+  const loadRecentDestinations = async () => {
     try {
-      const { data } = await searchApi.getHistory();
-      if (data) setRecentSearches(data);
-    } catch (error) {
-      console.error('Failed to load search history:', error);
-    }
-  };
-
-  const loadMyVendors = async () => {
-    if (!user?.id) return;
-    try {
-      const { data } = await vendorApi.getMyVendor();
-      if (data) {
-        setMyVendorIds(data ? [data.id] : []);
+      const stored = await AsyncStorage.getItem('recent_destinations');
+      if (stored) {
+        setRecentDestinations(JSON.parse(stored));
       }
     } catch (error) {
-      setMyVendorIds([]);
+      console.error('Failed to load recent destinations:', error);
     }
   };
 
-  // Suggestions
+  const saveRecentDestination = async (destination: any) => {
+    try {
+      const updated = [destination, ...recentDestinations.filter(d => d.place_id !== destination.place_id)].slice(0, 5);
+      setRecentDestinations(updated);
+      await AsyncStorage.setItem('recent_destinations', JSON.stringify(updated));
+    } catch (error) {
+      console.error('Failed to save recent destination:', error);
+    }
+  };
+
+  // Sync search location with GPS when in GPS mode
   useEffect(() => {
-    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
-    if (query.length < 1) { setSuggestions([]); return; }
+    if (locationMode === 'gps' && lat != null && lng != null) {
+      setSearchLat(lat);
+      setSearchLng(lng);
+      setDestinationName(null);
+    }
+  }, [locationMode, lat, lng]);
 
-    suggestTimerRef.current = setTimeout(async () => {
-      try {
-        const { data } = await searchApi.suggestions({ q: query, limit: 5 });
-        const results: Suggestion[] = [];
+  // Location autocomplete
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (locationQuery.length >= 2) {
+        const results = await getPlaceSuggestions(locationQuery);
+        setLocationSuggestions(results);
+      } else {
+        setLocationSuggestions([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [locationQuery]);
 
-        (data?.products ?? []).forEach((p: any) => {
-          results.push({
-            suggestion: p.name,
-            source: 'product',
-            subtitle: formatPrice(p.price),
-            image_url: p.image_url ?? undefined,
-            rating: 0,
-          });
-        });
-
-        (data?.vendors ?? []).forEach((v: any) => {
-          results.push({
-            suggestion: v.business_name,
-            source: 'vendor',
-            subtitle: v.category,
-            image_url: v.logo_url ?? undefined,
-            rating: v.rating ?? 0,
-          });
-        });
-
-        setSuggestions(results);
-      } catch (error) {
-        console.error('Suggestion fetch error:', error);
+  // ── Suggestions: sync with React Query data ───────────────────────────────────
+  useEffect(() => {
+    if (query.length < 1) {
+      // When input is focused but empty, show recent searches as suggestions
+      if (dropdownVisible && recentSearches.length > 0) {
+        setSuggestions(
+          recentSearches.slice(0, 6).map((s, i) => ({
+            key: `hist-${i}`,
+            source: 'history' as SuggestionSource,
+            label: s,
+          }))
+        );
+      } else {
         setSuggestions([]);
       }
-    }, 200);
-  }, [query]);
+      return;
+    }
 
-  // THE search
-  const runSearch = async (q: string, categoryOverride?: Category) => {
+    // Use React Query data for suggestions
+    if (suggestionsData) {
+      const rows: SuggestionRow[] = [];
+
+      // 1. User's own history first (most personal)
+      (suggestionsData.history ?? []).forEach((h: string, i: number) => {
+        rows.push({ key: `hist-${i}`, source: 'history', label: h });
+      });
+
+      // 2. Trending queries from other users
+      (suggestionsData.trending ?? []).forEach((t: string, i: number) => {
+        if (!rows.find(r => r.label.toLowerCase() === t.toLowerCase())) {
+          rows.push({ key: `trend-${i}`, source: 'trending', label: t });
+        }
+      });
+
+      // 3. Matching products
+      (suggestionsData.products ?? []).forEach((p: any) => {
+        rows.push({
+          key: `prod-${p.id}`,
+          source: 'product',
+          label: p.name,
+          subtitle: formatPrice(p.price),
+          image_url: p.image_url ?? undefined,
+        });
+      });
+
+      // 4. Matching vendors
+      (suggestionsData.vendors ?? []).forEach((v: any) => {
+        rows.push({
+          key: `vend-${v.id}`,
+          source: 'vendor',
+          label: v.business_name,
+          subtitle: v.category ?? undefined,
+          image_url: v.logo_url ?? undefined,
+          rating: v.rating ?? 0,
+        });
+      });
+
+      setSuggestions(rows.slice(0, 8));
+    }
+  }, [query, dropdownVisible, suggestionsData, recentSearches]);
+
+  // ── Run search ─────────────────────────────────────────────────────────────
+  const runSearch = async (q: string, categoryOverride?: Category | 'All') => {
     if (!q.trim()) return;
     setDropdownVisible(false);
     setQuery('');
@@ -331,140 +411,71 @@ export default function SearchScreen() {
     setLoading(true);
     setHasSearched(true);
 
-    if (categoryOverride && categoryOverride !== activeCategory) {
+    const effectiveCategory = categoryOverride ?? activeCategory;
+    if (categoryOverride !== undefined && categoryOverride !== activeCategory) {
       setActiveCategory(categoryOverride);
     }
-    const effectiveCategory = categoryOverride ?? activeCategory;
 
     if (user?.id) {
-      await searchApi.saveHistory(q.trim());
+      await saveHistoryMutation.mutateAsync(q.trim()).catch(() => {});
       setRecentSearches(prev => [q, ...prev.filter(s => s !== q)].slice(0, 10));
     }
 
     try {
-      // Build query params, omitting false flags to avoid parsing ambiguity
-      const queryParams: any = { q, limit: 50 };
+      const queryParams: Record<string, any> = { q, limit: 50 };
       if (effectiveCategory !== 'All') queryParams.category = effectiveCategory;
-      if (verifiedOnly) queryParams.verified_only = true; // only include when true
+      if (verifiedOnly) queryParams.verified_only = true;
       if (minRating > 0) queryParams.min_rating = minRating;
-      if (lat != null) queryParams.lat = lat;
-      if (lng != null) queryParams.lng = lng;
+      if (searchLat != null) queryParams.lat = searchLat;
+      if (searchLng != null) queryParams.lng = searchLng;
 
       const { data } = await searchApi.search(queryParams);
 
-      // Separate vendors by distance (5km threshold for hyper-local)
-      const allVendors = data?.vendors ?? [];
-      const nearby = allVendors.filter((v: any) => v.distance !== null && v.distance <= 5);
-      const far = allVendors.filter((v: any) => v.distance === null || v.distance > 5);
+      const allVendors: any[] = data?.vendors ?? [];
+      const allReels: any[] = data?.reels ?? [];
+      const allProducts: any[] = data?.products ?? [];
 
-      // Separate reels by distance
-      const allReels = data?.reels ?? [];
-      const nearbyR = allReels.filter((r: any) => r.distance !== null && r.distance <= 5);
-      const farR = allReels.filter((r: any) => r.distance === null || r.distance > 5);
+      const nearby = allVendors.filter((v: any) => v.distance != null && v.distance <= 5);
+      const far = allVendors.filter((v: any) => v.distance == null || v.distance > 5);
+      const nearbyR = allReels.filter((r: any) => r.distance != null && r.distance <= 5);
+      const farR = allReels.filter((r: any) => r.distance == null || r.distance > 5);
 
       setNearbyVendors(nearby);
       setFarVendors(far);
       setVendors(allVendors);
-      setProducts(data?.products ?? []);
+      setProducts(allProducts);
       setReels(allReels);
       setNearbyReels(nearbyR);
       setFarReels(farR);
-      setShowFarVendors(false); // Reset far vendors visibility on new search
+      setShowFarVendors(false);
 
-      // Generate mixed feed for display
-      const feed = createMixedFeed(nearby, far, data?.products ?? [], nearbyR, farR);
-      setMixedFeed(feed);
-
-      console.log(`[Search] ${nearby.length} nearby vendors, ${far.length} far vendors, ${nearbyR.length} nearby reels, ${farR.length} far reels, ${feed.length} total feed items`);
+      // Build the feed once — stable, no re-shuffle on re-render
+      setMixedFeed(buildMixedFeed(nearby, far, allProducts, nearbyR, farR, false));
     } catch (error: any) {
-      console.error('Search error:', error);
       vendrAlert({ title: 'Search Failed', message: error.message || 'Something went wrong', type: 'danger' });
     } finally {
       setLoading(false);
     }
   };
 
+  // Re-build feed when user expands far results (but NOT on every render)
+  useEffect(() => {
+    if (!hasSearched) return;
+    setMixedFeed(buildMixedFeed(nearbyVendors, farVendors, products, nearbyReels, farReels, showFarVendors));
+  }, [showFarVendors]);
+
   const clearSearch = () => {
     setQuery('');
     setCommittedQuery('');
     setHasSearched(false);
-    setVendors([]);
-    setProducts([]);
-    setReels([]);
-    setNearbyVendors([]);
-    setFarVendors([]);
-    setNearbyReels([]);
-    setFarReels([]);
+    setVendors([]); setProducts([]); setReels([]);
+    setNearbyVendors([]); setFarVendors([]);
+    setNearbyReels([]); setFarReels([]);
     setShowFarVendors(false);
     setMixedFeed([]);
     setSuggestions([]);
     setDropdownVisible(false);
     setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
-  // Function to create smart mixed feed with 5km distance grouping and shuffling
-  const createMixedFeed = (nearbyVendors: any[], farVendors: any[], products: any[], nearbyReels: any[], farReels: any[]) => {
-    const feed: any[] = [];
-
-    // Shuffle nearby items (within 5km)
-    const shuffledNearbyVendors = [...nearbyVendors].sort(() => Math.random() - 0.5);
-    const shuffledNearbyProducts = [...products].sort(() => Math.random() - 0.5);
-    const shuffledNearbyReels = [...nearbyReels].sort(() => Math.random() - 0.5);
-
-    // Shuffle far items (beyond 5km)
-    const shuffledFarVendors = [...farVendors].sort(() => Math.random() - 0.5);
-    const shuffledFarReels = [...farReels].sort(() => Math.random() - 0.5);
-
-    // Add nearby items first (shuffled mix)
-    let nearbyVendorIndex = 0;
-    let nearbyProductIndex = 0;
-    let nearbyReelIndex = 0;
-
-    while (
-      nearbyVendorIndex < shuffledNearbyVendors.length ||
-      nearbyProductIndex < shuffledNearbyProducts.length ||
-      nearbyReelIndex < shuffledNearbyReels.length
-    ) {
-      // Add 2 vendors (or as many as available)
-      for (let i = 0; i < 2 && nearbyVendorIndex < shuffledNearbyVendors.length; i++) {
-        feed.push({ ...shuffledNearbyVendors[nearbyVendorIndex], itemType: 'vendor' });
-        nearbyVendorIndex++;
-      }
-
-      // Add 1 product (or as many as available)
-      if (nearbyProductIndex < shuffledNearbyProducts.length) {
-        feed.push({ ...shuffledNearbyProducts[nearbyProductIndex], itemType: 'product' });
-        nearbyProductIndex++;
-      }
-
-      // Add 1 reel (or as many as available)
-      if (nearbyReelIndex < shuffledNearbyReels.length) {
-        feed.push({ ...shuffledNearbyReels[nearbyReelIndex], itemType: 'reel' });
-        nearbyReelIndex++;
-      }
-    }
-
-    // Add far items below (shuffled mix, only if showFarVendors is true)
-    if (showFarVendors) {
-      let farVendorIndex = 0;
-      let farReelIndex = 0;
-
-      while (farVendorIndex < shuffledFarVendors.length || farReelIndex < shuffledFarReels.length) {
-        // Add 2 vendors (or as many as available)
-        for (let i = 0; i < 2 && farVendorIndex < shuffledFarVendors.length; i++) {
-          feed.push({ ...shuffledFarVendors[farVendorIndex], itemType: 'vendor', isFar: true });
-          farVendorIndex++;
-        }
-
-        // Add 1 reel (or as many as available)
-        if (farReelIndex < shuffledFarReels.length) {
-          feed.push({ ...shuffledFarReels[farReelIndex], itemType: 'reel', isFar: true });
-          farReelIndex++;
-        }
-      }
-    }
-
-    return feed;
   };
 
   const onRefresh = useCallback(async () => {
@@ -477,24 +488,46 @@ export default function SearchScreen() {
 
   const clearHistory = async () => {
     try {
-      await searchApi.clearHistory();
+      await clearHistoryMutation.mutateAsync();
       setRecentSearches([]);
-    } catch (error) {
-      console.error('Failed to clear search history:', error);
-    }
+    } catch {}
   };
 
   const removeHistoryItem = async (item: string) => {
     try {
-      await searchApi.clearHistory(item);
+      await clearHistoryMutation.mutateAsync(item);
       setRecentSearches(prev => prev.filter(s => s !== item));
-    } catch (error) {
-      console.error('Failed to delete search history item:', error);
+    } catch {
       vendrAlert({ title: 'Error', message: 'Failed to delete item', type: 'danger' });
     }
   };
 
-  // Count vendors with location for map FAB
+  // Location picker handlers
+  const handleSelectDestination = (destination: any) => {
+    const destLat = parseFloat(destination.lat);
+    const destLng = parseFloat(destination.lon);
+    setSearchLat(destLat);
+    setSearchLng(destLng);
+    setDestinationName(destination.display_name);
+    setLocationMode('destination');
+    setShowLocationPicker(false);
+    setLocationQuery('');
+    setLocationSuggestions([]);
+    saveRecentDestination(destination);
+  };
+
+  const handleUseGPS = () => {
+    setLocationMode('gps');
+    setShowLocationPicker(false);
+  };
+
+  const handleClearDestination = () => {
+    setLocationMode('gps');
+    setDestinationName(null);
+    setSearchLat(lat);
+    setSearchLng(lng);
+  };
+
   const vendorsWithLocation = vendors.filter(v => v.vendor_lat != null && v.vendor_lng != null);
   const showMapFab = hasSearched && vendorsWithLocation.length > 0 && !loading;
 
@@ -505,6 +538,131 @@ export default function SearchScreen() {
       {/* Header */}
       <View style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 12 }}>
         <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 24, color: '#FDF6EC', marginBottom: 16 }}>Search</Text>
+
+        {/* Location picker */}
+        <View style={{ marginBottom: 10 }}>
+          <TouchableOpacity
+            onPress={() => setShowLocationPicker(!showLocationPicker)}
+            style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: '#1A1208', borderWidth: 1,
+              borderColor: showLocationPicker ? '#E8521A' : '#3D3026',
+              borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+            }}
+          >
+            <Ionicons name="location-outline" size={16} color={locationMode === 'destination' ? '#E8521A' : '#9A8570'} />
+            <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#FDF6EC', flex: 1 }}>
+              {locationMode === 'destination' && destinationName
+                ? destinationName.split(',')[0]
+                : 'Current location (GPS)'}
+            </Text>
+            <Ionicons name={showLocationPicker ? 'chevron-up' : 'chevron-down'} size={14} color="#6B5E50" />
+          </TouchableOpacity>
+
+          {/* Location picker dropdown */}
+          {showLocationPicker && (
+            <View style={{
+              position: 'absolute', top: 48, left: 0, right: 0,
+              backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#E8521A44',
+              borderRadius: 14, zIndex: 10000,
+              shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 20,
+              overflow: 'hidden',
+            }}>
+              {/* Current location option */}
+              <TouchableOpacity
+                onPress={handleUseGPS}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12,
+                  paddingHorizontal: 16, paddingVertical: 12,
+                  borderBottomWidth: 1, borderBottomColor: '#2A1F14',
+                }}
+              >
+                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(85,153,232,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="navigate" size={16} color="#5599E8" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Current location (GPS)</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }}>Use your device location</Text>
+                </View>
+                {locationMode === 'gps' && <Ionicons name="checkmark-circle" size={18} color="#2D8653" />}
+              </TouchableOpacity>
+
+              {/* Type destination option */}
+              <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8 }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#6B5E50', letterSpacing: 1 }}>SEARCH NEAR DESTINATION</Text>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: '#0F0A06', borderWidth: 1,
+                  borderColor: locationQuery.length > 0 ? '#E8521A' : '#2A1F14',
+                  borderRadius: 12, paddingHorizontal: 12, height: 40, gap: 8,
+                }}>
+                  <Ionicons name="search-outline" size={14} color={locationQuery.length > 0 ? '#E8521A' : '#9A8570'} />
+                  <RNTextInput
+                    style={{ flex: 1, fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC', backgroundColor: 'transparent' }}
+                    placeholder="Type a place (e.g., Ikeja)"
+                    placeholderTextColor="#6B5E50"
+                    selectionColor="#E8521A"
+                    cursorColor="#E8521A"
+                    value={locationQuery}
+                    onChangeText={setLocationQuery}
+                    underlineColorAndroid="transparent"
+                  />
+                  {locationQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setLocationQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="close-circle" size={14} color="#6B5E50" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Location suggestions */}
+                {locationSuggestions.length > 0 && (
+                  <View style={{ marginTop: 4, gap: 2 }}>
+                    {locationSuggestions.map((suggestion, index) => (
+                      <TouchableOpacity
+                        key={suggestion.place_id}
+                        onPress={() => handleSelectDestination(suggestion)}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 10,
+                          paddingHorizontal: 10, paddingVertical: 8,
+                          backgroundColor: index === 0 ? 'rgba(232,82,26,0.08)' : 'transparent',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <Ionicons name="location-outline" size={14} color="#9A8570" />
+                        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>
+                          {suggestion.display_name.split(',')[0]}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Recent destinations */}
+                {locationQuery.length === 0 && recentDestinations.length > 0 && (
+                  <View style={{ marginTop: 4 }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: '#6B5E50', marginBottom: 6 }}>RECENT DESTINATIONS</Text>
+                    {recentDestinations.map((dest) => (
+                      <TouchableOpacity
+                        key={dest.place_id}
+                        onPress={() => handleSelectDestination(dest)}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 10,
+                          paddingHorizontal: 10, paddingVertical: 8,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <Ionicons name="time-outline" size={14} color="#9A8570" />
+                        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>
+                          {dest.display_name.split(',')[0]}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+        </View>
 
         {/* Search input */}
         <View style={{
@@ -524,11 +682,9 @@ export default function SearchScreen() {
             value={query}
             onChangeText={(text) => {
               setQuery(text);
-              setDropdownVisible(text.length >= 1);
+              setDropdownVisible(true);
             }}
-            onFocus={() => {
-              if (query.length >= 1) setDropdownVisible(true);
-            }}
+            onFocus={() => setDropdownVisible(true)}
             onBlur={() => {
               setTimeout(() => {
                 if (!dropdownTapped.current) setDropdownVisible(false);
@@ -580,7 +736,7 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {/* Category chips — only after a search */}
+        {/* Category chips — only after search */}
         {hasSearched && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}>
             {CATEGORIES.map(cat => {
@@ -599,65 +755,91 @@ export default function SearchScreen() {
         )}
       </View>
 
-      {/* ── Dropdown ── */}
+      {/* ── Suggestions dropdown ── */}
       {dropdownVisible && (
-        <View
-          style={{
-            position: 'absolute', top: DROPDOWN_TOP, left: 20, right: 20,
-            backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#E8521A44',
-            borderRadius: 16, zIndex: 9999,
-            shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 20,
-            overflow: 'hidden',
-          }}
-        >
-          <TouchableOpacity
-            onPressIn={() => { dropdownTapped.current = true; }}
-            onPress={() => runSearch(query)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 12,
-              paddingHorizontal: 16, paddingVertical: 14,
-              borderBottomWidth: suggestions.length > 0 ? 1 : 0, borderBottomColor: '#2A1F14',
-            }}
-          >
-            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(232,82,26,0.15)', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="search-outline" size={16} color="#E8521A" />
+        <View style={{
+          position: 'absolute', top: DROPDOWN_TOP, left: 20, right: 20,
+          backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#E8521A44',
+          borderRadius: 16, zIndex: 9999,
+          shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 20,
+          overflow: 'hidden',
+        }}>
+          {/* "Search for X" row — always first when there's typed text */}
+          {query.length > 0 && (
+            <TouchableOpacity
+              onPressIn={() => { dropdownTapped.current = true; }}
+              onPress={() => runSearch(query)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                paddingHorizontal: 16, paddingVertical: 14,
+                borderBottomWidth: suggestions.length > 0 ? 1 : 0, borderBottomColor: '#2A1F14',
+              }}
+            >
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(232,82,26,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="search-outline" size={16} color="#E8521A" />
+              </View>
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>{query}</Text>
+              <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#E8521A22', borderRadius: 8 }}>
+                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#E8521A' }}>Search</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* Section label when showing empty-input history */}
+          {query.length === 0 && suggestions.length > 0 && (
+            <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#6B5E50', letterSpacing: 1 }}>RECENT SEARCHES</Text>
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>{query}</Text>
-            <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#E8521A22', borderRadius: 8 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#E8521A' }}>Search</Text>
-            </View>
-          </TouchableOpacity>
+          )}
 
           {suggestions.map((s, i) => {
-            const isHistory = s.source === 'history';
-            const isProduct = s.source === 'product';
-            const isLast    = i === suggestions.length - 1;
+            const isLast = i === suggestions.length - 1;
+            const iconCfg = suggestionIcon(s.source);
             return (
               <TouchableOpacity
-                key={`${s.suggestion}-${i}`}
+                key={s.key}
                 onPressIn={() => { dropdownTapped.current = true; }}
-                onPress={() => runSearch(s.suggestion)}
+                onPress={() => runSearch(s.label)}
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 12,
                   paddingHorizontal: 16, paddingVertical: 11,
                   borderBottomWidth: isLast ? 0 : 1, borderBottomColor: '#2A1F14',
                 }}
               >
+                {/* Left icon / image */}
                 {s.image_url
                   ? <Image source={{ uri: s.image_url }} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#2A1F14' }} resizeMode="cover" />
-                  : <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isHistory ? 'rgba(232,82,26,0.12)' : '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                      <Ionicons name={isHistory ? 'time-outline' : isProduct ? 'cube-outline' : 'storefront-outline'} size={16} color={isHistory ? '#E8521A' : '#9A8570'} />
+                  : <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: iconCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name={iconCfg.name} size={16} color={iconCfg.color} />
                     </View>
                 }
+
+                {/* Text */}
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }} numberOfLines={1}>{s.suggestion}</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }} numberOfLines={1}>{s.label}</Text>
                   {s.subtitle ? (
-                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: isProduct ? '#F5A623' : '#9A8570' }} numberOfLines={1}>
-                      {s.subtitle}{s.source === 'vendor' && s.rating != null && s.rating > 0 ? `  ·  ${s.rating.toFixed(1)}` : ''}
+                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: s.source === 'product' ? '#F5A623' : '#9A8570' }} numberOfLines={1}>
+                      {s.subtitle}{s.source === 'vendor' && s.rating != null && s.rating > 0 ? `  ·  ★ ${s.rating.toFixed(1)}` : ''}
                     </Text>
                   ) : null}
                 </View>
-                {!isHistory && (
+
+                {/* Source badge or trending arrow */}
+                {s.source === 'trending' ? (
+                  <Ionicons name="trending-up-outline" size={14} color="#F5A623" />
+                ) : s.source === 'history' ? (
+                  // History rows get a dismiss button
+                  <TouchableOpacity
+                    onPressIn={() => { dropdownTapped.current = true; }}
+                    onPress={() => {
+                      setSuggestions(prev => prev.filter(r => r.key !== s.key));
+                      removeHistoryItem(s.label);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="close-outline" size={16} color="#3D3026" />
+                  </TouchableOpacity>
+                ) : (
                   <View style={{ paddingHorizontal: 7, paddingVertical: 3, backgroundColor: '#2A1F14', borderRadius: 8 }}>
                     <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#6B5E50' }}>{s.source}</Text>
                   </View>
@@ -668,22 +850,16 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {/* Content */}
-      <ScrollView 
-      style={{ flex: 1 }} 
-      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} 
-      showsVerticalScrollIndicator={false} 
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor="#E8521A"
-          colors={["#E8521A"]}
-        />
-      }
-    >
-
+      {/* ── Main content ── */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E8521A" colors={["#E8521A"]} />
+        }
+      >
         {loading && (
           <View style={{ alignItems: 'center', paddingVertical: 60, gap: 12 }}>
             <ActivityIndicator size="large" color="#E8521A" />
@@ -691,13 +867,14 @@ export default function SearchScreen() {
           </View>
         )}
 
+        {/* Idle state */}
         {!hasSearched && !loading && (
           <View style={{ gap: 24, paddingTop: 8 }}>
             <View>
               <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC', marginBottom: 12 }}>Browse by Category</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                 {CATEGORIES.filter(c => c.label !== 'All').map(cat => (
-                  <TouchableOpacity key={cat.label} onPress={() => runSearch(cat.label, cat.label)}
+                  <TouchableOpacity key={cat.label} onPress={() => runSearch(cat.label, cat.label as Category)}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11 }}
                   >
                     <Ionicons name={cat.icon} size={16} color="#E8521A" />
@@ -731,31 +908,34 @@ export default function SearchScreen() {
           </View>
         )}
 
+        {/* No results */}
         {hasSearched && !loading && vendors.length === 0 && products.length === 0 && reels.length === 0 && (
-          <View style={{ gap: 20 }}>
-            <View style={{ alignItems: 'center', paddingVertical: 20, gap: 12 }}>
-              <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="search-outline" size={28} color="#3D3026" />
-              </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>No results found</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', paddingHorizontal: 32 }}>
-                No vendors or products match "{committedQuery}". Try a different search.
-              </Text>
+          <View style={{ alignItems: 'center', paddingVertical: 20, gap: 12 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="search-outline" size={28} color="#3D3026" />
             </View>
+            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>No results found</Text>
+            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', paddingHorizontal: 32 }}>
+              No vendors or products match "{committedQuery}". Try a different search.
+            </Text>
           </View>
         )}
 
+        {/* Results feed */}
         {hasSearched && !loading && (vendors.length > 0 || products.length > 0 || reels.length > 0) && (
           <View>
             <View style={{ marginTop: 8, marginBottom: 4 }}>
               <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50' }}>
                 Results for <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#E8521A' }}>"{committedQuery}"</Text>
+                {'  '}
+                <Text style={{ color: '#3D3026' }}>
+                  {vendors.length + products.length + reels.length} found
+                </Text>
               </Text>
             </View>
 
-            {/* Mixed Feed - TikTok Style */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP }}>
-              {mixedFeed.map((item, index) => {
+              {mixedFeed.map((item) => {
                 if (item.itemType === 'vendor') {
                   return (
                     <View key={`vendor-${item.id}`} style={{ width: CARD_W }}>
@@ -769,7 +949,10 @@ export default function SearchScreen() {
                         product={item}
                         onEnquire={() => {
                           if (myVendorIds.includes(item.vendor_id)) { router.push('/my-stores'); return; }
-                          router.push({ pathname: '/chat/[conversationId]', params: { vendorId: item.vendor_id, productId: item.id, productName: item.name ?? '', productPrice: formatPrice(item.price ?? 0) } });
+                          router.push({
+                            pathname: '/chat/[conversationId]',
+                            params: { vendorId: item.vendor_id, productId: item.id, productName: item.name ?? '', productPrice: formatPrice(item.price ?? 0) },
+                          });
                         }}
                       />
                     </View>
@@ -785,19 +968,12 @@ export default function SearchScreen() {
               })}
             </View>
 
-            {/* Far Vendors Toggle */}
+            {/* Expand far results */}
             {(farVendors.length > 0 || farReels.length > 0) && !showFarVendors && (
               <View style={{ marginTop: 20 }}>
                 <TouchableOpacity
                   onPress={() => setShowFarVendors(true)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: 'transparent',
-                    paddingVertical: 8,
-                    gap: 6
-                  }}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 6 }}
                 >
                   <Ionicons name="location-outline" size={14} color="#6B5E50" />
                   <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#6B5E50' }}>
@@ -811,11 +987,14 @@ export default function SearchScreen() {
         )}
       </ScrollView>
 
+      {/* Map FAB */}
       {showMapFab && (
-        <TouchableOpacity onPress={() => {
-          const ids = vendorsWithLocation.map(v => v.id);
-          router.push({ pathname: '/map-search', params: { vendorIds: JSON.stringify(ids), searchQuery: committedQuery } });
-        }} activeOpacity={0.9}
+        <TouchableOpacity
+          onPress={() => {
+            const ids = vendorsWithLocation.map(v => v.id);
+            router.push({ pathname: '/map-search', params: { vendorIds: JSON.stringify(ids), searchQuery: committedQuery } });
+          }}
+          activeOpacity={0.9}
           style={{ position: 'absolute', bottom: 28, right: 20, height: 48, paddingHorizontal: 18, borderRadius: 16, backgroundColor: '#E8521A', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, shadowColor: '#E8521A', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 10 }}
         >
           <Ionicons name="map" size={18} color="white" />
@@ -826,4 +1005,53 @@ export default function SearchScreen() {
       )}
     </View>
   );
+}
+
+// ── Feed builder — called once per search, no random re-sort on render ────────
+/**
+ * Interleaves nearby vendors, products, and reels into a single ranked list.
+ * Order: 2 vendors → 1 product → 1 reel → repeat.
+ * Far results are appended below only when showFar = true.
+ * Items are sorted by their backend score (desc) before interleaving, NOT randomised.
+ */
+function buildMixedFeed(
+  nearbyVendors: any[],
+  farVendors: any[],
+  products: any[],
+  nearbyReels: any[],
+  farReels: any[],
+  showFar: boolean,
+): any[] {
+  // Sort each bucket by score descending (backend already sorted, but be safe)
+  const sV = [...nearbyVendors].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const sP = [...products].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const sR = [...nearbyReels].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+  const feed: any[] = [];
+  let vi = 0, pi = 0, ri = 0;
+
+  while (vi < sV.length || pi < sP.length || ri < sR.length) {
+    // 2 vendors
+    for (let i = 0; i < 2 && vi < sV.length; i++, vi++) {
+      feed.push({ ...sV[vi], itemType: 'vendor' });
+    }
+    // 1 product
+    if (pi < sP.length) { feed.push({ ...sP[pi], itemType: 'product' }); pi++; }
+    // 1 reel
+    if (ri < sR.length) { feed.push({ ...sR[ri], itemType: 'reel' }); ri++; }
+  }
+
+  if (showFar) {
+    const sfV = [...farVendors].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const sfR = [...farReels].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    let fvi = 0, fri = 0;
+    while (fvi < sfV.length || fri < sfR.length) {
+      for (let i = 0; i < 2 && fvi < sfV.length; i++, fvi++) {
+        feed.push({ ...sfV[fvi], itemType: 'vendor', isFar: true });
+      }
+      if (fri < sfR.length) { feed.push({ ...sfR[fri], itemType: 'reel', isFar: true }); fri++; }
+    }
+  }
+
+  return feed;
 }

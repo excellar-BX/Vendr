@@ -1,5 +1,5 @@
 // app/(tabs)/index.tsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View, ScrollView, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator,
@@ -11,11 +11,11 @@ import { Text } from '../../components/ui/StyledText';
 import { VendorCard } from '../../components/vendor/VendorCard';
 import { HeroVendorCard } from '../../components/vendor/HeroVendorCard';
 import { VendorRow } from '../../components/vendor/VendorRow';
-import { apiFetch } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { calcDistance } from '../../lib/utils';
 import { Vendor, Category } from '../../types';
 import { useLocation } from '../../hooks/useLocation';
+import { useVendors, useUnreadNotificationsCount } from '../../hooks/useQueries';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -74,57 +74,41 @@ export default function HomeScreen() {
   const { user } = useAuthStore();
   const { lat, lng, address, loading: locationLoading } = useLocation();
 
-  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [unreadNotifs, setUnreadNotifs] = useState(0);
 
   const userId = user?.id;
   const userName = user?.full_name?.split(' ')[0] ?? 'there';
 
-  // Unread notif count
-  useFocusEffect(useCallback(() => {
-    if (!userId) return;
-    const fetchUnread = async () => {
-      try {
-        const response = await apiFetch('/notifications/unread-count', { method: 'GET' });
-        setUnreadNotifs(response.data.count ?? 0);
-      } catch (err) {
-        console.error('Failed to fetch notifications count:', err);
-      }
-    };
-    fetchUnread();
-  }, [userId]));
+  // React Query hooks
+  const { data: vendorsData, isLoading: vendorsLoading, refetch: refetchVendors } = useVendors(lat, lng);
+  const { data: unreadNotifs } = useUnreadNotificationsCount();
 
-  // Fetch & sort vendors
-  const fetchVendors = useCallback(async () => {
-    try {
-      const response = await apiFetch('/vendors', { method: 'GET' });
-      let list: Vendor[] = response.data.map((v: any) => ({
-        ...v,
-        lat: v.lat ?? 0,
-        lng: v.lng ?? 0,
-      }));
+  // Process vendors with distance calculation
+  const vendors = useMemo(() => {
+    if (!vendorsData) return [];
+    let list: Vendor[] = vendorsData.map((v: any) => ({
+      ...v,
+      lat: v.lat ?? 0,
+      lng: v.lng ?? 0,
+    }));
 
-      if (lat && lng) {
-        list = list
-          .map(v => ({ ...v, distance: calcDistance(lat, lng, v.lat, v.lng) }))
-          .sort((a, b) => (a.distance ?? 99) - (b.distance ?? 99));
-      }
-
-      setVendors(list);
-    } catch (err) {
-      console.error('Failed to fetch vendors:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    if (lat && lng) {
+      list = list
+        .map(v => ({ ...v, distance: calcDistance(lat, lng, v.lat, v.lng) }))
+        .sort((a, b) => (a.distance ?? 99) - (b.distance ?? 99));
     }
-  }, [lat, lng]);
 
-  useEffect(() => { fetchVendors(); }, [lat, lng]);
+    return list;
+  }, [vendorsData, lat, lng]);
 
-  const onRefresh = () => { setRefreshing(true); fetchVendors(); };
+  const loading = vendorsLoading;
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetchVendors();
+    setRefreshing(false);
+  };
 
   // Filtered list shown when a category is active
   const filtered = activeCategory === 'All'

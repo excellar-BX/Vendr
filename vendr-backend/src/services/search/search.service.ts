@@ -1,4 +1,4 @@
-//search.service.ts
+// search.service.ts
 import prisma from '../../lib/prisma'
 import type {
   SearchInput,
@@ -12,207 +12,277 @@ import type {
  * Calculate distance between two coordinates (Haversine formula)
  * Returns distance in km
  */
-function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number { 
-  const R = 6371 // Earth's radius in km
+function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
   const dLat = ((lat2 - lat1) * Math.PI) / 180
   const dLng = ((lng2 - lng1) * Math.PI) / 180
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return R * c
 }
 
 /**
- * Calculate text relevance score for a vendor result
- * Higher score = better match
+ * Calculate Levenshtein distance between two strings
+ * Used for spell correction / "did you mean" suggestions
  */
-function scoreVendor(shopName: string, description: string | null, category: string | null, searchTerm: string, words: string[]): number {
-  const nameLower = shopName.toLowerCase();
-  const descLower = (description || '').toLowerCase();
-  const catLower = (category || '').toLowerCase();
-  const termLower = searchTerm.toLowerCase();
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = []
 
-  let score = 0;
-
-  // Exact match on shop name = highest score
-  if (nameLower === termLower) score += 100;
-  // Starts with term = very high
-  else if (nameLower.startsWith(termLower)) score += 80;
-  // Contains term as whole word
-  else if (nameLower.includes(' ' + termLower + ' ') || nameLower.startsWith(termLower + ' ')) score += 60;
-  // Contains term anywhere
-  else if (nameLower.includes(termLower)) score += 40;
-
-  // Category match
-  if (catLower.includes(termLower) || termLower.includes(catLower)) {
-    score += 20;
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i]
   }
 
-  // Description match
-  if (descLower.includes(termLower)) {
-    score += 15;
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j
   }
 
-  // Multi-word bonus: if multiple search words appear, boost score
-  const wordsInName = words.filter(w => nameLower.includes(w)).length;
-  if (wordsInName > 0) {
-    score += wordsInName * 10;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        )
+      }
+    }
   }
 
-  return score;
+  return matrix[b.length][a.length]
+}
+
+/**
+ * Find similar terms for spell correction
+ * Returns the best matching term if within acceptable edit distance
+ */
+async function findSimilarTerm(searchTerm: string): Promise<string | null> {
+  const MAX_DISTANCE = 2 // Maximum edit distance for a suggestion
+  const MIN_LENGTH = 3    // Minimum term length to consider
+
+  if (searchTerm.length < MIN_LENGTH) return null
+
+  // Sample product names, vendor names, and categories
+  const [products, vendors] = await Promise.all([
+    prisma.product.findMany({
+      where: { is_available: true, vendor: { is_active: true } },
+      select: { name: true },
+      take: 100,
+    }),
+    prisma.vendor.findMany({
+      where: { is_active: true, is_suspended: false },
+      select: { shop_name: true, category: true },
+      take: 100,
+    }),
+  ])
+
+  const allTerms = new Set<string>()
+  products.forEach(p => {
+    p.name.toLowerCase().split(/\s+/).forEach(w => {
+      if (w.length >= MIN_LENGTH) allTerms.add(w)
+    })
+  })
+  vendors.forEach(v => {
+    v.shop_name.toLowerCase().split(/\s+/).forEach(w => {
+      if (w.length >= MIN_LENGTH) allTerms.add(w)
+    })
+    if (v.category) {
+      v.category.toLowerCase().split(/\s+/).forEach(w => {
+        if (w.length >= MIN_LENGTH) allTerms.add(w)
+      })
+    }
+  })
+
+  const searchLower = searchTerm.toLowerCase()
+  let bestMatch: string | null = null
+  let bestDistance = Infinity
+
+  for (const term of allTerms) {
+    const distance = levenshteinDistance(searchLower, term)
+    if (distance < bestDistance && distance <= MAX_DISTANCE) {
+      bestDistance = distance
+      bestMatch = term
+    }
+  }
+
+  return bestMatch
+}
+
+/**
+ * Calculate text relevance score for a vendor result
+ */
+function scoreVendor(
+  shopName: string,
+  description: string | null,
+  category: string | null,
+  searchTerm: string,
+  words: string[]
+): number {
+  const nameLower = shopName.toLowerCase()
+  const descLower = (description || '').toLowerCase()
+  const catLower = (category || '').toLowerCase()
+  const termLower = searchTerm.toLowerCase()
+
+  let score = 0
+
+  if (nameLower === termLower) score += 100
+  else if (nameLower.startsWith(termLower)) score += 80
+  else if (nameLower.includes(' ' + termLower + ' ') || nameLower.startsWith(termLower + ' '))
+    score += 60
+  else if (nameLower.includes(termLower)) score += 40
+
+  if (catLower.includes(termLower) || termLower.includes(catLower)) score += 20
+  if (descLower.includes(termLower)) score += 15
+
+  const wordsInName = words.filter((w) => nameLower.includes(w)).length
+  const wordsInDesc = words.filter((w) => descLower.includes(w)).length
+  const wordsInCat = words.filter((w) => catLower.includes(w)).length
+  score += wordsInName * 12 + wordsInDesc * 6 + wordsInCat * 8
+
+  return score
 }
 
 /**
  * Calculate text relevance score for a product result
  */
-function scoreProduct(productName: string, description: string | null, vendorShopName: string | null, searchTerm: string, words: string[]): number {
-  const nameLower = productName.toLowerCase();
-  const descLower = (description || '').toLowerCase();
-  const vendorLower = (vendorShopName || '').toLowerCase();
-  const termLower = searchTerm.toLowerCase();
+function scoreProduct(
+  productName: string,
+  description: string | null,
+  vendorShopName: string | null,
+  searchTerm: string,
+  words: string[]
+): number {
+  const nameLower = productName.toLowerCase()
+  const descLower = (description || '').toLowerCase()
+  const vendorLower = (vendorShopName || '').toLowerCase()
+  const termLower = searchTerm.toLowerCase()
 
-  let score = 0;
+  let score = 0
 
-  // Exact match on product name = highest
-  if (nameLower === termLower) score += 100;
-  // Starts with term
-  else if (nameLower.startsWith(termLower)) score += 75;
-  // Contains as whole word
-  else if (nameLower.includes(' ' + termLower + ' ') || nameLower.startsWith(termLower + ' ')) score += 55;
-  // Contains anywhere
-  else if (nameLower.includes(termLower)) score += 35;
+  if (nameLower === termLower) score += 100
+  else if (nameLower.startsWith(termLower)) score += 75
+  else if (nameLower.includes(' ' + termLower + ' ') || nameLower.startsWith(termLower + ' '))
+    score += 55
+  else if (nameLower.includes(termLower)) score += 35
 
-  // Vendor name match (secondary)
-  if (vendorLower.includes(termLower)) {
-    score += 15;
-  }
+  if (vendorLower.includes(termLower)) score += 15
+  if (descLower.includes(termLower)) score += 10
 
-  // Description match
-  if (descLower.includes(termLower)) {
-    score += 10;
-  }
+  const wordsInName = words.filter((w) => nameLower.includes(w)).length
+  const wordsInDesc = words.filter((w) => descLower.includes(w)).length
+  score += wordsInName * 10 + wordsInDesc * 6
 
-  // Multi-word bonus
-  const wordsInName = words.filter(w => nameLower.includes(w)).length;
-  const wordsInDesc = words.filter(w => descLower.includes(w)).length;
-  score += (wordsInName + wordsInDesc) * 8;
-
-  return score;
+  return score
 }
 
 /**
  * Calculate text relevance score for a reel result
  */
-function scoreReel(caption: string | null, vendorShopName: string | null, productName: string | null, searchTerm: string, words: string[]): number {
-  const captionLower = (caption || '').toLowerCase();
-  const vendorLower = (vendorShopName || '').toLowerCase();
-  const productLower = (productName || '').toLowerCase();
-  const termLower = searchTerm.toLowerCase();
+function scoreReel(
+  caption: string | null,
+  vendorShopName: string | null,
+  productName: string | null,
+  searchTerm: string,
+  words: string[]
+): number {
+  const captionLower = (caption || '').toLowerCase()
+  const vendorLower = (vendorShopName || '').toLowerCase()
+  const productLower = (productName || '').toLowerCase()
+  const termLower = searchTerm.toLowerCase()
 
-  let score = 0;
+  let score = 0
 
-  // Caption match
-  if (captionLower === termLower) score += 100;
-  else if (captionLower.startsWith(termLower)) score += 75;
-  else if (captionLower.includes(' ' + termLower + ' ') || captionLower.startsWith(termLower + ' ')) score += 55;
-  else if (captionLower.includes(termLower)) score += 35;
+  if (captionLower === termLower) score += 100
+  else if (captionLower.startsWith(termLower)) score += 75
+  else if (
+    captionLower.includes(' ' + termLower + ' ') ||
+    captionLower.startsWith(termLower + ' ')
+  )
+    score += 55
+  else if (captionLower.includes(termLower)) score += 35
 
-  // Product name match (if reel is tagged to a product)
-  if (productLower.includes(termLower)) {
-    score += 25;
-  }
+  if (productLower.includes(termLower)) score += 25
+  if (vendorLower.includes(termLower)) score += 15
 
-  // Vendor name match
-  if (vendorLower.includes(termLower)) {
-    score += 15;
-  }
+  const wordsInCaption = words.filter((w) => captionLower.includes(w)).length
+  const wordsInProduct = words.filter((w) => productLower.includes(w)).length
+  score += wordsInCaption * 8 + wordsInProduct * 10
 
-  // Multi-word bonus
-  const wordsInCaption = words.filter(w => captionLower.includes(w)).length;
-  const wordsInProduct = words.filter(w => productLower.includes(w)).length;
-  score += (wordsInCaption + wordsInProduct) * 8;
-
-  return score;
+  return score
 }
 
 /**
  * Boost score based on vendor's rating and verification status
  */
 function vendorBoost(vendor: any): number {
-  let boost = 0;
-  if (vendor.user?.is_vendor_verified) boost += 5;
-  if (vendor.rating >= 4.5) boost += 10;
-  else if (vendor.rating >= 4.0) boost += 7;
-  else if (vendor.rating >= 3.0) boost += 3;
-  return boost;
+  let boost = 0
+  if (vendor.user?.is_vendor_verified) boost += 8
+  if (vendor.rating >= 4.5) boost += 12
+  else if (vendor.rating >= 4.0) boost += 8
+  else if (vendor.rating >= 3.0) boost += 4
+  return boost
 }
 
 /**
- * Apply distance penalty to score (closer = higher score)
- * Returns a multiplier (0.2 to 1.0)
+ * Apply distance score bonus (additive, not multiplicative).
+ * This way a highly relevant far result still surfaces, just ranked slightly below
+ * a similarly-relevant nearby result. We no longer kill far results entirely.
+ *
+ * Returns a bonus to ADD to the base score (not a multiplier).
  */
-function distanceMultiplier(distanceKm: number | null): number {
-  if (distanceKm === null) return 0.8; // No location known = slight penalty
-  if (distanceKm <= 2) return 1.0;   // Within 2km = no penalty
-  if (distanceKm <= 5) return 0.9;   // Within 5km
-  if (distanceKm <= 10) return 0.8;  // Within 10km
-  if (distanceKm <= 25) return 0.6;  // Within 25km
-  if (distanceKm <= 50) return 0.4;  // Within 50km
-  return 0.2;                        // Beyond 50km = heavy penalty
+function distanceBonus(distanceKm: number | null): number {
+  if (distanceKm === null) return 0        // unknown location — neutral
+  if (distanceKm <= 1) return 30           // walking distance
+  if (distanceKm <= 3) return 24
+  if (distanceKm <= 5) return 18
+  if (distanceKm <= 10) return 12
+  if (distanceKm <= 25) return 6
+  if (distanceKm <= 50) return 2
+  return 0                                 // beyond 50km — no bonus, but not penalised
 }
 
 /**
- * Extract search term by removing filler words
- * These are words/phrases that don't contribute to actual search meaning
+ * Extract search term by removing filler words.
+ * Keeps the original query if stripping removes everything meaningful.
  */
 export function extractSearchTerm(raw: string): string {
   let q = raw.toLowerCase()
+  // Strip punctuation characters first
+  q = q.replace(/[?!.,;:'"(){}\[\]<>\/\\]+/g, ' ')
   const fillers = [
-    // Location-based filler
     'near me', 'around me', 'close to me', 'nearby', 'near', 'around', 'close by',
     'in lagos', 'in abuja', 'in port harcourt', 'in benin', 'in enugu', 'in kano',
     'in nigeria', 'around here', 'close to', 'within', 'within distance',
     'in my area', 'in my city', 'in my location',
-
-    // Vendor/shop terms (removed 'vendor' and 'vendors' for special search)
     'seller', 'sellers', 'shop', 'store', 'stores',
     'stall', 'stalls', 'stand', 'booth', 'outlet', 'outlets',
     'market', 'markets', 'mall', 'malls', 'plaza', 'centre',
-
-    // Quality/price descriptors
     'cheap', 'cheapest', 'affordable', 'budget', 'low price', 'low cost',
     'best', 'good', 'top', 'quality', 'premium', 'expensive', 'luxury',
     'high quality', 'high-end', 'top rated', 'top notch', 'excellent',
     'deluxe', 'superior', 'fine', 'grade a', 'original', 'authentic',
     'verified', 'trusted', 'reliable', 'professional',
-
-    // Intent phrases
-    'where can i buy', 'who sells', 'where to buy', 'where to find', 'where can i get', 'where can i find',
-    'where is', 'where are', 'looking for', 'i need', 'i want', 'i am looking for',
+    'where can i buy', 'who sells', 'where to buy', 'where to find',
+    'where can i get', 'where can i find', 'where is', 'where are',
+    'looking for', 'i need', 'i want', 'i am looking for',
     'i want to buy', 'i want to find', 'i need to buy', 'searching for',
     'trying to find', 'trying to buy', 'help me find', 'help me buy',
     'show me', 'get me', 'find me', 'locate', 'discover',
-
-    // Quantity/amount
     'some', 'any', 'few', 'many', 'much', 'lot of', 'lots of',
     'one', 'two', 'three', 'first', 'second', 'third',
-
-    // Time-based
     'now', 'today', 'today only', 'tonight', 'this week', 'this weekend',
     'right now', 'immediately', 'asap', 'urgent', 'quick', 'fast',
-
-    // Online/delivery
     'online', 'delivery', 'pickup', 'pick-up', 'store pick up',
     'home delivery', 'doorstep', 'free delivery', 'same day',
     'next day', 'express', 'shipping', 'deliver',
-
-    // Condition
     'new', 'used', 'second hand', 'pre-owned', 'refurbished',
     'brand new', 'fairly used', 'lightly used',
-
-    // Miscellaneous
     'for', 'for sale', 'for rent', 'to buy', 'to let', 'available',
     'all', 'everything', 'anything', 'whatever', 'anywhere',
     'please', 'kindly', 'thanks', 'thank you', 'hey', 'hi', 'hello',
@@ -220,104 +290,148 @@ export function extractSearchTerm(raw: string): string {
     'size', 'sizes', 'color', 'colors', 'colour', 'colours',
     'price', 'cost', 'rate', 'amount', 'fee',
   ]
-  fillers.forEach(f => { q = q.replace(new RegExp(`\\b${f}\\b`, 'gi'), '') })
-  return q.replace(/\s+/g, ' ').trim() || raw.trim()
+
+  // Sort longest first so multi-word fillers match before their subsets
+  const sorted = [...fillers].sort((a, b) => b.length - a.length)
+  sorted.forEach((f) => {
+    q = q.replace(new RegExp(`\\b${f}\\b`, 'gi'), ' ')
+  })
+  const cleaned = q.replace(/\s+/g, ' ').trim()
+  return cleaned.length > 0 ? cleaned : raw.trim()
 }
 
 /**
- * Unified search across vendors and products
- * Returns a single ranked list combining both types
+ * Build a broad OR filter that covers both the full phrase AND each individual word.
+ * This ensures we never return zero results just because a multi-word phrase didn't
+ * match as a substring.
+ */
+function buildVendorOrFilter(term: string, words: string[]) {
+  const allTerms = [...new Set([term, ...words])].filter((t) => t.length > 0)
+  return allTerms.flatMap((t) => [
+    { shop_name: { contains: t, mode: 'insensitive' as const } },
+    { description: { contains: t, mode: 'insensitive' as const } },
+    { category: { contains: t, mode: 'insensitive' as const } },
+    { products: { some: { is_available: true, name: { contains: t, mode: 'insensitive' as const } } } },
+    { products: { some: { is_available: true, description: { contains: t, mode: 'insensitive' as const } } } },
+    { user: { full_name: { contains: t, mode: 'insensitive' as const } } },
+  ])
+}
+
+function buildProductOrFilter(term: string, words: string[]) {
+  const allTerms = [...new Set([term, ...words])].filter((t) => t.length > 0)
+  return allTerms.flatMap((t) => [
+    { name: { contains: t, mode: 'insensitive' as const } },
+    { description: { contains: t, mode: 'insensitive' as const } },
+    { vendor: { shop_name: { contains: t, mode: 'insensitive' as const } } },
+    { vendor: { category: { contains: t, mode: 'insensitive' as const } } },
+    { vendor: { user: { full_name: { contains: t, mode: 'insensitive' as const } } } },
+  ])
+}
+
+function buildReelOrFilter(term: string, words: string[]) {
+  const allTerms = [...new Set([term, ...words])].filter((t) => t.length > 0)
+  return allTerms.flatMap((t) => [
+    { caption: { contains: t, mode: 'insensitive' as const } },
+    { vendor: { shop_name: { contains: t, mode: 'insensitive' as const } } },
+    { vendor: { category: { contains: t, mode: 'insensitive' as const } } },
+    { vendor: { user: { full_name: { contains: t, mode: 'insensitive' as const } } } },
+    { product: { name: { contains: t, mode: 'insensitive' as const } } },
+  ])
+}
+
+/**
+ * Unified search across vendors, products, and reels.
+ * Strategy:
+ *   1. Run a broad OR query (full phrase + each word) — catches everything relevant
+ *   2. Score every result with text-relevance + distance bonus + quality boost
+ *   3. Sort descending by score
+ *   4. If STILL zero results, run a last-resort fallback using only the first
+ *      2-character prefix of each word (catches typos & abbreviations)
  */
 export async function searchVendorsAndProducts(input: SearchInput): Promise<{
-  vendors: any[];
-  products: any[];
-  reels: any[];
-  totalVendors: number;
-  totalProducts: number;
-  totalReels: number;
-  extractedTerm: string;
+  vendors: any[]
+  products: any[]
+  reels: any[]
+  totalVendors: number
+  totalProducts: number
+  totalReels: number
+  extractedTerm: string
+  did_you_mean?: string
 }> {
-  // Normalize inputs to ensure correct types
-  let { q, category, verified_only, min_rating, lat, lng, limit, offset } = input;
-  // Properly handle boolean from query string (Zod coerce may treat "false" as truthy in some cases)
+  let { q, category, verified_only, min_rating, lat, lng, limit, offset } = input
+
   if (typeof verified_only === 'string') {
-    verified_only = verified_only === 'TRUE';
+    verified_only = (verified_only as string) === 'true'
   } else {
-    verified_only = Boolean(verified_only);
+    verified_only = Boolean(verified_only)
   }
 
-  // Extract real search term by stripping filler words
   const term = extractSearchTerm(q)
-  const words = term.split(/\s+/).filter(w => w.length > 0)
+  const words = term
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0)
   const termLower = term.toLowerCase()
 
-  console.log('[Search Debug] input:', JSON.stringify(input))
-  console.log('[Search Debug] term:', term, 'words:', words)
-  console.log('[Search Debug] category filter:', category, 'verified_only:', verified_only)
+  console.log('[Search] q:', q, '→ term:', term, '| words:', words)
 
-  // ── Special vendor search ─────────────────────────────────────────────────
-  // If user searches for "vendor" or "vendors", show all nearby vendors with their products
-  const isSpecialVendorSearch = words.length === 1 && (words[0] === 'vendor' || words[0] === 'vendors')
-  
-  if (isSpecialVendorSearch) {
-    console.log('[Search Debug] Special vendor search detected - showing all nearby vendors')
-    
-    // Define user location for distance calculation
-    const uLat = lat;
-    const uLng = lng;
-    
-    // Get all active vendors, prioritized by distance
-    const vendorWhere: any = { is_active: true, is_suspended: false, is_fraud_flagged: false }
-    if (verified_only) {
-      vendorWhere.user = { is_vendor_verified: true }
-    }
-    
-    const vendorsRaw = await prisma.vendor.findMany({
-      where: vendorWhere,
+  // ── Special vendor-only browse ────────────────────────────────────────────
+  const isVendorBrowse = words.length === 1 && (words[0] === 'vendor' || words[0] === 'vendors')
+  if (isVendorBrowse) {
+    return runVendorBrowse({ verified_only, lat, lng, limit, min_rating })
+  }
+
+  // ── Build WHERE clauses ───────────────────────────────────────────────────
+  const vendorBaseWhere: any = {
+    is_active: true,
+    is_suspended: false,
+    is_fraud_flagged: false,
+  }
+  if (verified_only) vendorBaseWhere.user = { is_vendor_verified: true }
+  if (min_rating > 0) vendorBaseWhere.rating = { gte: min_rating }
+
+  const productBaseWhere: any = {
+    is_available: true,
+    vendor: { is_active: true, is_suspended: false },
+  }
+  if (verified_only) productBaseWhere.vendor = { ...productBaseWhere.vendor, user: { is_vendor_verified: true } }
+
+  const reelBaseWhere: any = {
+    is_active: true,
+    vendor: { is_active: true, is_suspended: false },
+  }
+  if (verified_only) reelBaseWhere.vendor = { ...reelBaseWhere.vendor, user: { is_vendor_verified: true } }
+
+  const FETCH_MULT = 4 // fetch more than needed so scoring has enough to rank from
+
+  // Run all three queries in parallel for speed
+  const [vendorsRaw, productsRaw, reelsRaw] = await Promise.all([
+    prisma.vendor.findMany({
+      where: {
+        ...vendorBaseWhere,
+        OR: buildVendorOrFilter(termLower, words),
+      },
       select: {
-        id: true,
-        user_id: true,
-        shop_name: true,
-        description: true,
-        category: true,
-        lat: true,
-        lng: true,
-        logo_url: true,
-        banner_url: true,
-        avatar_url: true,
-        address: true,
-        phone: true,
-        whatsapp: true,
-        instagram: true,
-        twitter: true,
-        open_days: true,
-        open_time: true,
-        close_time: true,
-        city: true,
-        rating: true,
-        review_count: true,
+        id: true, user_id: true, shop_name: true, description: true, category: true,
+        lat: true, lng: true, logo_url: true, banner_url: true, avatar_url: true,
+        address: true, phone: true, whatsapp: true, instagram: true, twitter: true,
+        open_days: true, open_time: true, close_time: true, city: true,
+        rating: true, review_count: true,
         user: {
-          select: {
-            id: true,
-            full_name: true,
-            avatar_url: true,
-            created_at: true,
-            is_vendor_verified: true,
-          },
+          select: { id: true, full_name: true, avatar_url: true, created_at: true, is_vendor_verified: true },
         },
         products: {
           where: { is_available: true },
           select: { id: true, name: true, description: true, price: true, image_url: true },
         },
       },
-      take: limit * 3,
-    })
+      take: limit * FETCH_MULT,
+    }),
 
-    // Get all products from these vendors
-    const productsRaw = await prisma.product.findMany({
+    prisma.product.findMany({
       where: {
-        is_available: true,
-        vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) },
+        ...productBaseWhere,
+        OR: buildProductOrFilter(termLower, words),
       },
       include: {
         vendor: {
@@ -326,18 +440,17 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
             logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
             whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
             close_time: true, city: true, rating: true, review_count: true,
-            user: { select: { is_vendor_verified: true } }
-          }
-        }
+            user: { select: { is_vendor_verified: true } },
+          },
+        },
       },
-      take: limit * 3,
-    })
+      take: limit * FETCH_MULT,
+    }),
 
-    // Get all reels from these vendors
-    const reelsRaw = await prisma.reel.findMany({
+    prisma.reel.findMany({
       where: {
-        is_active: true,
-        vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) },
+        ...reelBaseWhere,
+        OR: buildReelOrFilter(termLower, words),
       },
       include: {
         vendor: {
@@ -346,813 +459,669 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
             logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
             whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
             close_time: true, city: true, rating: true, review_count: true,
-            user: { select: { is_vendor_verified: true } }
-          }
+            user: { select: { is_vendor_verified: true } },
+          },
         },
-        product: {
+        product: { select: { id: true, name: true, price: true, image_url: true } },
+      },
+      take: limit * FETCH_MULT,
+    }),
+  ])
+
+  // ── Fallback: if everything returned empty, retry with looser terms ────────
+  // Use the shortest meaningful words (≥3 chars) as standalone queries
+  let fallbackVendors: typeof vendorsRaw = []
+  let fallbackProducts: typeof productsRaw = []
+  let fallbackReels: typeof reelsRaw = []
+
+  if (vendorsRaw.length === 0 && productsRaw.length === 0 && reelsRaw.length === 0) {
+    console.log('[Search] Primary query returned 0 — running fallback with short tokens')
+    // Fallback tokens: each word truncated to first 3 chars (catches e.g. "shoes" → "sho")
+    const fallbackTokens = [...new Set(
+      words
+        .filter((w) => w.length >= 3)
+        .map((w) => w.slice(0, 3))
+    )]
+
+    if (fallbackTokens.length > 0) {
+      ;[fallbackVendors, fallbackProducts, fallbackReels] = await Promise.all([
+        prisma.vendor.findMany({
+          where: {
+            ...vendorBaseWhere,
+            OR: buildVendorOrFilter(fallbackTokens[0], fallbackTokens),
+          },
           select: {
-            id: true, name: true, price: true, image_url: true,
-          }
-        }
-      },
-      take: limit * 3,
-    })
-
-    // Build results with distance-based scoring
-    const results: UnifiedSearchResult[] = []
-    
-    // Add vendors with distance-based scoring
-    for (const v of vendorsRaw) {
-      const vDist = (uLat != null && v.lat != null && uLng != null && v.lng != null)
-        ? calcDistance(uLat, uLng, v.lat, v.lng)
-        : null;
-
-      // Base score on proximity and verification
-      let baseScore = 20 // Base score for all vendors in special search
-      if (v.user?.is_vendor_verified) baseScore += 10
-      if (v.products && v.products.length > 0) baseScore += Math.min(v.products.length, 5) // Boost for having products
-      
-      const distMult = distanceMultiplier(vDist)
-      const finalScore = baseScore * distMult
-
-      results.push({
-        id: v.id,
-        type: 'vendor',
-        vendor_id: v.id,
-        vendor_user_id: v.user.id,
-        vendor_shop_name: v.shop_name,
-        vendor_category: v.category ?? null,
-        vendor_lat: v.lat,
-        vendor_lng: v.lng,
-        vendor_logo_url: v.logo_url,
-        vendor_banner_url: v.banner_url,
-        vendor_avatar_url: v.avatar_url,
-        vendor_address: v.address,
-        vendor_phone: v.phone,
-        vendor_whatsapp: v.whatsapp,
-        vendor_instagram: v.instagram,
-        vendor_twitter: v.twitter,
-        vendor_open_days: v.open_days,
-        vendor_open_time: v.open_time,
-        vendor_close_time: v.close_time,
-        vendor_city: v.city,
-        vendor_is_verified: v.user?.is_vendor_verified,
-        vendor_rating: v.rating,
-        vendor_review_count: v.review_count,
-        name: v.shop_name,
-        description: v.description,
-        price: null,
-        image_url: v.logo_url ?? null,
-        video_url: null,
-        thumbnail_url: null,
-        product_id: null,
-        score: finalScore,
-        distance: vDist,
-      })
-    }
-
-    // Add products with distance-based scoring
-    for (const p of productsRaw) {
-      const v = p.vendor;
-      const vDist = (uLat != null && v.lat != null && uLng != null && v.lng != null)
-        ? calcDistance(uLat, uLng, v.lat, v.lng)
-        : null;
-
-      let baseScore = 15 // Base score for all products in special search
-      if (v.user?.is_vendor_verified) baseScore += 5
-      if (v.rating >= 4.0) baseScore += 5
-
-      const distMult = distanceMultiplier(vDist)
-      const finalScore = baseScore * distMult
-
-      results.push({
-        id: p.id,
-        type: 'product',
-        vendor_id: v.id,
-        vendor_user_id: v.user_id,
-        vendor_shop_name: v.shop_name,
-        vendor_category: v.category ?? null,
-        vendor_lat: v.lat,
-        vendor_lng: v.lng,
-        vendor_logo_url: v.logo_url,
-        vendor_banner_url: v.banner_url,
-        vendor_avatar_url: v.avatar_url,
-        vendor_address: v.address,
-        vendor_phone: v.phone,
-        vendor_whatsapp: v.whatsapp,
-        vendor_instagram: v.instagram,
-        vendor_twitter: v.twitter,
-        vendor_open_days: v.open_days,
-        vendor_open_time: v.open_time,
-        vendor_close_time: v.close_time,
-        vendor_city: v.city,
-        vendor_is_verified: v.is_verified,
-        vendor_rating: v.rating,
-        vendor_review_count: v.review_count,
-        name: p.name,
-        description: p.description,
-        price: p.price,
-        image_url: p.image_url,
-        video_url: null,
-        thumbnail_url: null,
-        product_id: null,
-        score: finalScore,
-        distance: vDist,
-      })
-    }
-
-    // Add reels with distance-based scoring
-    for (const r of reelsRaw) {
-      const v = r.vendor;
-      const vDist = (uLat != null && v.lat != null && uLng != null && v.lng != null)
-        ? calcDistance(uLat, uLng, v.lat, v.lng)
-        : null;
-
-      let baseScore = 10 // Base score for all reels in special search
-      if (v.user?.is_vendor_verified) baseScore += 5
-      if (v.rating >= 4.0) baseScore += 5
-      if (r.like_count > 0) baseScore += Math.min(r.like_count, 10) // Boost for engagement
-
-      const distMult = distanceMultiplier(vDist)
-      const finalScore = baseScore * distMult
-
-      results.push({
-        id: r.id,
-        type: 'reel',
-        vendor_id: v.id,
-        vendor_user_id: v.user_id,
-        vendor_shop_name: v.shop_name,
-        vendor_category: v.category ?? null,
-        vendor_lat: v.lat,
-        vendor_lng: v.lng,
-        vendor_logo_url: v.logo_url,
-        vendor_banner_url: v.banner_url,
-        vendor_avatar_url: v.avatar_url,
-        vendor_address: v.address,
-        vendor_phone: v.phone,
-        vendor_whatsapp: v.whatsapp,
-        vendor_instagram: v.instagram,
-        vendor_twitter: v.twitter,
-        vendor_open_days: v.open_days,
-        vendor_open_time: v.open_time,
-        vendor_close_time: v.close_time,
-        vendor_city: v.city,
-        vendor_is_verified: v.is_verified,
-        vendor_rating: v.rating,
-        vendor_review_count: v.review_count,
-        name: r.caption,
-        description: r.caption,
-        price: r.product?.price ?? null,
-        image_url: r.thumbnail_url,
-        video_url: r.video_url,
-        thumbnail_url: r.thumbnail_url,
-        product_id: r.product_id,
-        score: finalScore,
-        distance: vDist,
-      })
-    }
-
-    // Sort by score (distance + relevance) and limit
-    results.sort((a, b) => b.score - a.score)
-    const finalResults = results.slice(0, limit)
-
-    // Separate vendors, products, and reels for response
-    const vendors = finalResults.filter(r => r.type === 'vendor')
-    const products = finalResults.filter(r => r.type === 'product')
-    const reels = finalResults.filter(r => r.type === 'reel')
-
-    console.log(`[Search Debug] Special vendor search: ${vendors.length} vendors, ${products.length} products, ${reels.length} reels`)
-
-    // Map vendors to keep vendor_ prefix for frontend consistency
-    const mappedVendors = vendors.map(r => ({
-      id: r.vendor_id!,
-      user_id: r.vendor_user_id,
-      vendor_shop_name: r.vendor_shop_name,
-      description: r.description,
-      vendor_category: r.vendor_category,
-      vendor_address: r.vendor_address,
-      vendor_lat: r.vendor_lat,
-      vendor_lng: r.vendor_lng,
-      vendor_phone: r.vendor_phone,
-      vendor_whatsapp: r.vendor_whatsapp,
-      vendor_instagram: r.vendor_instagram,
-      vendor_twitter: r.vendor_twitter,
-      vendor_open_days: r.vendor_open_days,
-      vendor_open_time: r.vendor_open_time,
-      vendor_close_time: r.vendor_close_time,
-      vendor_logo_url: r.vendor_logo_url,
-      vendor_banner_url: r.vendor_banner_url,
-      vendor_avatar_url: r.vendor_avatar_url,
-      vendor_city: r.vendor_city,
-      state: null,
-      country: null,
-      postal_code: null,
-      vendor_is_verified: r.vendor_is_verified,
-      is_active: true,
-      vendor_rating: r.vendor_rating,
-      vendor_review_count: r.vendor_review_count,
-      created_at: new Date(),
-      updated_at: new Date(),
-      distance: r.distance,
-      user: r.vendor_user_id ? {
-        id: r.vendor_user_id,
-        full_name: null,
-        avatar_url: null,
-        created_at: new Date(),
-      } : null,
-    }))
-
-    return {
-      vendors: mappedVendors,
-      products,
-      reels,
-      totalVendors: vendors.length,
-      totalProducts: products.length,
-      totalReels: reels.length,
-      extractedTerm: 'vendors',
-    }
-  }
-
-  // ── Regular search continues below ───────────────────────────────────────
-  const vendorWhere: any = { is_active: true, is_suspended: false, is_fraud_flagged: false }
-  const vendorAnd: any[] = []
-
-  if (words.length > 0) {
-    vendorAnd.push({
-      OR: words.flatMap(word => [
-        { shop_name: { contains: word, mode: 'insensitive' } },
-        { description: { contains: word, mode: 'insensitive' } },
-        { category: { contains: word, mode: 'insensitive' } },
-        // Search in product names and descriptions
-        { products: { some: { is_available: true, name: { contains: word, mode: 'insensitive' } } } },
-        { products: { some: { is_available: true, description: { contains: word, mode: 'insensitive' } } } },
-        // Also search in user's full name (vendor owner)
-        { user: { full_name: { contains: word, mode: 'insensitive' } } },
+            id: true, user_id: true, shop_name: true, description: true, category: true,
+            lat: true, lng: true, logo_url: true, banner_url: true, avatar_url: true,
+            address: true, phone: true, whatsapp: true, instagram: true, twitter: true,
+            open_days: true, open_time: true, close_time: true, city: true,
+            rating: true, review_count: true,
+            user: {
+              select: { id: true, full_name: true, avatar_url: true, created_at: true, is_vendor_verified: true },
+            },
+            products: {
+              where: { is_available: true },
+              select: { id: true, name: true, description: true, price: true, image_url: true },
+            },
+          },
+          take: limit * FETCH_MULT,
+        }),
+        prisma.product.findMany({
+          where: {
+            ...productBaseWhere,
+            OR: buildProductOrFilter(fallbackTokens[0], fallbackTokens),
+          },
+          include: {
+            vendor: {
+              select: {
+                id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
+                logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
+                whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
+                close_time: true, city: true, rating: true, review_count: true,
+                user: { select: { is_vendor_verified: true } },
+              },
+            },
+          },
+          take: limit * FETCH_MULT,
+        }),
+        prisma.reel.findMany({
+          where: {
+            ...reelBaseWhere,
+            OR: buildReelOrFilter(fallbackTokens[0], fallbackTokens),
+          },
+          include: {
+            vendor: {
+              select: {
+                id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
+                logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
+                whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
+                close_time: true, city: true, rating: true, review_count: true,
+                user: { select: { is_vendor_verified: true } },
+              },
+            },
+            product: { select: { id: true, name: true, price: true, image_url: true } },
+          },
+          take: limit * FETCH_MULT,
+        }),
       ])
-    })
-  }
-
-  if (verified_only) {
-    vendorAnd.push({ is_verified: true })
-  }
-  if (min_rating > 0) {
-    vendorAnd.push({ rating: { gte: min_rating } })
-  }
-
-  if (vendorAnd.length > 0) vendorWhere.AND = vendorAnd
-
-  console.log('[Search Debug] Final vendorWhere:', JSON.stringify(vendorWhere, null, 2))
-
-  const totalVendors = await prisma.vendor.count({ where: vendorWhere })
-
-  // Fetch vendors with products for scoring
-  const VENDOR_FETCH_MULT = 3
-  const vendorsRaw = await prisma.vendor.findMany({
-    where: vendorWhere,
-    select: {
-      id: true,
-      user_id: true,
-      shop_name: true,
-      description: true,
-      category: true,
-      lat: true,
-      lng: true,
-      logo_url: true,
-      banner_url: true,
-      avatar_url: true,
-      address: true,
-      phone: true,
-      whatsapp: true,
-      instagram: true,
-      twitter: true,
-      open_days: true,
-      open_time: true,
-      close_time: true,
-      city: true,
-      rating: true,
-      review_count: true,
-      user: {
-        select: {
-          id: true,
-          full_name: true,
-          avatar_url: true,
-          created_at: true,
-          is_vendor_verified: true,
-        },
-      },
-      products: {
-        where: { is_available: true },
-        select: { id: true, name: true, description: true, price: true, image_url: true },
-      },
-    },
-    take: limit * VENDOR_FETCH_MULT,
-  })
-
-  // ── Product query ───────────────────────────────────────────────────────
-  const productWhere: any = {
-    is_available: true,
-    vendor: { is_active: true, is_suspended: false },
-  }
-
-  const productAnd: any[] = []
-  if (words.length > 0) {
-    productAnd.push({
-      OR: words.flatMap(word => [
-        { name: { contains: word, mode: 'insensitive' } },
-        { description: { contains: word, mode: 'insensitive' } },
-        // Also search by the vendor's store name and owner name
-        { vendor: { shop_name: { contains: word, mode: 'insensitive' } } },
-        { vendor: { user: { full_name: { contains: word, mode: 'insensitive' } } } },
-      ])
-    })
-  }
-  
-  // Category filter should be optional - boost in scoring instead of filtering
-  // if (category && category !== 'All') {
-  //   productAnd.push({ vendor: { category } })
-  // }
-
-  if (productAnd.length > 0) productWhere.AND = productAnd
-
-  const totalProducts = await prisma.product.count({ where: productWhere })
-
-  const productsRaw = await prisma.product.findMany({
-    where: productWhere,
-    include: {
-      vendor: {
-        select: {
-          id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
-          logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
-          whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
-          close_time: true, city: true, rating: true, review_count: true,
-          user: { select: { is_vendor_verified: true } }
-        },
-      },
-    },
-    take: limit * VENDOR_FETCH_MULT,
-  })
-
-  // ── Reel query ─────────────────────────────────────────────────────────
-  const reelWhere: any = {
-    is_active: true,
-    vendor: { is_active: true, is_suspended: false },
-  }
-
-  const reelAnd: any[] = []
-  if (words.length > 0) {
-    reelAnd.push({
-      OR: words.flatMap(word => [
-        { caption: { contains: word, mode: 'insensitive' } },
-        { vendor: { shop_name: { contains: word, mode: 'insensitive' } } },
-        { vendor: { user: { full_name: { contains: word, mode: 'insensitive' } } } },
-        { product: { name: { contains: word, mode: 'insensitive' } } },
-      ])
-    })
-  }
-
-  if (reelAnd.length > 0) reelWhere.AND = reelAnd
-
-  const totalReels = await prisma.reel.count({ where: reelWhere })
-
-  const reelsRaw = await prisma.reel.findMany({
-    where: reelWhere,
-    include: {
-      vendor: {
-        select: {
-          id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
-          logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
-          whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
-          close_time: true, city: true, rating: true, review_count: true,
-          user: { select: { is_vendor_verified: true } }
-        },
-      },
-      product: {
-        select: {
-          id: true, name: true, price: true, image_url: true,
-        }
-      }
-    },
-    take: limit * VENDOR_FETCH_MULT,
-  })
-
-  // ── Score & build unified results ──────────────────────────────────────
-  const uLat = lat;
-  const uLng = lng;
-
-  const results: UnifiedSearchResult[] = [];
-
-  // Score vendors
-  for (const v of vendorsRaw) {
-    const vDist = (uLat != null && v.lat != null && uLng != null && v.lng != null)
-      ? calcDistance(uLat, uLng, v.lat, v.lng)
-      : null;
-
-    let baseScore = scoreVendor(v.shop_name, v.description, v.category, termLower, words) + vendorBoost(v);
-
-    // Boost score if vendor matches selected category (TikTok-style ranking)
-    if (category && category !== 'All' && v.category === category) {
-      baseScore += 15; // Significant boost for category matches
     }
-
-    const distMult = distanceMultiplier(vDist);
-    const finalScore = baseScore * distMult;
-
-    results.push({
-      id: v.id,
-      type: 'vendor',
-      vendor_id: v.id,
-      vendor_user_id: v.user.id,
-      vendor_shop_name: v.shop_name,
-      vendor_category: v.category ?? null,
-      vendor_lat: v.lat,
-      vendor_lng: v.lng,
-      vendor_logo_url: v.logo_url,
-      vendor_banner_url: v.banner_url,
-      vendor_avatar_url: v.avatar_url,
-      vendor_address: v.address,
-      vendor_phone: v.phone,
-      vendor_whatsapp: v.whatsapp,
-      vendor_instagram: v.instagram,
-      vendor_twitter: v.twitter,
-      vendor_open_days: v.open_days,
-      vendor_open_time: v.open_time,
-      vendor_close_time: v.close_time,
-      vendor_city: v.city,
-      vendor_is_verified: v.is_verified,
-      vendor_rating: v.rating,
-      vendor_review_count: v.review_count,
-      name: v.shop_name,
-      description: v.description,
-      price: null,
-      image_url: v.logo_url ?? null,
-      video_url: null,
-      thumbnail_url: null,
-      product_id: null,
-      score: finalScore,
-      distance: vDist,
-    });
   }
 
-  // Score products
-  for (const p of productsRaw) {
-    const v = p.vendor;
-    const vDist = (uLat != null && v.lat != null && uLng != null && v.lng != null)
-      ? calcDistance(uLat, uLng, v.lat, v.lng)
-      : null;
+  const finalVendors = vendorsRaw.length > 0 ? vendorsRaw : fallbackVendors
+  const finalProducts = productsRaw.length > 0 ? productsRaw : fallbackProducts
+  const finalReels = reelsRaw.length > 0 ? reelsRaw : fallbackReels
 
-    const baseScore = scoreProduct(p.name, p.description, v.shop_name, termLower, words);
-    const vendorV = v.user?.is_vendor_verified ? 5 : 0;
-    const ratingB = v.rating >= 4.5 ? 10 : v.rating >= 4.0 ? 7 : v.rating >= 3.0 ? 3 : 0;
+  // ── Score & build unified results ─────────────────────────────────────────
+  const results: UnifiedSearchResult[] = []
 
-    // Boost score if product vendor matches selected category (TikTok-style ranking)
-    let categoryBoost = 0;
-    if (category && category !== 'All' && v.category === category) {
-      categoryBoost = 15; // Significant boost for category matches
-    }
+  const categoryBoostAmount = 15
 
-    const distMult = distanceMultiplier(vDist);
-    const finalScore = (baseScore + vendorV + ratingB + categoryBoost) * distMult;
+  for (const v of finalVendors) {
+    const vDist =
+      lat != null && lng != null && v.lat != null && v.lng != null
+        ? calcDistance(lat, lng, v.lat, v.lng)
+        : null
 
-    results.push({
-      id: p.id,
-      type: 'product',
-      vendor_id: v.id,
-      vendor_user_id: v.user_id,
-      vendor_shop_name: v.shop_name,
-      vendor_category: v.category ?? null,
-      vendor_lat: v.lat,
-      vendor_lng: v.lng,
-      vendor_logo_url: v.logo_url,
-      vendor_banner_url: v.banner_url,
-      vendor_avatar_url: v.avatar_url,
-      vendor_address: v.address,
-      vendor_phone: v.phone,
-      vendor_whatsapp: v.whatsapp,
-      vendor_instagram: v.instagram,
-      vendor_twitter: v.twitter,
-      vendor_open_days: v.open_days,
-      vendor_open_time: v.open_time,
-      vendor_close_time: v.close_time,
-      vendor_city: v.city,
-      vendor_is_verified: v.is_verified,
-      vendor_rating: v.rating,
-      vendor_review_count: v.review_count,
-      name: p.name,
-      description: p.description,
-      price: p.price,
-      image_url: p.image_url,
-      video_url: null,
-      thumbnail_url: null,
-      product_id: null,
-      score: finalScore,
-      distance: vDist,
-    });
+    let score =
+      scoreVendor(v.shop_name, v.description, v.category, termLower, words) +
+      vendorBoost(v) +
+      distanceBonus(vDist)
+
+    if (category && category !== 'All' && v.category === category) score += categoryBoostAmount
+
+    results.push(buildVendorResult(v, score, vDist))
   }
 
-  // Score reels
+  for (const p of finalProducts) {
+    const v = p.vendor
+    const vDist =
+      lat != null && lng != null && v.lat != null && v.lng != null
+        ? calcDistance(lat, lng, v.lat, v.lng)
+        : null
+
+    let score =
+      scoreProduct(p.name, p.description, v.shop_name, termLower, words) +
+      (v.user?.is_vendor_verified ? 8 : 0) +
+      (v.rating >= 4.5 ? 12 : v.rating >= 4.0 ? 8 : v.rating >= 3.0 ? 4 : 0) +
+      distanceBonus(vDist)
+
+    if (category && category !== 'All' && v.category === category) score += categoryBoostAmount
+
+    results.push(buildProductResult(p, v, score, vDist))
+  }
+
   for (const r of reelsRaw) {
-    const v = r.vendor;
-    const vDist = (uLat != null && v.lat != null && uLng != null && v.lng != null)
-      ? calcDistance(uLat, uLng, v.lat, v.lng)
-      : null;
+    const v = r.vendor
+    const vDist =
+      lat != null && lng != null && v.lat != null && v.lng != null
+        ? calcDistance(lat, lng, v.lat, v.lng)
+        : null
 
-    const baseScore = scoreReel(r.caption, v.shop_name, r.product?.name ?? null, termLower, words);
-    const vendorV = v.user?.is_vendor_verified ? 5 : 0;
-    const ratingB = v.rating >= 4.5 ? 10 : v.rating >= 4.0 ? 7 : v.rating >= 3.0 ? 3 : 0;
+    let score =
+      scoreReel(r.caption, v.shop_name, r.product?.name ?? null, termLower, words) +
+      (v.user?.is_vendor_verified ? 8 : 0) +
+      (v.rating >= 4.5 ? 12 : v.rating >= 4.0 ? 8 : v.rating >= 3.0 ? 4 : 0) +
+      distanceBonus(vDist) +
+      Math.min(r.like_count ?? 0, 10) // engagement boost (capped)
 
-    // Boost score if reel vendor matches selected category
-    let categoryBoost = 0;
-    if (category && category !== 'All' && v.category === category) {
-      categoryBoost = 15;
-    }
+    if (category && category !== 'All' && v.category === category) score += categoryBoostAmount
 
-    // Engagement boost
-    const engagementBoost = Math.min(r.like_count, 10);
-
-    const distMult = distanceMultiplier(vDist);
-    const finalScore = (baseScore + vendorV + ratingB + categoryBoost + engagementBoost) * distMult;
-
-    results.push({
-      id: r.id,
-      type: 'reel',
-      vendor_id: v.id,
-      vendor_user_id: v.user_id,
-      vendor_shop_name: v.shop_name,
-      vendor_category: v.category ?? null,
-      vendor_lat: v.lat,
-      vendor_lng: v.lng,
-      vendor_logo_url: v.logo_url,
-      vendor_banner_url: v.banner_url,
-      vendor_avatar_url: v.avatar_url,
-      vendor_address: v.address,
-      vendor_phone: v.phone,
-      vendor_whatsapp: v.whatsapp,
-      vendor_instagram: v.instagram,
-      vendor_twitter: v.twitter,
-      vendor_open_days: v.open_days,
-      vendor_open_time: v.open_time,
-      vendor_close_time: v.close_time,
-      vendor_city: v.city,
-      vendor_is_verified: v.is_verified,
-      vendor_rating: v.rating,
-      vendor_review_count: v.review_count,
-      name: r.caption,
-      description: r.caption,
-      price: r.product?.price ?? null,
-      image_url: r.thumbnail_url,
-      video_url: r.video_url,
-      thumbnail_url: r.thumbnail_url,
-      product_id: r.product_id,
-      score: finalScore,
-      distance: vDist,
-    });
+    results.push(buildReelResult(r, v, score, vDist))
   }
 
-  // ── Deduplicate & sort ─────────────────────────────────────────────────
-  const seen = new Map<string, UnifiedSearchResult>();
+  // Deduplicate by id, keep highest score
+  const seen = new Map<string, UnifiedSearchResult>()
   for (const r of results) {
-    const existing = seen.get(r.id);
-    if (!existing || r.score > existing.score) {
-      seen.set(r.id, r);
-    }
+    const existing = seen.get(r.id)
+    if (!existing || r.score > existing.score) seen.set(r.id, r)
   }
-  const uniqueResults = Array.from(seen.values());
 
-  uniqueResults.sort((a, b) => b.score - a.score);
+  const sorted = Array.from(seen.values()).sort((a, b) => b.score - a.score)
+  const paged = sorted.slice(offset, offset + limit)
 
-  const paged = uniqueResults.slice(offset, offset + limit);
-
-  // Split into vendors and products arrays for frontend convenience
   const vendors = paged
-    .filter(r => r.type === 'vendor')
-    .map(r => ({
-      id: r.vendor_id!,
-      user_id: r.vendor_user_id,
-      vendor_shop_name: r.vendor_shop_name,
-      description: r.description,
-      vendor_category: r.vendor_category,
-      vendor_address: r.vendor_address,
-      vendor_lat: r.vendor_lat,
-      vendor_lng: r.vendor_lng,
-      vendor_phone: r.vendor_phone,
-      vendor_whatsapp: r.vendor_whatsapp,
-      vendor_instagram: r.vendor_instagram,
-      vendor_twitter: r.vendor_twitter,
-      vendor_open_days: r.vendor_open_days,
-      vendor_open_time: r.vendor_open_time,
-      vendor_close_time: r.vendor_close_time,
-      vendor_logo_url: r.vendor_logo_url,
-      vendor_banner_url: r.vendor_banner_url,
-      vendor_avatar_url: r.vendor_avatar_url,
-      vendor_city: r.vendor_city,
-      state: null,
-      country: null,
-      postal_code: null,
-      vendor_is_verified: r.vendor_is_verified,
-      is_active: true,
-      vendor_rating: r.vendor_rating,
-      vendor_review_count: r.vendor_review_count,
-      created_at: new Date(),
-      updated_at: new Date(),
-      distance: r.distance, // include computed distance
-      user: r.vendor_user_id ? {
-        id: r.vendor_user_id,
-        full_name: null,
-        avatar_url: null,
-        created_at: new Date(),
-      } : null,
-    }));
+    .filter((r) => r.type === 'vendor')
+    .map((r) => mapVendorShape(r))
 
   const products = paged
-    .filter(r => r.type === 'product')
-    .map(r => ({
-      id: r.id,
-      vendor_id: r.vendor_id!,
-      name: r.name,
-      description: r.description,
-      price: r.price,
-      image_url: r.image_url,
-      vendor_shop_name: r.vendor_shop_name,
-      vendor_rating: r.vendor_rating,
-      vendor_review_count: r.vendor_review_count,
-      vendor_lat: r.vendor_lat,
-      vendor_lng: r.vendor_lng,
-      distance: r.distance,
-      is_available: true,
-      created_at: new Date(),
-      updated_at: new Date(),
-    }));
+    .filter((r) => r.type === 'product')
+    .map((r) => mapProductShape(r))
 
   const reels = paged
-    .filter(r => r.type === 'reel')
-    .map(r => ({
-      id: r.id,
-      vendor_id: r.vendor_id!,
-      video_url: r.video_url,
-      thumbnail_url: r.thumbnail_url,
-      caption: r.name,
-      product_id: r.product_id,
-      vendor_shop_name: r.vendor_shop_name,
-      vendor_logo_url: r.vendor_logo_url,
-      vendor_banner_url: r.vendor_banner_url,
-      vendor_avatar_url: r.vendor_avatar_url,
-      vendor_address: r.vendor_address,
-      vendor_phone: r.vendor_phone,
-      vendor_whatsapp: r.vendor_whatsapp,
-      vendor_instagram: r.vendor_instagram,
-      vendor_twitter: r.vendor_twitter,
-      vendor_open_days: r.vendor_open_days,
-      vendor_open_time: r.vendor_open_time,
-      vendor_close_time: r.vendor_close_time,
-      vendor_city: r.vendor_city,
-      vendor_is_verified: r.vendor_is_verified,
-      vendor_rating: r.vendor_rating,
-      vendor_review_count: r.vendor_review_count,
-      vendor_category: r.vendor_category,
-      vendor_lat: r.vendor_lat,
-      vendor_lng: r.vendor_lng,
-      distance: r.distance,
-      created_at: new Date(),
-      updated_at: new Date(),
-    }));
+    .filter((r) => r.type === 'reel')
+    .map((r) => mapReelShape(r))
 
-  console.log('[Search Debug] unified results:', uniqueResults.length, 'returned:', paged.length, '| vendors:', vendors.length, 'products:', products.length, 'reels:', reels.length);
-  // Debug first vendor if exists
-  if (vendors.length > 0) {
-    console.log('[Search Debug] First vendor sample:', JSON.stringify(vendors[0], null, 2));
+  console.log(
+    `[Search] total scored: ${sorted.length} | returned: ${paged.length} | vendors: ${vendors.length} products: ${products.length} reels: ${reels.length}`
+  )
+
+  // ── Did you mean? ─────────────────────────────────────────────────────────────
+  // Only suggest if results are sparse (less than 3 items total)
+  let didYouMean: string | undefined = undefined
+  if (sorted.length < 3 && words.length > 0) {
+    const firstWord = words[0]
+    const similar = await findSimilarTerm(firstWord)
+    if (similar && similar.toLowerCase() !== firstWord.toLowerCase()) {
+      didYouMean = similar
+    }
   }
 
   return {
     vendors,
     products,
     reels,
-    totalVendors,
-    totalProducts,
-    totalReels,
+    totalVendors: sorted.filter((r) => r.type === 'vendor').length,
+    totalProducts: sorted.filter((r) => r.type === 'product').length,
+    totalReels: sorted.filter((r) => r.type === 'reel').length,
     extractedTerm: term,
-  };
+    did_you_mean: didYouMean,
+  }
 }
 
-/**
- * Get search suggestions (lightweight)
- */
-export async function getSearchSuggestions(input: SuggestionInput): Promise<{
-  products: ProductSuggestion[]
-  vendors: VendorSuggestion[]
-}> {
-  const { q, limit } = input
-  const term = extractSearchTerm(q)
-  const searchTerm = `%${term}%`
+// ── Result builders ───────────────────────────────────────────────────────────
 
-  // Get product suggestions (limited) - only from active vendors
-  const products = await prisma.product.findMany({
-    where: {
-      is_available: true,
-      vendor: { is_active: true, is_suspended: false },
-      name: { contains: term, mode: 'insensitive' }
-    },
-    select: {
-      id: true,
-      name: true,
-      price: true,
-      image_url: true,
-      vendor_id: true,
-    },
-    orderBy: { name: 'asc' },
-    take: Math.min(limit, 2),
-  })
+function buildVendorResult(v: any, score: number, distance: number | null): UnifiedSearchResult {
+  return {
+    id: v.id,
+    type: 'vendor',
+    vendor_id: v.id,
+    vendor_user_id: v.user?.id ?? null,
+    vendor_shop_name: v.shop_name,
+    vendor_category: v.category ?? null,
+    vendor_lat: v.lat,
+    vendor_lng: v.lng,
+    vendor_logo_url: v.logo_url,
+    vendor_banner_url: v.banner_url,
+    vendor_avatar_url: v.avatar_url,
+    vendor_address: v.address,
+    vendor_phone: v.phone,
+    vendor_whatsapp: v.whatsapp,
+    vendor_instagram: v.instagram,
+    vendor_twitter: v.twitter,
+    vendor_open_days: v.open_days,
+    vendor_open_time: v.open_time,
+    vendor_close_time: v.close_time,
+    vendor_city: v.city,
+    vendor_is_verified: v.user?.is_vendor_verified ?? null,
+    vendor_rating: v.rating,
+    vendor_review_count: v.review_count,
+    name: v.shop_name,
+    description: v.description,
+    price: null,
+    image_url: v.logo_url ?? null,
+    video_url: null,
+    thumbnail_url: null,
+    product_id: null,
+    score,
+    distance,
+  }
+}
 
-  // Get vendor suggestions (limited)
-  const vendors = await prisma.vendor.findMany({
-    where: {
-      is_active: true,
-      is_suspended: false,
-      is_fraud_flagged: false,
-      shop_name: { contains: term, mode: 'insensitive' }
-    },
-    select: {
-      id: true,
-      shop_name: true,
-      category: true,
-      logo_url: true,
-      rating: true,
-    },
-    orderBy: { rating: 'desc' },
-    take: Math.min(limit, 1),
-  })
+function buildProductResult(p: any, v: any, score: number, distance: number | null): UnifiedSearchResult {
+  return {
+    id: p.id,
+    type: 'product',
+    vendor_id: v.id,
+    vendor_user_id: v.user_id,
+    vendor_shop_name: v.shop_name,
+    vendor_category: v.category ?? null,
+    vendor_lat: v.lat,
+    vendor_lng: v.lng,
+    vendor_logo_url: v.logo_url,
+    vendor_banner_url: v.banner_url,
+    vendor_avatar_url: v.avatar_url,
+    vendor_address: v.address,
+    vendor_phone: v.phone,
+    vendor_whatsapp: v.whatsapp,
+    vendor_instagram: v.instagram,
+    vendor_twitter: v.twitter,
+    vendor_open_days: v.open_days,
+    vendor_open_time: v.open_time,
+    vendor_close_time: v.close_time,
+    vendor_city: v.city,
+    vendor_is_verified: v.user?.is_vendor_verified ?? null,
+    vendor_rating: v.rating,
+    vendor_review_count: v.review_count,
+    name: p.name,
+    description: p.description,
+    price: p.price,
+    image_url: p.image_url,
+    video_url: null,
+    thumbnail_url: null,
+    product_id: null,
+    score,
+    distance,
+  }
+}
+
+function buildReelResult(r: any, v: any, score: number, distance: number | null): UnifiedSearchResult {
+  return {
+    id: r.id,
+    type: 'reel',
+    vendor_id: v.id,
+    vendor_user_id: v.user_id,
+    vendor_shop_name: v.shop_name,
+    vendor_category: v.category ?? null,
+    vendor_lat: v.lat,
+    vendor_lng: v.lng,
+    vendor_logo_url: v.logo_url,
+    vendor_banner_url: v.banner_url,
+    vendor_avatar_url: v.avatar_url,
+    vendor_address: v.address,
+    vendor_phone: v.phone,
+    vendor_whatsapp: v.whatsapp,
+    vendor_instagram: v.instagram,
+    vendor_twitter: v.twitter,
+    vendor_open_days: v.open_days,
+    vendor_open_time: v.open_time,
+    vendor_close_time: v.close_time,
+    vendor_city: v.city,
+    vendor_is_verified: v.user?.is_vendor_verified ?? null,
+    vendor_rating: v.rating,
+    vendor_review_count: v.review_count,
+    name: r.caption,
+    description: r.caption,
+    price: r.product?.price ?? null,
+    image_url: r.thumbnail_url,
+    video_url: r.video_url,
+    thumbnail_url: r.thumbnail_url,
+    product_id: r.product_id,
+    score,
+    distance,
+  }
+}
+
+function mapVendorShape(r: UnifiedSearchResult) {
+  return {
+    id: r.vendor_id!,
+    user_id: r.vendor_user_id,
+    vendor_shop_name: r.vendor_shop_name,
+    description: r.description,
+    vendor_category: r.vendor_category,
+    vendor_address: r.vendor_address,
+    vendor_lat: r.vendor_lat,
+    vendor_lng: r.vendor_lng,
+    vendor_phone: r.vendor_phone,
+    vendor_whatsapp: r.vendor_whatsapp,
+    vendor_instagram: r.vendor_instagram,
+    vendor_twitter: r.vendor_twitter,
+    vendor_open_days: r.vendor_open_days,
+    vendor_open_time: r.vendor_open_time,
+    vendor_close_time: r.vendor_close_time,
+    vendor_logo_url: r.vendor_logo_url,
+    vendor_banner_url: r.vendor_banner_url,
+    vendor_avatar_url: r.vendor_avatar_url,
+    vendor_city: r.vendor_city,
+    state: null,
+    country: null,
+    postal_code: null,
+    vendor_is_verified: r.vendor_is_verified,
+    is_active: true,
+    vendor_rating: r.vendor_rating,
+    vendor_review_count: r.vendor_review_count,
+    created_at: new Date(),
+    updated_at: new Date(),
+    distance: r.distance,
+    user: r.vendor_user_id
+      ? { id: r.vendor_user_id, full_name: null, avatar_url: null, created_at: new Date() }
+      : null,
+  }
+}
+
+function mapProductShape(r: UnifiedSearchResult) {
+  return {
+    id: r.id,
+    vendor_id: r.vendor_id!,
+    name: r.name,
+    description: r.description,
+    price: r.price,
+    image_url: r.image_url,
+    vendor_shop_name: r.vendor_shop_name,
+    vendor_rating: r.vendor_rating,
+    vendor_review_count: r.vendor_review_count,
+    vendor_lat: r.vendor_lat,
+    vendor_lng: r.vendor_lng,
+    distance: r.distance,
+    is_available: true,
+    created_at: new Date(),
+    updated_at: new Date(),
+  }
+}
+
+function mapReelShape(r: UnifiedSearchResult) {
+  return {
+    id: r.id,
+    vendor_id: r.vendor_id!,
+    video_url: r.video_url,
+    thumbnail_url: r.thumbnail_url,
+    caption: r.name,
+    product_id: r.product_id,
+    vendor_shop_name: r.vendor_shop_name,
+    vendor_logo_url: r.vendor_logo_url,
+    vendor_banner_url: r.vendor_banner_url,
+    vendor_avatar_url: r.vendor_avatar_url,
+    vendor_address: r.vendor_address,
+    vendor_phone: r.vendor_phone,
+    vendor_whatsapp: r.vendor_whatsapp,
+    vendor_instagram: r.vendor_instagram,
+    vendor_twitter: r.vendor_twitter,
+    vendor_open_days: r.vendor_open_days,
+    vendor_open_time: r.vendor_open_time,
+    vendor_close_time: r.vendor_close_time,
+    vendor_city: r.vendor_city,
+    vendor_is_verified: r.vendor_is_verified,
+    vendor_rating: r.vendor_rating,
+    vendor_review_count: r.vendor_review_count,
+    vendor_category: r.vendor_category,
+    vendor_lat: r.vendor_lat,
+    vendor_lng: r.vendor_lng,
+    distance: r.distance,
+    created_at: new Date(),
+    updated_at: new Date(),
+  }
+}
+
+// ── Special vendor browse (when user searches "vendors") ──────────────────────
+
+async function runVendorBrowse({
+  verified_only,
+  lat,
+  lng,
+  limit,
+  min_rating,
+}: {
+  verified_only: boolean
+  lat?: number
+  lng?: number
+  limit: number
+  min_rating: number
+}) {
+  const where: any = {
+    is_active: true,
+    is_suspended: false,
+    is_fraud_flagged: false,
+  }
+  if (verified_only) where.user = { is_vendor_verified: true }
+  if (min_rating > 0) where.rating = { gte: min_rating }
+
+  const [vendorsRaw, productsRaw, reelsRaw] = await Promise.all([
+    prisma.vendor.findMany({
+      where,
+      select: {
+        id: true, user_id: true, shop_name: true, description: true, category: true,
+        lat: true, lng: true, logo_url: true, banner_url: true, avatar_url: true,
+        address: true, phone: true, whatsapp: true, instagram: true, twitter: true,
+        open_days: true, open_time: true, close_time: true, city: true,
+        rating: true, review_count: true,
+        user: { select: { id: true, full_name: true, avatar_url: true, created_at: true, is_vendor_verified: true } },
+        products: {
+          where: { is_available: true },
+          select: { id: true, name: true, description: true, price: true, image_url: true },
+        },
+      },
+      take: limit * 3,
+    }),
+    prisma.product.findMany({
+      where: { is_available: true, vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) } },
+      include: {
+        vendor: {
+          select: {
+            id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
+            logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
+            whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
+            close_time: true, city: true, rating: true, review_count: true,
+            user: { select: { is_vendor_verified: true } },
+          },
+        },
+      },
+      take: limit * 3,
+    }),
+    prisma.reel.findMany({
+      where: { is_active: true, vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) } },
+      include: {
+        vendor: {
+          select: {
+            id: true, user_id: true, shop_name: true, category: true, lat: true, lng: true,
+            logo_url: true, banner_url: true, avatar_url: true, address: true, phone: true,
+            whatsapp: true, instagram: true, twitter: true, open_days: true, open_time: true,
+            close_time: true, city: true, rating: true, review_count: true,
+            user: { select: { is_vendor_verified: true } },
+          },
+        },
+        product: { select: { id: true, name: true, price: true, image_url: true } },
+      },
+      take: limit * 3,
+    }),
+  ])
+
+  const results: UnifiedSearchResult[] = []
+
+  for (const v of vendorsRaw) {
+    const d = lat != null && lng != null && v.lat != null && v.lng != null
+      ? calcDistance(lat, lng, v.lat, v.lng) : null
+    const score =
+      20 + (v.user?.is_vendor_verified ? 10 : 0) +
+      Math.min((v.products?.length ?? 0), 5) * 2 + distanceBonus(d)
+    results.push(buildVendorResult(v, score, d))
+  }
+
+  for (const p of productsRaw) {
+    const v = p.vendor
+    const d = lat != null && lng != null && v.lat != null && v.lng != null
+      ? calcDistance(lat, lng, v.lat, v.lng) : null
+    const score = 15 + (v.user?.is_vendor_verified ? 5 : 0) + distanceBonus(d)
+    results.push(buildProductResult(p, v, score, d))
+  }
+
+  for (const r of reelsRaw) {
+    const v = r.vendor
+    const d = lat != null && lng != null && v.lat != null && v.lng != null
+      ? calcDistance(lat, lng, v.lat, v.lng) : null
+    const score = 10 + (v.user?.is_vendor_verified ? 5 : 0) + Math.min(r.like_count ?? 0, 10) + distanceBonus(d)
+    results.push(buildReelResult(r, v, score, d))
+  }
+
+  results.sort((a, b) => b.score - a.score)
+  const paged = results.slice(0, limit)
+
+  const vendors = paged.filter((r) => r.type === 'vendor').map(mapVendorShape)
+  const products = paged.filter((r) => r.type === 'product').map(mapProductShape)
+  const reels = paged.filter((r) => r.type === 'reel').map(mapReelShape)
 
   return {
-    products: products.map(p => ({
+    vendors,
+    products,
+    reels,
+    totalVendors: vendors.length,
+    totalProducts: products.length,
+    totalReels: reels.length,
+    extractedTerm: 'vendors',
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUGGESTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Get smart search suggestions.
+ *
+ * Returns up to `limit` items blending:
+ *   - User's recent search history (highest priority — personalised)
+ *   - Matching product names
+ *   - Matching vendor names
+ *   - Popular/trending recent searches from other users (if user's own results are sparse)
+ *
+ * Each suggestion carries enough metadata for the frontend to render a rich row
+ * (icon, subtitle, source label).
+ */
+export async function getSearchSuggestions(
+  input: SuggestionInput & { userId?: string }
+): Promise<{
+  products: ProductSuggestion[]
+  vendors: VendorSuggestion[]
+  history: string[]
+  trending: string[]
+}> {
+  const { q, limit, userId } = input
+  const term = extractSearchTerm(q)
+
+  // Run everything in parallel
+  const [products, vendors, userHistory, trendingHistory] = await Promise.all([
+    // Products — broader search: match name OR description
+    prisma.product.findMany({
+      where: {
+        is_available: true,
+        vendor: { is_active: true, is_suspended: false },
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { description: { contains: term, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, name: true, price: true, image_url: true, vendor_id: true },
+      orderBy: { name: 'asc' },
+      take: Math.ceil(limit * 0.4), // 40% of slots for products
+    }),
+
+    // Vendors — match shop_name OR category
+    prisma.vendor.findMany({
+      where: {
+        is_active: true,
+        is_suspended: false,
+        is_fraud_flagged: false,
+        OR: [
+          { shop_name: { contains: term, mode: 'insensitive' } },
+          { category: { contains: term, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, shop_name: true, category: true, logo_url: true, rating: true },
+      orderBy: { rating: 'desc' },
+      take: Math.ceil(limit * 0.3), // 30% for vendors
+    }),
+
+    // User's own recent matching history
+    userId
+      ? prisma.searchHistory.findMany({
+          where: {
+            user_id: userId,
+            query: { contains: q, mode: 'insensitive' },
+          },
+          orderBy: { created_at: 'desc' },
+          select: { query: true },
+          take: 5,
+        })
+      : Promise.resolve([]),
+
+    // Trending: most searched queries by ALL users that match the prefix
+    prisma.searchHistory.groupBy({
+      by: ['query'],
+      where: { query: { startsWith: q, mode: 'insensitive' } },
+      _count: { query: true },
+      orderBy: { _count: { query: 'desc' } },
+      take: 4,
+    }),
+  ])
+
+  // Deduplicate history
+  const historyStrings = [...new Set((userHistory as { query: string }[]).map((h) => h.query))]
+  const trendingStrings = trendingHistory
+    .map((t: any) => t.query as string)
+    .filter((t) => !historyStrings.includes(t))
+
+  return {
+    products: products.map((p) => ({
       id: p.id,
       name: p.name,
       price: p.price,
       image_url: p.image_url,
       vendor_id: p.vendor_id,
     })),
-    vendors: vendors.map(v => ({
+    vendors: vendors.map((v) => ({
       id: v.id,
       business_name: v.shop_name,
       category: v.category,
       logo_url: v.logo_url,
       rating: v.rating,
     })),
+    history: historyStrings,
+    trending: trendingStrings,
   }
 }
 
-/**
- * Get user's search history
- */
-export async function getUserSearchHistory(userId: string, limit: number = 10): Promise<string[]> {
+// ─────────────────────────────────────────────────────────────────────────────
+// HISTORY helpers (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getUserSearchHistory(userId: string, limit = 10): Promise<string[]> {
   const history = await prisma.searchHistory.findMany({
     where: { user_id: userId },
     orderBy: { created_at: 'desc' },
     take: limit,
-    select: {
-      query: true,
-    }
+    select: { query: true },
   })
-
-  return [...new Set(history.map(h => h.query))]
+  return [...new Set(history.map((h) => h.query))]
 }
 
-/**
- * Save search query to history
- */
 export async function saveSearchQuery(userId: string, query: string): Promise<void> {
-  // Trim and validate
-  const trimmedQuery = query.trim()
-  if (!trimmedQuery) return
+  const trimmed = query.trim()
+  if (!trimmed) return
 
-  // Save (allow duplicates, dedupe on read)
-  await prisma.searchHistory.create({
-    data: {
-      user_id: userId,
-      query: trimmedQuery,
-    }
-  })
+  await prisma.searchHistory.create({ data: { user_id: userId, query: trimmed } })
 
-  // Keep only latest 50 per user (cleanup old ones)
-  const allHistory = await prisma.searchHistory.findMany({
+  // Keep only latest 50
+  const all = await prisma.searchHistory.findMany({
     where: { user_id: userId },
     orderBy: { created_at: 'desc' },
     select: { id: true },
   })
-
-  if (allHistory.length > 50) {
-    const toDelete = allHistory.slice(50).map(h => h.id)
-    await prisma.searchHistory.deleteMany({
-      where: { id: { in: toDelete } }
-    })
+  if (all.length > 50) {
+    const toDelete = all.slice(50).map((h) => h.id)
+    await prisma.searchHistory.deleteMany({ where: { id: { in: toDelete } } })
   }
 }
 
-/**
- * Clear user search history
- * If query is provided, deletes only entries matching that query.
- * If query is omitted, deletes all history for the user.
- */
 export async function clearSearchHistory(userId: string, query?: string): Promise<void> {
   await prisma.searchHistory.deleteMany({
-    where: { user_id: userId, ...(query ? { query } : {}) }
+    where: { user_id: userId, ...(query ? { query } : {}) },
   })
 }

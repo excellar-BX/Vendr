@@ -1,4 +1,4 @@
-//search.schema.ts
+// search.schema.ts
 import { z } from 'zod'
 
 // Search input
@@ -7,9 +7,8 @@ export const searchSchema = z.object({
   category: z.string().optional(),
   verified_only: z
     .preprocess((val) => {
-      // Convert query string "true"/"false" to boolean correctly
-      if (typeof val === 'string') return val === 'true';
-      return val;
+      if (typeof val === 'string') return val === 'true'
+      return val
     }, z.boolean().optional())
     .default(false),
   min_rating: z.coerce.number().min(0).max(5).optional().default(0),
@@ -17,23 +16,23 @@ export const searchSchema = z.object({
   lng: z.coerce.number().optional(),
   limit: z.coerce.number().optional().default(20),
   offset: z.coerce.number().optional().default(0),
+  did_you_mean: z.string().optional(),
 })
 
 export type SearchInput = z.infer<typeof searchSchema>
 
-// Suggestion search (lighter weight)
+// Suggestion search — includes optional userId for personalised history
 export const suggestionSchema = z.object({
   q: z.string().min(1).max(100),
-  limit: z.coerce.number().optional().default(5),
+  limit: z.coerce.number().optional().default(8),
 })
 
 export type SuggestionInput = z.infer<typeof suggestionSchema>
 
-// Search result types - unified feed
+// Unified search result (internal type used in service)
 export const unifiedSearchResultSchema = z.object({
   id: z.string(),
   type: z.enum(['vendor', 'product', 'reel']),
-  // Vendor fields (present for both, with product's vendor_name for products)
   vendor_id: z.string(),
   vendor_user_id: z.string().nullable(),
   vendor_shop_name: z.string().nullable(),
@@ -55,23 +54,20 @@ export const unifiedSearchResultSchema = z.object({
   vendor_is_verified: z.boolean().nullable(),
   vendor_rating: z.number().nullable(),
   vendor_review_count: z.number().nullable(),
-  // Entity-specific fields
-  name: z.string().nullable(), // vendor shop_name or product name or reel caption
+  name: z.string().nullable(),
   description: z.string().nullable(),
   price: z.number().nullable(),
   image_url: z.string().nullable(),
-  // Reel-specific fields
   video_url: z.string().nullable(),
   thumbnail_url: z.string().nullable(),
   product_id: z.string().nullable(),
-  // Metadata
   score: z.number(),
   distance: z.number().nullable().optional(),
 })
 
 export type UnifiedSearchResult = z.infer<typeof unifiedSearchResultSchema>
 
-// Suggestion types
+// Suggestion response types
 export const productSuggestionSchema = z.object({
   id: z.string(),
   name: z.string(),

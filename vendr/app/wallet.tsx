@@ -8,7 +8,12 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { useAuthStore } from '../stores/authStore';
-import { walletApi } from '../lib/api';
+import {
+  useWalletBalance,
+  useVirtualAccount,
+  useWalletTransactions,
+  useCreateVirtualAccount,
+} from '../hooks/useQueries';
 import { useVendrAlert } from '../components/ui/VendrAlert';
 
 const { width } = Dimensions.get('window');
@@ -74,39 +79,17 @@ function groupByDate(txs: Transaction[]) {
 export default function WalletScreen() {
   const { user, isVendor } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
-  const [creatingVA, setCreatingVA] = useState(false);
-
-  const fetchAll = async () => {
-    if (!user?.id) return;
-
-    try {
-      const [walletRes, vaRes, txRes] = await Promise.all([
-        walletApi.getBalance(),
-        walletApi.getVirtualAccount().catch(() => null), // Don't fail if no VA
-        walletApi.getTransactions({ limit: 50 }),
-      ]);
-
-      if (walletRes?.data) setWallet(walletRes.data);
-      if (vaRes?.data) setVirtualAccount(vaRes.data);
-      if (txRes?.data) setTransactions(txRes.data);
-    } catch (error) {
-      console.error('Error fetching wallet data:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useFocusEffect(useCallback(() => { fetchAll(); }, [user]));
-
-  const [vaStatus, setVaStatus] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // React Query hooks
+  const { data: wallet, isLoading: walletLoading, refetch: refetchWallet } = useWalletBalance();
+  const { data: virtualAccount } = useVirtualAccount();
+  const { data: transactions, refetch: refetchTransactions } = useWalletTransactions(50);
+  const createVaMutation = useCreateVirtualAccount();
+
+  const loading = walletLoading;
 
   const copyAccountNumber = () => {
     if (!virtualAccount) return;
@@ -116,32 +99,23 @@ export default function WalletScreen() {
   };
 
   const handleCreateVirtualAccount = async () => {
-    setCreatingVA(true);
-    setVaStatus('Setting up your account...');
     try {
-      const res = await walletApi.getOrCreateVirtualAccount();
-      const account = res.data;
-      setVirtualAccount({
-        account_number: account.account_number,
-        account_name: account.account_name,
-        bank_name: account.bank_name,
-      });
-      setVaStatus('Done!');
+      await createVaMutation.mutateAsync();
     } catch (e: any) {
-      console.log('[Wallet] Virtual account error:', e.message);
-      setVaStatus('');
       showAlert({
         title: 'Setup Failed',
         message: e.message ?? 'Could not create your account. Please try again.',
         type: 'danger',
         buttons: [{ text: 'OK', style: 'cancel' }],
       });
-    } finally {
-      setCreatingVA(false);
     }
   };
 
-  const onRefresh = () => { setRefreshing(true); fetchAll(); };
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([refetchWallet(), refetchTransactions()]);
+    setRefreshing(false);
+  };
 
   if (loading) {
     return (
@@ -315,7 +289,7 @@ export default function WalletScreen() {
           ) : (
             <TouchableOpacity
               onPress={handleCreateVirtualAccount}
-              disabled={creatingVA}
+              disabled={createVaMutation.isPending}
               activeOpacity={0.85}
               style={{
                 backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
@@ -323,10 +297,10 @@ export default function WalletScreen() {
                 borderStyle: 'dashed',
               }}
             >
-              {creatingVA ? (
+              {createVaMutation.isPending ? (
                 <>
                   <ActivityIndicator size="large" color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#9A8570' }}>{vaStatus || 'Setting up your account...'}</Text>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#9A8570' }}>Setting up your account...</Text>
                 </>
               ) : (
                 <>

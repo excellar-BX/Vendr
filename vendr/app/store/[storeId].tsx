@@ -48,6 +48,7 @@ interface Store {
   banner_url?: string | null;
   is_active: boolean;
   is_verified: boolean;
+  is_suspended: boolean;
   rating: number;
   review_count: number;
   product_count?: number;

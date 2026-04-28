@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system/next';
 import { verificationApi } from '../../lib/api';
 import { Text as StyledText } from '../../components/ui/StyledText';
 import { apiFetch } from '../../lib/api';
@@ -105,10 +106,13 @@ export default function VerificationSubmitScreen() {
         }),
       });
 
+      // Read file bytes using expo-file-system/next API
+      const bytes = await new File(file.uri).bytes();
+
       // Upload file to R2 using signed URL
       const uploadRes = await fetch(signRes.data.uploadUrl, {
         method: 'PUT',
-        body: file.uri,
+        body: bytes,
         headers: {
           'Content-Type': file.mimeType || 'application/pdf',
         },

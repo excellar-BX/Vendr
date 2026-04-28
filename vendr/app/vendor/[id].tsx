@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View, ScrollView, TouchableOpacity, Image, Modal,
   Share, Animated, Dimensions, ActivityIndicator, Alert,
@@ -13,7 +13,16 @@ import { useVendrAlert } from '../../components/ui/VendrAlert';
 import { useAuthStore } from '../../stores/authStore';
 import { formatDistance, formatPrice } from '../../lib/utils';
 import { Vendor, Product } from '../../types';
-import { apiFetch } from '../../lib/api';
+import {
+  useVendor,
+  useVendorProducts,
+  useVendorReels,
+  useVendorReviews,
+  useIsVendorSaved,
+  useToggleSaveVendor,
+  useSubmitReview,
+  useDeleteReview,
+} from '../../hooks/useQueries';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -307,56 +316,23 @@ export default function VendorProfileScreen() {
   const { showAlert: vendrAlert, alertElement } = useVendrAlert();
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const [vendor, setVendor] = useState<Vendor | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [reviews, setReviews] = useState<any[]>([]);
-  const [reels, setReels] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(false);
-  const [savingLoading, setSavingLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'products' | 'reviews' | 'about' | 'reels'>('products');
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [myReview, setMyReview] = useState<any | null>(null);
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [vendorRes, productsRes, reelsRes, reviewsRes] = await Promise.all([
-          apiFetch(`/vendors/${id}`),
-          apiFetch(`/products?vendor_id=${id}`), // backend returns only available products by default (non-auth) or all with include_all
-          apiFetch(`/reels?vendor_id=${id}`),
-          apiFetch(`/reviews?vendor_id=${id}`),
-        ]);
+  // React Query hooks
+  const { data: vendor, isLoading: vendorLoading } = useVendor(id);
+  const { data: products } = useVendorProducts(id);
+  const { data: reels } = useVendorReels(id);
+  const { data: reviews } = useVendorReviews(id);
+  const { data: saved } = useIsVendorSaved(id, user?.id);
+  const toggleSaveMutation = useToggleSaveVendor();
+  const submitReviewMutation = useSubmitReview();
+  const deleteReviewMutation = useDeleteReview();
 
-        setVendor(vendorRes.data);
-        setProducts(productsRes.data);
-        setReels(reelsRes.data);
-        setReviews(reviewsRes.data);
+  const loading = vendorLoading;
 
-        // Find current user's review if logged in
-        if (user?.id) {
-          setMyReview(reviewsRes.data.find((r: any) => r.user_id === user.id) ?? null);
-
-          // Check if vendor is saved
-          try {
-            const savedRes = await apiFetch(`/saved-vendors/${id}/check`);
-            setSaved(savedRes.data.is_saved);
-          } catch (error: any) {
-            // If not found or error, assume not saved
-            if (error.statusCode !== 404) {
-              console.warn('Saved check error:', error.message);
-            }
-            setSaved(false);
-          }
-        }
-      } catch (error: any) {
-        Alert.alert('Error', error.message ?? 'Failed to load vendor data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
-  }, [id]);
+  // Find current user's review if logged in
+  const myReview = user?.id && reviews ? reviews.find((r: any) => r.user_id === user.id) ?? null : null;
 
   const handleShare = async () => {
     await Share.share({
@@ -393,22 +369,10 @@ export default function VendorProfileScreen() {
     // Don't allow owners to save their own store
     if (vendor.user_id === user.id) return;
 
-    setSavingLoading(true);
     try {
-      if (saved) {
-        await apiFetch(`/saved-vendors/${vendor.id}`, { method: 'DELETE' });
-        setSaved(false);
-      } else {
-        await apiFetch('/saved-vendors', {
-          method: 'POST',
-          body: JSON.stringify({ vendor_id: vendor.id }),
-        });
-        setSaved(true);
-      }
+      await toggleSaveMutation.mutateAsync({ vendorId: vendor.id, isSaved: saved ?? false });
     } catch (e: any) {
       vendrAlert({ title: 'Could not save', message: e?.message ?? 'Something went wrong. Please try again.', type: 'danger' });
-    } finally {
-      setSavingLoading(false);
     }
   };
 
@@ -418,20 +382,10 @@ export default function VendorProfileScreen() {
   const handleSubmitReview = async (rating: number, comment: string) => {
     if (!user?.id || !vendor) return;
     try {
-      const res = await apiFetch('/reviews', {
-        method: 'POST',
-        body: JSON.stringify({ vendor_id: id, rating, comment }),
-      });
-      const newReview = {
-        ...res.data,
-        reviewer_name: user?.full_name ?? 'You',
-      };
-      setMyReview(newReview);
-      setReviews(prev => [newReview, ...prev]);
+      const newReview = await submitReviewMutation.mutateAsync({ vendorId: id, rating, comment });
+      setShowReviewModal(false);
     } catch (error: any) {
       Alert.alert('Error', error.message);
-    } finally {
-      setShowReviewModal(false);
     }
   };
 
@@ -444,9 +398,7 @@ export default function VendorProfileScreen() {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: async () => {
           try {
-            await apiFetch(`/reviews/${reviewId}`, { method: 'DELETE' });
-            setReviews(prev => prev.filter(r => r.id !== reviewId));
-            setMyReview(null);
+            await deleteReviewMutation.mutateAsync(reviewId);
           } catch (error: any) {
             Alert.alert('Error', error.message);
           }
@@ -642,7 +594,7 @@ export default function VendorProfileScreen() {
                     borderColor: saved ? 'rgba(245,166,35,0.4)' : '#2A1F14',
                   }}
                 >
-                  {savingLoading
+                  {toggleSaveMutation.isPending
                     ? <ActivityIndicator size="small" color="#F5A623" />
                     : <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? '#F5A623' : '#9A8570'} />
                   }
@@ -688,8 +640,8 @@ export default function VendorProfileScreen() {
                 color: activeTab === tab ? 'white' : '#6B5E50',
               }}>
                 {tab === 'products' ? 'Products'
-                  : tab === 'reviews' ? `Reviews (${reviews.length})`
-                  : tab === 'reels' ? `Reels (${reels.length})`
+                  : tab === 'reviews' ? `Reviews (${reviews?.length ?? 0})`
+                  : tab === 'reels' ? `Reels (${reels?.length ?? 0})`
                   : 'About'}
               </Text>
             </TouchableOpacity>
@@ -701,7 +653,7 @@ export default function VendorProfileScreen() {
 
           {/* Products tab */}
           {activeTab === 'products' && (
-            products.length === 0 ? (
+            (products?.length ?? 0) === 0 ? (
               <View className="items-center py-12 gap-3">
                 <View className="w-14 h-14 rounded-2xl bg-dark-2 border border-faint items-center justify-center">
                   <Ionicons name="cube-outline" size={28} color="#3D3026" />
@@ -715,7 +667,7 @@ export default function VendorProfileScreen() {
               </View>
             ) : (
               <View className="flex-row flex-wrap gap-4">
-                {products.map(p => <ProductCard key={p.id} product={p} onEnquire={handleProductEnquire} />)}
+                {(products ?? []).map(p => <ProductCard key={p.id} product={p} onEnquire={handleProductEnquire} />)}
               </View>
             )
           )}
@@ -760,7 +712,7 @@ export default function VendorProfileScreen() {
                 </View>
               )}
 
-              {reviews.length === 0 ? (
+              {(reviews?.length ?? 0) === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
                   <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="star-outline" size={26} color="#3D3026" />
@@ -771,7 +723,7 @@ export default function VendorProfileScreen() {
                   </Text>
                 </View>
               ) : (
-                reviews.map(r => <ReviewCard key={r.id} review={r} currentUserId={user?.id} onDelete={handleDeleteReview} />)
+                (reviews ?? []).map(r => <ReviewCard key={r.id} review={r} currentUserId={user?.id} onDelete={handleDeleteReview} />)
               )}
             </View>
           )}

@@ -9,7 +9,7 @@ const BUILD_NUMBER = '100';
 
 const TECH_STACK = [
   { label: 'Mobile',    value: 'React Native + Expo SDK 55' },
-  { label: 'Backend',   value: 'Supabase (PostgreSQL + Realtime)' },
+  { label: 'Backend',   value: 'Fastify + Neon DB' },
   { label: 'Payments',  value: 'Paystack' },
   { label: 'Maps',      value: 'OpenStreetMap + Leaflet' },
   { label: 'State',     value: 'Zustand' },

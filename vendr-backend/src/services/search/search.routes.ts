@@ -30,7 +30,7 @@ export async function searchRoutes(app: FastifyInstance) {
   // Protected: Save search query to history
   app.post('/search/history', { preHandler: authenticate }, async (request, reply) => {
     return saveSearchHistoryController(request, reply)
-  })
+  }) 
 
   // Protected: Clear search history
   app.delete('/search/history', { preHandler: authenticate }, async (request, reply) => {
