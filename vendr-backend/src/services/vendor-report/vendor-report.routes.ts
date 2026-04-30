@@ -3,9 +3,6 @@ import { authenticate } from '../../middlewares/authenticate'
 import {
   submitVendorReportController,
   checkReportedController,
-  getVendorReportsController,
-  getVendorReportController,
-  updateVendorReportController,
 } from './vendor-report.controller'
 
 export async function vendorReportRoutes(app: FastifyInstance) {
@@ -19,18 +16,6 @@ export async function vendorReportRoutes(app: FastifyInstance) {
     return checkReportedController(request, reply)
   })
 
-  // Admin only: Get all vendor reports
-  app.get('/admin/vendor-reports', { preHandler: authenticate }, async (request, reply) => {
-    return getVendorReportsController(request, reply)
-  })
-
-  // Admin only: Get single vendor report
-  app.get('/admin/vendor-reports/:reportId', { preHandler: authenticate }, async (request, reply) => {
-    return getVendorReportController(request, reply)
-  })
-
-  // Admin only: Update vendor report status
-  app.patch('/admin/vendor-reports/:reportId', { preHandler: authenticate }, async (request, reply) => {
-    return updateVendorReportController(request, reply)
-  })
+  // Admin routes for vendor reports are now in admin.routes.ts
+  // to keep all admin endpoints in one place
 }

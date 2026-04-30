@@ -36,7 +36,26 @@ export const resetPasswordSchema = z.object({
   new_password: z.string().min(8, 'Password must be at least 8 characters').trim(),
 })
 
+export const addPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').trim(),
+  confirm_password: z.string().min(1, 'Please confirm your password').trim(),
+}).refine((data) => data.password === data.confirm_password, {
+  message: "Passwords don't match",
+  path: ['confirm_password'],
+})
+
+export const changePasswordSchema = z.object({
+  current_password: z.string().min(1, 'Current password is required').trim(),
+  new_password: z.string().min(8, 'Password must be at least 8 characters').trim(),
+  confirm_password: z.string().min(1, 'Please confirm your password').trim(),
+}).refine((data) => data.new_password === data.confirm_password, {
+  message: "Passwords don't match",
+  path: ['confirm_password'],
+})
+
 export type RegisterInput = z.infer<typeof registerSchema>
 export type LoginInput = z.infer<typeof loginSchema>
 export type GoogleAuthInput = z.infer<typeof googleAuthSchema>
 export type RefreshInput = z.infer<typeof refreshSchema>
+export type AddPasswordInput = z.infer<typeof addPasswordSchema>
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>

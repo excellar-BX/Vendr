@@ -60,6 +60,8 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0 });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [canAddPassword, setCanAddPassword] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
 
   const userId = user?.id;
   const email = user?.email ?? '';
@@ -71,7 +73,7 @@ export default function ProfileScreen() {
     if (!userId) return;
     const fetchAll = async () => {
       try {
-        const response = await apiFetch('/users/me', { method: 'GET' });
+        const response = await apiFetch('/auth/me', { method: 'GET' });
         const data = response.data;
         // Map backend response to frontend state shape
         setProfile({
@@ -81,10 +83,12 @@ export default function ProfileScreen() {
           is_vendor: !!data.vendor,
         });
         setNotificationsEnabled(data.notifications_enabled);
+        setCanAddPassword(data.can_add_password || false);
+        setHasPassword(data.has_password || false);
         setStats({
-          orders: data.stats.orders,
-          reviews: data.stats.reviews,
-          saved: data.stats.saved,
+          orders: data.stats?.orders || 0,
+          reviews: data.stats?.reviews || 0,
+          saved: data.stats?.saved || 0,
         });
       } catch (err) {
         console.error('Failed to fetch profile:', err);
@@ -249,6 +253,18 @@ export default function ProfileScreen() {
           <MenuItem icon="bookmark-outline" label="Saved Vendors" sublabel="Your favourite vendors"              iconBg="#2E2214" iconColor="#5599E8" onPress={() => router.push('/saved')} />
           <Divider />
           <MenuItem icon="star-outline"     label="My Reviews"    sublabel="Reviews you have left"               iconBg="#2E2214" iconColor="#F5A623" onPress={() => router.push('/reviews')} />
+          {canAddPassword && (
+            <>
+              <Divider />
+              <MenuItem icon="lock-closed-outline" label="Set Up Password" sublabel="Add password to log in with email" iconBg="#2E2214" iconColor="#9A8570" onPress={() => router.push('/add-password')} />
+            </>
+          )}
+          {hasPassword && (
+            <>
+              <Divider />
+              <MenuItem icon="lock-closed-outline" label="Change Password" sublabel="Update your password" iconBg="#2E2214" iconColor="#9A8570" onPress={() => router.push('/change-password')} />
+            </>
+          )}
         </View>
 
         {isVendor && (

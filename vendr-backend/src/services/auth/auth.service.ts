@@ -5,7 +5,7 @@ import { OAuth2Client } from 'google-auth-library'
 import prisma from '../../lib/prisma'
 import { env } from '../../config/env'
 import { sendVerificationEmail, sendPasswordResetEmail } from '../../lib/email'
-import type { RegisterInput, LoginInput, GoogleAuthInput } from './auth.schema'
+import type { RegisterInput, LoginInput, GoogleAuthInput, AddPasswordInput, ChangePasswordInput } from './auth.schema'
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID)
 
@@ -37,11 +37,18 @@ function generateSecureToken(): string {
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 export async function register(input: RegisterInput) {
-  const existing = await prisma.user.findUnique({ where: { email: input.email } })
+   const existing = await prisma.user.findUnique({
+    where: { email: input.email },
+    select: { id: true, google_id: true, password: true }
+  })
+
   if (existing) {
+    // Specific error instead of generic conflict
+    if (existing.google_id && !existing.password) {
+      throw { statusCode: 409, message: 'An account with this email already exists via Google Sign-In. Please tap "Continue with Google" to log in.' }
+    }
     throw { statusCode: 409, message: 'Email already in use' }
   }
-
   const hashed = await bcrypt.hash(input.password, 12)
 
   const user = await prisma.user.create({
@@ -100,6 +107,7 @@ export async function login(input: LoginInput) {
       notifications_enabled: true,
       created_at: true,
       password: true,
+      google_id: true,
       vendors: {
         where: { is_active: true },
         select: { id: true, shop_name: true, is_active: true },
@@ -107,7 +115,17 @@ export async function login(input: LoginInput) {
     },
   })
 
-  if (!user || !user.password) {
+  if (!user) {
+    throw { statusCode: 401, message: 'Invalid email or password' }
+  }
+
+  //Strict separation — Google-only accounts cannot use email/password
+  if (!user.password && user.google_id) {
+    throw { statusCode: 400, message: 'This account uses Google Sign-In. Please tap "Continue with Google" to log in.' }
+  }
+
+  // Edge case: account exists but has neither (shouldn't happen, but just in case)
+  if (!user.password) {
     throw { statusCode: 401, message: 'Invalid email or password' }
   }
 
@@ -123,7 +141,7 @@ export async function login(input: LoginInput) {
     data: { token: refreshToken, user_id: user.id, expires_at: getRefreshTokenExpiry() },
   })
 
-  const { password: _pw, vendors, ...safeUser } = user as any
+  const { password: _pw, google_id: _gid, vendors, ...safeUser } = user as any
   return {
     user: {
       ...safeUser,
@@ -343,6 +361,68 @@ export async function resetPassword(token: string, newPassword: string) {
   await prisma.refreshToken.deleteMany({ where: { user_id: record.user_id } })
 }
 
+// ─── Add Password (for Google users) ───────────────────────────────────────────
+
+export async function addPassword(userId: string, input: AddPasswordInput) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, password: true, google_id: true },
+  })
+
+  if (!user) {
+    throw { statusCode: 404, message: 'User not found' }
+  }
+
+  // Check if user already has a password
+  if (user.password) {
+    throw { statusCode: 400, message: 'Password already set. Use change password instead.' }
+  }
+
+  const hashed = await bcrypt.hash(input.password, 12)
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: hashed },
+  })
+
+  return { message: 'Password added successfully. You can now log in with email/password.' }
+}
+
+// ─── Change Password ───────────────────────────────────────────────────────────
+
+export async function changePassword(userId: string, input: ChangePasswordInput) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, password: true },
+  })
+
+  if (!user) {
+    throw { statusCode: 404, message: 'User not found' }
+  }
+
+  if (!user.password) {
+    throw { statusCode: 400, message: 'No password set. Please add a password first.' }
+  }
+
+  // Verify current password
+  const valid = await bcrypt.compare(input.current_password, user.password)
+  if (!valid) {
+    throw { statusCode: 401, message: 'Current password is incorrect' }
+  }
+
+  const hashed = await bcrypt.hash(input.new_password, 12)
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: hashed },
+  })
+
+  // Invalidate all refresh tokens (force re-login for security)
+  await prisma.refreshToken.deleteMany({ where: { user_id: userId } })
+
+  return { message: 'Password changed successfully. Please log in again.' }
+}
+
 // ─── Refresh ──────────────────────────────────────────────────────────────────
 
 export async function refresh(token: string) {
@@ -402,6 +482,8 @@ export async function getMe(userId: string) {
       is_deleted: true,
       notifications_enabled: true,
       created_at: true,
+      password: true,
+      google_id: true,
       vendors: {
         where: { is_active: true },
         select: { id: true, shop_name: true, is_active: true },
@@ -413,9 +495,11 @@ export async function getMe(userId: string) {
     throw { statusCode: 404, message: 'User not found' }
   }
 
-  const { vendors, ...userData } = user as any
+  const { vendors, password, google_id, ...userData } = user as any
   return {
     ...userData,
     vendor: vendors && vendors.length > 0 ? vendors[0] : null,
+    can_add_password: !!google_id && !password, // Can add password if has Google auth but no password
+    has_password: !!password, // Has password set
   }
 }

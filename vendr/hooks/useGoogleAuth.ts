@@ -1,5 +1,4 @@
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin'
-import { useEffect } from 'react'
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!,
@@ -11,6 +10,7 @@ export function useGoogleAuth() {
   async function signInWithGoogle(): Promise<string | null> {
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
+      await GoogleSignin.signOut()
       const userInfo = await GoogleSignin.signIn()
       const idToken = userInfo.data?.idToken
 
@@ -19,7 +19,7 @@ export function useGoogleAuth() {
       return idToken
     } catch (error: any) {
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        return null // user cancelled, no need to throw
+        return null
       } else if (error.code === statusCodes.IN_PROGRESS) {
         return null
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {

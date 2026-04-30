@@ -65,6 +65,8 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+
+
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
 interface ApiFetchOptions {
@@ -118,15 +120,20 @@ export async function apiFetch(
 
   const res = await fetch(url, { ...fetchOptions, headers })
 
-  // Token expired — try refresh once
-  if (res.status === 401 && retry) {
-    const newToken = await refreshAccessToken()
-    if (newToken) {
-      return apiFetch(path, options, false)
-    }
-    // Refresh failed — user must log in again
-    throw { statusCode: 401, message: 'Your session has expired. Please log in again.' }
+// Token expired — try refresh once
+if (res.status === 401 && retry) {
+  // Only treat as expired session on protected routes, not auth routes
+  const isAuthRoute = path.startsWith('/auth/login') || path.startsWith('/auth/register') || path.startsWith('/auth/google')
+  if (isAuthRoute) {
+    const data = await res.json()
+    throw { statusCode: 401, message: data.message ?? 'Invalid credentials' }
   }
+  const newToken = await refreshAccessToken()
+  if (newToken) {
+    return apiFetch(path, options, false)
+  }
+  throw { statusCode: 401, message: 'Your session has expired. Please log in again.' }
+}
 
   // Handle network errors with retry
   if (!res.ok && res.status >= 500 && retry) {

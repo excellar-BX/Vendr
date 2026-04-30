@@ -85,6 +85,8 @@ export async function getVendorReports(limit = 50, offset = 0, status?: string) 
             id: true,
             full_name: true,
             email: true,
+            phone: true,
+            avatar_url: true,
           },
         },
         vendor: {

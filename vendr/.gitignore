@@ -44,6 +44,6 @@ yarn-error.*
 .env.local
 .env.migrate
 
-
+google-services.json
 credentials.json
 vendr-e29d6-75f9a963eb60.json

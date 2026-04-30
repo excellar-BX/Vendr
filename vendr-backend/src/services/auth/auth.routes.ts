@@ -11,6 +11,8 @@ import {
   resendVerificationController,
   forgotPasswordController,
   resetPasswordController,
+  addPasswordController,
+  changePasswordController,
 } from './auth.controller'
 
 export async function authRoutes(app: FastifyInstance) {
@@ -31,4 +33,6 @@ export async function authRoutes(app: FastifyInstance) {
 
   // Protected
   app.get('/auth/me', { preHandler: authenticate }, getMeController)
+  app.post('/auth/add-password', { preHandler: authenticate }, addPasswordController)
+  app.post('/auth/change-password', { preHandler: authenticate }, changePasswordController)
 }

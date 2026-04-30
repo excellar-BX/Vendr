@@ -27,6 +27,7 @@ import {
   resolveDispute,
   broadcastNotification,
 } from './admin.service';
+import * as VendorReportService from '../vendor-report/vendor-report.service';
 import { authenticate } from '../../middlewares/authenticate';
 
 export async function adminRoutes(fastify: FastifyInstance) {
@@ -453,6 +454,62 @@ export async function adminRoutes(fastify: FastifyInstance) {
         return reply.send(result);
       } catch (error: any) {
         reply.status(500).send({ message: error.message });
+      }
+    },
+  });
+
+  // Vendor Reports
+  fastify.get('/admin/vendor-reports', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { limit = '50', offset = '0', status } = request.query as {
+        limit?: string;
+        offset?: string;
+        status?: string;
+      };
+      try {
+        const result = await VendorReportService.getVendorReports(
+          parseInt(limit),
+          parseInt(offset),
+          status
+        );
+        return reply.send(result);
+      } catch (error: any) {
+        reply.status(500).send({ success: false, message: error.message });
+      }
+    },
+  });
+
+  fastify.get('/admin/vendor-reports/:reportId', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { reportId } = request.params as { reportId: string };
+      try {
+        const result = await VendorReportService.getVendorReport(reportId);
+        return reply.send({ success: true, data: result });
+      } catch (error: any) {
+        reply.status(error.statusCode || 500).send({ success: false, message: error.message });
+      }
+    },
+  });
+
+  fastify.patch('/admin/vendor-reports/:reportId', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const { reportId } = request.params as { reportId: string };
+      const { status, admin_notes } = request.body as {
+        status?: string;
+        admin_notes?: string;
+      };
+      try {
+        const result = await VendorReportService.updateVendorReport(
+          reportId,
+          { status, admin_notes },
+          request.user.id
+        );
+        return reply.send({ success: true, data: result });
+      } catch (error: any) {
+        reply.status(error.statusCode || 500).send({ success: false, message: error.message });
       }
     },
   });

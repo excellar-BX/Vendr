@@ -9,6 +9,8 @@ import {
   resendVerificationSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  addPasswordSchema,
+  changePasswordSchema,
 } from './auth.schema'
 
 export async function registerController(request: FastifyRequest, reply: FastifyReply) {
@@ -132,6 +134,32 @@ export async function resetPasswordController(request: FastifyRequest, reply: Fa
   try {
     await AuthService.resetPassword(parsed.data.token, parsed.data.new_password)
     return reply.status(200).send({ success: true, message: 'Password reset successfully. Please log in again.' })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
+  }
+}
+
+export async function addPasswordController(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = addPasswordSchema.safeParse(request.body)
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, errors: parsed.error.flatten().fieldErrors })
+  }
+  try {
+    const result = await AuthService.addPassword(request.user.id, parsed.data)
+    return reply.status(200).send({ success: true, data: result })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
+  }
+}
+
+export async function changePasswordController(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = changePasswordSchema.safeParse(request.body)
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, errors: parsed.error.flatten().fieldErrors })
+  }
+  try {
+    const result = await AuthService.changePassword(request.user.id, parsed.data)
+    return reply.status(200).send({ success: true, data: result })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
   }

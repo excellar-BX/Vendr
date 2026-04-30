@@ -8,7 +8,37 @@ let io: SocketIOServer | null = null;
 export function initSocket(server: HTTPServer) {
   io = new SocketIOServer(server, {
     cors: {
-      origin: '*',
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+
+        const allowedPatterns = [
+          /^http:\/\/localhost(:\d+)?$/,        // any localhost port
+          /^http:\/\/127\.0\.0\.1(:\d+)?$/,     // any 127.0.0.1 port
+          /^https?:\/\/.*\.ngrok-free\.app$/,   // ngrok free tunnels
+          /^https?:\/\/.*\.ngrok\.io$/,         // ngrok legacy
+          /^https?:\/\/.*\.ngrok-free\.dev$/,   // ngrok free dev tunnels
+          /^https?:\/\/.*\.vercel\.app$/,       // Vercel deployments
+          /^https?:\/\/.*\.onrender\.com$/,     // Render deployments
+        ];
+
+        // Add production origins via env: ALLOWED_ORIGINS=https://admin.vendr.ng,https://app.vendr.ng
+        const explicitOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean);
+
+        const isAllowed =
+          allowedPatterns.some((pattern) => pattern.test(origin)) ||
+          explicitOrigins.includes(origin);
+
+        if (isAllowed) {
+          callback(null, true);
+        } else {
+          console.warn(`[Socket] CORS blocked origin: ${origin}`);
+          callback(new Error(`Origin ${origin} not allowed by CORS`), false);
+        }
+      },
       methods: ['GET', 'POST'],
     },
   });
