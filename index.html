@@ -425,7 +425,7 @@
       gap: 0;
     }
     .logos-label {
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 500;
       color: var(--text-3);
       text-transform: uppercase;
@@ -443,7 +443,7 @@
     .logo-name {
        font-family: 'DM Sans', sans-serif;
       font-weight: 700;
-      font-size: 15px;
+      font-size: 16px;
       color: var(--cream-dark);
       letter-spacing: -.3px;
       transition: color .2s;
@@ -629,7 +629,7 @@
     .stats-band {
       background: var(--orange-pale);
       border-radius: var(--r-xl);
-      padding: 56px 60px;
+      padding: 56px auto;
       margin: 0 0 80px;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -947,8 +947,11 @@
     }
     @media (max-width: 580px) {
       .steps, .features-grid, .test-grid, .pricing-grid { grid-template-columns: 1fr; }
-      .stats-band { grid-template-columns: repeat(2, 1fr); }
+      .stats-band { grid-template-columns: repeat(2, 1fr); text-align: center; }
       .footer-grid { grid-template-columns: 1fr; }
+      .logos-inner { flex-direction: column; align-items: center; gap: 24px; }
+      .logos-label { margin-right: 0; margin-bottom: 0; font-size:18px; }
+      .logos-track { display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; }
     }
   </style>
 </head>
