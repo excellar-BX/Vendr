@@ -230,21 +230,25 @@ function vendorBoost(vendor: any): number {
 }
 
 /**
- * Apply distance score bonus (additive, not multiplicative).
- * This way a highly relevant far result still surfaces, just ranked slightly below
- * a similarly-relevant nearby result. We no longer kill far results entirely.
+ * Apply distance score bonus with stronger nearby priority for GPS-based search.
+ * Nearby results get significant bonus to ensure they appear prominently.
+ * Far results are heavily penalized to prioritize local discovery.
  *
  * Returns a bonus to ADD to the base score (not a multiplier).
  */
 function distanceBonus(distanceKm: number | null): number {
-  if (distanceKm === null) return 0        // unknown location — neutral
-  if (distanceKm <= 1) return 30           // walking distance
-  if (distanceKm <= 3) return 24
-  if (distanceKm <= 5) return 18
-  if (distanceKm <= 10) return 12
-  if (distanceKm <= 25) return 6
-  if (distanceKm <= 50) return 2
-  return 0                                 // beyond 50km — no bonus, but not penalised
+  if (distanceKm === null) return -20      // unknown location — penalize heavily
+  
+  // Strong nearby priority for hyperlocal search
+  if (distanceKm <= 0.5) return 50         // very close - same building/compound
+  if (distanceKm <= 1) return 40           // walking distance
+  if (distanceKm <= 2) return 30           // short drive/walk
+  if (distanceKm <= 3) return 20           // nearby neighborhood
+  if (distanceKm <= 5) return 10           // same area
+  if (distanceKm <= 8) return 0            // acceptable distance
+  if (distanceKm <= 15) return -10         // getting far
+  if (distanceKm <= 25) return -20         // far
+  return -30                               // very far - heavily penalize
 }
 
 /**
@@ -358,7 +362,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   extractedTerm: string
   did_you_mean?: string
 }> {
-  let { q, category, verified_only, min_rating, lat, lng, limit, offset } = input
+  let { q, category, verified_only, min_rating, lat, lng, max_distance, limit, offset } = input
 
   if (typeof verified_only === 'string') {
     verified_only = (verified_only as string) === 'true'
@@ -616,7 +620,18 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
     if (!existing || r.score > existing.score) seen.set(r.id, r)
   }
 
-  const sorted = Array.from(seen.values()).sort((a, b) => b.score - a.score)
+  // Apply distance filtering if max_distance is specified and location is provided
+  let filteredResults = Array.from(seen.values())
+  if (max_distance != null && lat != null && lng != null) {
+    filteredResults = filteredResults.filter(result => {
+      // Only filter results that have distance calculated
+      if (result.distance === null) return false
+      return result.distance <= max_distance
+    })
+    console.log(`[Search] Distance filter applied: ${max_distance}km - filtered from ${seen.size} to ${filteredResults.length} results`)
+  }
+
+  const sorted = filteredResults.sort((a, b) => b.score - a.score)
   const paged = sorted.slice(offset, offset + limit)
 
   const vendors = paged

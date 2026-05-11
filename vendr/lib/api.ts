@@ -1,5 +1,5 @@
-import * as SecureStore from 'expo-secure-store'
 import { useAuthStore } from '../stores/authStore'
+import WebStorage from './secureStorage'
 
 
 const BASE_URL = 'https://unfoisted-annabel-virilocally.ngrok-free.dev/api' //process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api"
@@ -7,21 +7,21 @@ console.log(BASE_URL)
 // ─── Token storage ────────────────────────────────────────────────────────────
 
 export async function getAccessToken() {
-  return await SecureStore.getItemAsync('access_token')
+  return await WebStorage.getItemAsync('access_token')
 }
 
 export async function getRefreshToken() {
-  return await SecureStore.getItemAsync('refresh_token')
+  return await WebStorage.getItemAsync('refresh_token')
 }
 
 export async function saveTokens(accessToken: string, refreshToken: string) {
-  await SecureStore.setItemAsync('access_token', accessToken)
-  await SecureStore.setItemAsync('refresh_token', refreshToken)
+  await WebStorage.setItemAsync('access_token', accessToken)
+  await WebStorage.setItemAsync('refresh_token', refreshToken)
 }
 
 export async function clearTokens() {
-  await SecureStore.deleteItemAsync('access_token')
-  await SecureStore.deleteItemAsync('refresh_token')
+  await WebStorage.deleteItemAsync('access_token')
+  await WebStorage.deleteItemAsync('refresh_token')
 }
 
 // ─── Token refresh ────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ async function refreshAccessToken(): Promise<string | null> {
       await saveTokens(data.data.accessToken, data.data.refreshToken)
     } else {
       // Just update access token if refresh token is the same
-      await SecureStore.setItemAsync('access_token', data.data.accessToken)
+      await WebStorage.setItemAsync('access_token', data.data.accessToken)
     }
     return data.data.accessToken
   } catch (error) {
@@ -85,6 +85,7 @@ export async function apiFetch(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
     ...(options.headers as Record<string, string>),
   }
 
@@ -205,6 +206,7 @@ export const searchApi = {
     min_rating?: number
     lat?: number
     lng?: number
+    max_distance?: number
     limit?: number
     offset?: number
   }) => apiFetch('/search', { query: params }),

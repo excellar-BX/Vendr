@@ -14,6 +14,7 @@ export const searchSchema = z.object({
   min_rating: z.coerce.number().min(0).max(5).optional().default(0),
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional(),
+  max_distance: z.coerce.number().min(0).max(100).optional(), // max distance in km
   limit: z.coerce.number().optional().default(20),
   offset: z.coerce.number().optional().default(0),
   did_you_mean: z.string().optional(),

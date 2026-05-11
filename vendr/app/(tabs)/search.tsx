@@ -270,7 +270,8 @@ export default function SearchScreen() {
   const [locationSuggestions, setLocationSuggestions] = useState<any[]>([]);
   const [recentDestinations, setRecentDestinations] = useState<any[]>([]);
 
-  const DROPDOWN_TOP = insets.top + 56 + 40 + 48 + 52 + 10;
+  const searchBarRef = useRef<View>(null);
+  const [searchBarBottom, setSearchBarBottom] = useState(0);
 
   // React Query hooks
   const { data: suggestionsData } = useSearchSuggestions(query);
@@ -342,38 +343,21 @@ export default function SearchScreen() {
   // ── Suggestions: sync with React Query data ───────────────────────────────────
   useEffect(() => {
     if (query.length < 1) {
-      // When input is focused but empty, show recent searches as suggestions
-      if (dropdownVisible && recentSearches.length > 0) {
-        setSuggestions(
-          recentSearches.slice(0, 6).map((s, i) => ({
-            key: `hist-${i}`,
-            source: 'history' as SuggestionSource,
-            label: s,
-          }))
-        );
-      } else {
-        setSuggestions([]);
-      }
+      // TikTok style: no history in dropdown when input is empty
+      setSuggestions([]);
       return;
     }
 
-    // Use React Query data for suggestions
+    // Use React Query data for suggestions (no history)
     if (suggestionsData) {
       const rows: SuggestionRow[] = [];
 
-      // 1. User's own history first (most personal)
-      (suggestionsData.history ?? []).forEach((h: string, i: number) => {
-        rows.push({ key: `hist-${i}`, source: 'history', label: h });
-      });
-
-      // 2. Trending queries from other users
+      // 1. Trending queries from other users
       (suggestionsData.trending ?? []).forEach((t: string, i: number) => {
-        if (!rows.find(r => r.label.toLowerCase() === t.toLowerCase())) {
-          rows.push({ key: `trend-${i}`, source: 'trending', label: t });
-        }
+        rows.push({ key: `trend-${i}`, source: 'trending', label: t });
       });
 
-      // 3. Matching products
+      // 2. Matching products
       (suggestionsData.products ?? []).forEach((p: any) => {
         rows.push({
           key: `prod-${p.id}`,
@@ -384,7 +368,7 @@ export default function SearchScreen() {
         });
       });
 
-      // 4. Matching vendors
+      // 3. Matching vendors
       (suggestionsData.vendors ?? []).forEach((v: any) => {
         rows.push({
           key: `vend-${v.id}`,
@@ -398,7 +382,7 @@ export default function SearchScreen() {
 
       setSuggestions(rows.slice(0, 8));
     }
-  }, [query, dropdownVisible, suggestionsData, recentSearches]);
+  }, [query, dropdownVisible, suggestionsData]);
 
   // ── Run search ─────────────────────────────────────────────────────────────
   const runSearch = async (q: string, categoryOverride?: Category | 'All') => {
@@ -422,12 +406,17 @@ export default function SearchScreen() {
     }
 
     try {
-      const queryParams: Record<string, any> = { q, limit: 50 };
-      if (effectiveCategory !== 'All') queryParams.category = effectiveCategory;
-      if (verifiedOnly) queryParams.verified_only = true;
-      if (minRating > 0) queryParams.min_rating = minRating;
-      if (searchLat != null) queryParams.lat = searchLat;
-      if (searchLng != null) queryParams.lng = searchLng;
+      const queryParams = {
+        q,
+        limit: 50,
+        ...(effectiveCategory !== 'All' && { category: effectiveCategory }),
+        ...(verifiedOnly && { verified_only: true }),
+        ...(minRating > 0 && { min_rating: minRating }),
+        ...(searchLat != null && { lat: searchLat }),
+        ...(searchLng != null && { lng: searchLng }),
+        // Add distance filtering for GPS-based searches (10km radius for local discovery)
+        ...(searchLat != null && searchLng != null && { max_distance: 10 }),
+      };
 
       const { data } = await searchApi.search(queryParams);
 
@@ -536,11 +525,11 @@ export default function SearchScreen() {
       <StatusBar style="light" />
 
       {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 12 }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 12, zIndex: 100, backgroundColor: '#0F0A06' }}>
         <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 24, color: '#FDF6EC', marginBottom: 16 }}>Search</Text>
 
         {/* Location picker */}
-        <View style={{ marginBottom: 10 }}>
+        <View style={{ zIndex: showLocationPicker ? 10 : 1, marginBottom: 10 }}>
           <TouchableOpacity
             onPress={() => setShowLocationPicker(!showLocationPicker)}
             style={{
@@ -562,10 +551,9 @@ export default function SearchScreen() {
           {/* Location picker dropdown */}
           {showLocationPicker && (
             <View style={{
-              position: 'absolute', top: 48, left: 0, right: 0,
+              marginTop: 6,
               backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#E8521A44',
-              borderRadius: 14, zIndex: 10000,
-              shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 20,
+              borderRadius: 14,
               overflow: 'hidden',
             }}>
               {/* Current location option */}
@@ -665,12 +653,19 @@ export default function SearchScreen() {
         </View>
 
         {/* Search input */}
-        <View style={{
-          flexDirection: 'row', alignItems: 'center',
-          backgroundColor: '#1A1208', borderWidth: 1,
-          borderColor: dropdownVisible ? '#E8521A' : '#3D3026',
-          borderRadius: 18, paddingHorizontal: 14, height: 52, gap: 10, marginBottom: 10,
-        }}>
+        <View
+          ref={searchBarRef}
+          onLayout={(e) => {
+            searchBarRef.current?.measureInWindow((x, y, w, h) => {
+              setSearchBarBottom(y + h + 4);
+            });
+          }}
+          style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: '#1A1208', borderWidth: 1,
+            borderColor: dropdownVisible ? '#E8521A' : '#3D3026',
+            borderRadius: 18, paddingHorizontal: 14, height: 52, gap: 10, marginBottom: 10,
+          }}>
           <Ionicons name="search-outline" size={18} color={dropdownVisible ? '#E8521A' : '#9A8570'} />
           <RNTextInput
             ref={inputRef}
@@ -753,106 +748,90 @@ export default function SearchScreen() {
             })}
           </ScrollView>
         )}
-      </View>
 
-      {/* ── Suggestions dropdown ── */}
-      {dropdownVisible && (
-        <View style={{
-          position: 'absolute', top: DROPDOWN_TOP, left: 20, right: 20,
-          backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#E8521A44',
-          borderRadius: 16, zIndex: 9999,
-          shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 20,
-          overflow: 'hidden',
-        }}>
-          {/* "Search for X" row — always first when there's typed text */}
-          {query.length > 0 && (
-            <TouchableOpacity
-              onPressIn={() => { dropdownTapped.current = true; }}
-              onPress={() => runSearch(query)}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                paddingHorizontal: 16, paddingVertical: 14,
-                borderBottomWidth: suggestions.length > 0 ? 1 : 0, borderBottomColor: '#2A1F14',
-              }}
-            >
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(232,82,26,0.15)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="search-outline" size={16} color="#E8521A" />
-              </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>{query}</Text>
-              <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#E8521A22', borderRadius: 8 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#E8521A' }}>Search</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-
-          {/* Section label when showing empty-input history */}
-          {query.length === 0 && suggestions.length > 0 && (
-            <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#6B5E50', letterSpacing: 1 }}>RECENT SEARCHES</Text>
-            </View>
-          )}
-
-          {suggestions.map((s, i) => {
-            const isLast = i === suggestions.length - 1;
-            const iconCfg = suggestionIcon(s.source);
-            return (
+        {/* ── Suggestions dropdown ── */}
+        {dropdownVisible && (
+          <View style={{
+            position: 'absolute',
+            top: searchBarBottom + 8,
+            left: 20, right: 20,
+            backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#E8521A44',
+            borderRadius: 16, zIndex: 9999,
+            shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 20,
+            overflow: 'hidden',
+          }}>
+            {/* "Search for X" row — always first when there's typed text */}
+            {query.length > 0 && (
               <TouchableOpacity
-                key={s.key}
                 onPressIn={() => { dropdownTapped.current = true; }}
-                onPress={() => runSearch(s.label)}
+                onPress={() => runSearch(query)}
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 12,
-                  paddingHorizontal: 16, paddingVertical: 11,
-                  borderBottomWidth: isLast ? 0 : 1, borderBottomColor: '#2A1F14',
+                  paddingHorizontal: 16, paddingVertical: 14,
+                  borderBottomWidth: suggestions.length > 0 ? 1 : 0, borderBottomColor: '#2A1F14',
                 }}
               >
-                {/* Left icon / image */}
-                {s.image_url
-                  ? <Image source={{ uri: s.image_url }} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#2A1F14' }} resizeMode="cover" />
-                  : <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: iconCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
-                      <Ionicons name={iconCfg.name} size={16} color={iconCfg.color} />
-                    </View>
-                }
-
-                {/* Text */}
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }} numberOfLines={1}>{s.label}</Text>
-                  {s.subtitle ? (
-                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: s.source === 'product' ? '#F5A623' : '#9A8570' }} numberOfLines={1}>
-                      {s.subtitle}{s.source === 'vendor' && s.rating != null && s.rating > 0 ? `  ·  ★ ${s.rating.toFixed(1)}` : ''}
-                    </Text>
-                  ) : null}
+                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(232,82,26,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="search-outline" size={16} color="#E8521A" />
                 </View>
-
-                {/* Source badge or trending arrow */}
-                {s.source === 'trending' ? (
-                  <Ionicons name="trending-up-outline" size={14} color="#F5A623" />
-                ) : s.source === 'history' ? (
-                  // History rows get a dismiss button
-                  <TouchableOpacity
-                    onPressIn={() => { dropdownTapped.current = true; }}
-                    onPress={() => {
-                      setSuggestions(prev => prev.filter(r => r.key !== s.key));
-                      removeHistoryItem(s.label);
-                    }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close-outline" size={16} color="#3D3026" />
-                  </TouchableOpacity>
-                ) : (
-                  <View style={{ paddingHorizontal: 7, paddingVertical: 3, backgroundColor: '#2A1F14', borderRadius: 8 }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#6B5E50' }}>{s.source}</Text>
-                  </View>
-                )}
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC', flex: 1 }} numberOfLines={1}>{query}</Text>
+                <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#E8521A22', borderRadius: 8 }}>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#E8521A' }}>Search</Text>
+                </View>
               </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+            )}
 
+            {suggestions.map((s, i) => {
+              const isLast = i === suggestions.length - 1;
+              const iconCfg = suggestionIcon(s.source);
+              return (
+                <TouchableOpacity
+                  key={s.key}
+                  onPressIn={() => { dropdownTapped.current = true; }}
+                  onPress={() => runSearch(s.label)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    paddingHorizontal: 16, paddingVertical: 11,
+                    borderBottomWidth: isLast ? 0 : 1, borderBottomColor: '#2A1F14',
+                  }}
+                >
+                  {/* Left icon / image */}
+                  {s.image_url
+                    ? <Image source={{ uri: s.image_url }} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#2A1F14' }} resizeMode="cover" />
+                    : <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: iconCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name={iconCfg.name} size={16} color={iconCfg.color} />
+                      </View>
+                  }
+
+                  {/* Text */}
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }} numberOfLines={1}>{s.label}</Text>
+                    {s.subtitle ? (
+                      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: s.source === 'product' ? '#F5A623' : '#9A8570' }} numberOfLines={1}>
+                        {s.subtitle}{s.source === 'vendor' && s.rating != null && s.rating > 0 ? `  ·  ★ ${s.rating.toFixed(1)}` : ''}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {/* Source badge or trending arrow */}
+                  {s.source === 'trending' ? (
+                    <Ionicons name="trending-up-outline" size={14} color="#F5A623" />
+                  ) : (
+                    <View style={{ paddingHorizontal: 7, paddingVertical: 3, backgroundColor: '#2A1F14', borderRadius: 8 }}>
+                      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#6B5E50' }}>{s.source}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      
       {/* ── Main content ── */}
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flex: 1, zIndex: 0 }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

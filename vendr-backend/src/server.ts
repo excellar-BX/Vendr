@@ -57,10 +57,16 @@ export async function buildServer() {
       ]
 
       // Add production origins via env: ALLOWED_ORIGINS=https://admin.vendr.ng,https://app.vendr.ng
-      const explicitOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-        .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean)
+      // Explicitly allow the current ngrok domain and web development origins
+      const explicitOrigins = [
+        'https://unfoisted-annabel-virilocally.ngrok-free.dev',
+        'http://localhost:8081',
+        'http://localhost:19006',
+        ...(process.env.ALLOWED_ORIGINS ?? '')
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean)
+      ]
 
       const isAllowed =
         allowedPatterns.some((pattern) => pattern.test(origin)) ||
@@ -74,7 +80,7 @@ export async function buildServer() {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
     credentials: true,
   })
   // ─── Routes ───────────────────────────────────────────────────────────────

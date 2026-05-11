@@ -5,11 +5,11 @@
     "scheme": "vendr",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
-    "icon": "./assets/adaptive-icon.png",
+        "icon": "./assets/adaptive-icon.png",
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
     "splash": {
       "image": "./assets/vendr-logo.png",
