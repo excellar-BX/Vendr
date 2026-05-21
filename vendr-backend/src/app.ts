@@ -3,6 +3,7 @@ import './config/env' // Validate env vars
 import { buildServer } from './server'
 import { env } from './config/env'
 import { pollPendingWithdrawals } from './services/wallet/wallet.controller'
+import { deleteExpiredAccounts } from './jobs/deleteExpiredAccounts'
 
 async function main() {
   const app = await buildServer()
@@ -19,6 +20,10 @@ async function main() {
         console.error('[Cron] Poll failed:', err);
       }
     }, 10 * 60 * 1000);
+
+    // Delete expired accounts (30-day soft delete window)
+    deleteExpiredAccounts()
+    setInterval(deleteExpiredAccounts, 24 * 60 * 60 * 1000)
   } catch (err) {
     console.error('Failed to start server:', err)
     process.exit(1)

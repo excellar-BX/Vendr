@@ -125,7 +125,8 @@ export default function WalletScreen() {
     );
   }
 
-  const grouped = groupByDate(transactions);
+  const txList = transactions ?? [];
+  const grouped = groupByDate(txList);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
@@ -356,14 +357,14 @@ export default function WalletScreen() {
         <View style={{ marginHorizontal: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Recent Activity</Text>
-            {transactions.length > 0 && (
+            {txList.length > 0 && (
               <TouchableOpacity onPress={() => router.push('/wallet-transactions')}>
                 <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>See all</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {transactions.length === 0 ? (
+          {txList.length === 0 ? (
             <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
               <Ionicons name="receipt-outline" size={32} color="#3D3026" />
               <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No transactions yet</Text>

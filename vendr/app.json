@@ -5,7 +5,7 @@
     "scheme": "vendr",
     "version": "1.0.0",
     "orientation": "portrait",
-        "icon": "./assets/adaptive-icon.png",
+    "icon": "./assets/adaptive-icon.png",
     "platforms": [
       "ios",
       "android",
@@ -24,8 +24,10 @@
         "NSPhotoLibraryUsageDescription": "Vendr needs photo library access to share images in chats.",
         "NSLocationWhenInUseUsageDescription": "Vendr uses your location to show nearby vendors.",
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

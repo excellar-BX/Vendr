@@ -134,6 +134,10 @@ export async function login(input: LoginInput) {
     throw { statusCode: 401, message: 'Invalid email or password' }
   }
 
+  if (user.is_deleted) {
+    throw { statusCode: 403, message: 'This account has been deleted. Contact support if this was a mistake.' }
+  }
+
   const accessToken = generateAccessToken({ id: user.id, email: user.email })
   const refreshToken = generateRefreshToken({ id: user.id, email: user.email })
 
@@ -249,6 +253,10 @@ export async function googleAuth(input: GoogleAuthInput) {
 
   if (!user) {
     throw { statusCode: 404, message: 'User not found' }
+  }
+
+  if (user.is_deleted) {
+    throw { statusCode: 403, message: 'This account has been deleted. Contact support if this was a mistake.' }
   }
 
   const accessToken = generateAccessToken({ id: user.id, email: user.email })
