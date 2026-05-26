@@ -511,8 +511,14 @@ export const chatApi = {
   /**
    * Pay a payment request
    */
-  payPaymentRequest: (paymentRequestId: string) =>
-    apiFetch(`/payment-requests/${paymentRequestId}/pay`, { method: 'POST' }),
+  payPaymentRequest: (
+    paymentRequestId: string,
+    options?: { order_type?: 'pickup' | 'delivery'; delivery_address?: string }
+  ) =>
+    apiFetch(`/payment-requests/${paymentRequestId}/pay`, {
+      method: 'POST',
+      body: options ?? {},
+    }),
 
   /**
    * Cancel a payment request
@@ -652,22 +658,30 @@ export const notificationApi = {
 // ──────────────────────────────────────────────────────────────
 
 export const orderApi = {
-  /**
-   * Get orders for current user (bought or sold)
-   */
   getOrders: (type?: 'bought' | 'sold') => apiFetch('/orders/me', { query: { type } }),
 
-  /**
-   * Get order statistics for current user
-   */
   getStats: () => apiFetch('/orders/me/stats'),
 
-  /**
-   * Confirm delivery for an order (buyer only)
-   * This releases the escrow funds to the vendor
-   */
+  /** Pickup: buyer confirms they received the order */
   confirmDelivery: (orderId: string) =>
     apiFetch(`/escrow/confirm-delivery/${orderId}`, { method: 'POST' }),
+
+  /** Delivery: buyer views their handoff code */
+  getDeliveryOtp: (orderId: string) =>
+    apiFetch(`/escrow/delivery-otp/${orderId}`),
+
+  /** Delivery: vendor enters code spoken by buyer */
+  verifyDeliveryOtp: (orderId: string, code: string) =>
+    apiFetch(`/escrow/verify-otp/${orderId}`, { method: 'POST', body: { code } }),
+}
+
+export const disputeApi = {
+  create: (data: {
+    order_id: string;
+    reason: string;
+    description?: string;
+    evidence_urls?: string[];
+  }) => apiFetch('/disputes', { method: 'POST', body: data }),
 }
 
 export const verificationApi = {

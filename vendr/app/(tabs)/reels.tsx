@@ -616,6 +616,49 @@ export default function ReelsScreen() {
         maxToRenderPerBatch={3}
         windowSize={5}
       />
+
+      {/* ── Coming Soon Overlay ── */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 100,
+          backgroundColor: 'rgba(15, 10, 6, 0.82)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View style={{
+          alignItems: 'center',
+          paddingHorizontal: 36,
+        }}>
+          <View style={{
+            width: 72, height: 72, borderRadius: 24,
+            backgroundColor: 'rgba(232, 82, 26, 0.15)',
+            borderWidth: 1.5, borderColor: 'rgba(232, 82, 26, 0.4)',
+            alignItems: 'center', justifyContent: 'center',
+            marginBottom: 20,
+          }}>
+            <Ionicons name="play-circle" size={36} color="#E8521A" />
+          </View>
+
+          <Text style={{
+            fontFamily: 'SpaceGrotesk_700Bold', fontSize: 26,
+            color: '#FDF6EC', letterSpacing: 0.5,
+            marginBottom: 10, textAlign: 'center',
+          }}>
+            Coming Soon
+          </Text>
+
+          <Text style={{
+            fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14,
+            color: 'rgba(253, 246, 236, 0.5)',
+            textAlign: 'center', lineHeight: 22,
+          }}>
+            Vendor reels are on their way.{'\n'}Stay tuned.
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }

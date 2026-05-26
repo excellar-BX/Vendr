@@ -8,14 +8,21 @@ export async function disputeRoutes(fastify: FastifyInstance) {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const userId = request.user.id;
-      const { order_id, reason, description } = request.body as {
+      const { order_id, reason, description, evidence_urls } = request.body as {
         order_id: string;
         reason: string;
         description?: string;
+        evidence_urls?: string[];
       };
 
       try {
-        const result = await createDispute(order_id, userId, reason, description);
+        const result = await createDispute({
+          orderId: order_id,
+          userId,
+          reason,
+          description,
+          evidence_urls,
+        });
         return reply.status(201).send({
           success: true,
           data: result,

@@ -15,7 +15,7 @@ export default function DisputesPage() {
   const [filter, setFilter] = useState<DisputeFilter>('open')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Dispute | null>(null)
-  const [resolution, setResolution] = useState('')
+  const [adminNotes, setAdminNotes] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -34,15 +34,15 @@ export default function DisputesPage() {
     )
   })
 
-  const handleResolve = async () => {
-    if (!selected || !resolution.trim()) return
+  const handleResolve = async (resolution: 'refund_buyer' | 'release_vendor') => {
+    if (!selected) return
     setActionLoading(true)
     setActionError(null)
     try {
-      await adminApi.resolveDispute(selected.id, resolution)
+      await adminApi.resolveDispute(selected.id, resolution, adminNotes.trim() || undefined)
       refetch()
       setSelected(null)
-      setResolution('')
+      setAdminNotes('')
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to resolve dispute')
     } finally {
@@ -160,7 +160,7 @@ export default function DisputesPage() {
       </div>
 
       {selected && (
-        <Modal open={!!selected} onClose={() => { setSelected(null); setResolution(''); setActionError(null) }} title="Dispute Details" size="md">
+        <Modal open={!!selected} onClose={() => { setSelected(null); setAdminNotes(''); setActionError(null) }} title="Dispute Details" size="md">
           <div className="space-y-5">
             {/* Parties */}
             <div className="grid grid-cols-2 gap-3">
@@ -193,6 +193,42 @@ export default function DisputesPage() {
               {selected.description && (
                 <p className="text-sm text-muted">{selected.description}</p>
               )}
+              {selected.order && (
+                <p className="text-xs text-muted">
+                  Order: {selected.order.order_type ?? 'pickup'}
+                  {selected.order.otp_confirmed ? ' · OTP verified' : ''}
+                  {selected.order.buyer_confirmed_at ? ' · Buyer confirmed pickup' : ''}
+                </p>
+              )}
+              {selected.evidence_urls && selected.evidence_urls.length > 0 && (
+                <div className="space-y-4">
+                  <p className="text-sm font-semibold text-cream uppercase tracking-wider mb-2">Evidence</p>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {(selected.evidence_urls as string[]).map((url, index) => (
+                      <div key={index} className="bg-dark-3 rounded-xl p-4 border border-dark-5">
+                        {/* Try to display as image if it's an image file */}
+                        <img
+                          src={url}
+                          alt={`Evidence ${index + 1}`}
+                          className="w-full h-52 object-cover rounded-lg mb-3"
+                          onError={(e) => {
+                            // Fallback to link display if image fails to load
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            const fallback = e.currentTarget.parentElement?.querySelector('.evidence-fallback');
+                            if (fallback) fallback.style.display = 'block';
+                          }}
+                        />
+                        <div className="evidence-fallback text-center text-sm text-muted hidden">
+                          <a href={url} target="_blank" rel="noreferrer" className="text-orange hover:underline">
+                            View evidence file
+                          </a>
+                          <p className="mt-2 text-xs">(Click to view)</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-muted">Filed {timeAgo(selected.created_at)}</p>
             </div>
 
@@ -210,21 +246,31 @@ export default function DisputesPage() {
             {selected.status === 'open' && (
               <div className="space-y-3 pt-2 border-t border-dark-5">
                 <p className="text-sm font-medium text-cream">Resolve this dispute</p>
+                <p className="text-xs text-muted">Funds are held in escrow until you choose an outcome.</p>
                 <textarea
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value)}
-                  placeholder="Describe how this dispute was resolved and what action was taken..."
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  placeholder="Admin notes (optional)..."
                   rows={3}
                   className="input resize-none"
                 />
-                <button
-                  onClick={handleResolve}
-                  disabled={actionLoading || !resolution.trim()}
-                  className="btn-primary w-full justify-center disabled:opacity-50"
-                >
-                  <CheckCircle2 size={15} />
-                  Mark Resolved
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleResolve('refund_buyer')}
+                    disabled={actionLoading}
+                    className="btn-secondary justify-center disabled:opacity-50"
+                  >
+                    Refund buyer
+                  </button>
+                  <button
+                    onClick={() => handleResolve('release_vendor')}
+                    disabled={actionLoading}
+                    className="btn-primary justify-center disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={15} />
+                    Pay vendor
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -328,8 +328,15 @@ export async function payPaymentRequestController(request: FastifyRequest, reply
   try {
     const userId = request.user.id
     const { id } = request.params as { id: string }
+    const { order_type, delivery_address } = (request.body ?? {}) as {
+      order_type?: 'pickup' | 'delivery'
+      delivery_address?: string
+    }
 
-    const result = await ChatService.payPaymentRequest(id, userId)
+    const result = await ChatService.payPaymentRequest(id, userId, {
+      order_type,
+      delivery_address,
+    })
 
     return reply.status(200).send({
       success: true,

@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
-import { apiFetch, getRefreshToken, clearTokens } from '../../lib/api';
+import { apiFetch, getRefreshToken, clearTokens, userApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { clearPushToken } from '../../lib/notifications';
 
@@ -73,22 +73,25 @@ export default function ProfileScreen() {
     if (!userId) return;
     const fetchAll = async () => {
       try {
-        const response = await apiFetch('/auth/me', { method: 'GET' });
-        const data = response.data;
-        // Map backend response to frontend state shape
+        const [meRes, profileRes] = await Promise.all([
+          apiFetch('/auth/me', { method: 'GET' }),
+          userApi.getProfile(),
+        ]);
+        const meData = meRes.data;
+        const profileData = profileRes.data;
         setProfile({
-          name: data.full_name,
-          avatar_url: data.avatar_url,
-          notifications_enabled: data.notifications_enabled,
-          is_vendor: !!data.vendor,
+          name: profileData.full_name,
+          avatar_url: profileData.avatar_url,
+          notifications_enabled: profileData.notifications_enabled,
+          is_vendor: !!profileData.vendor,
         });
-        setNotificationsEnabled(data.notifications_enabled);
-        setCanAddPassword(data.can_add_password || false);
-        setHasPassword(data.has_password || false);
+        setNotificationsEnabled(profileData.notifications_enabled);
+        setCanAddPassword(meData.can_add_password || false);
+        setHasPassword(meData.has_password || false);
         setStats({
-          orders: data.stats?.orders || 0,
-          reviews: data.stats?.reviews || 0,
-          saved: data.stats?.saved || 0,
+          orders: profileData.stats?.orders ?? 0,
+          reviews: profileData.stats?.reviews ?? 0,
+          saved: profileData.stats?.saved ?? 0,
         });
       } catch (err) {
         console.error('Failed to fetch profile:', err);

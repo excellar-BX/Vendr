@@ -633,7 +633,16 @@ export async function getDisputes(limit = 50, offset = 0, status?: string) {
       include: {
         buyer: { select: { full_name: true, email: true } },
         vendor: { select: { shop_name: true } },
-        order: { select: { id: true, amount: true, status: true } },
+        order: {
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            order_type: true,
+            otp_confirmed: true,
+            buyer_confirmed_at: true,
+          },
+        },
       },
       orderBy: { created_at: 'desc' },
     }),
@@ -643,48 +652,14 @@ export async function getDisputes(limit = 50, offset = 0, status?: string) {
   return { disputes, total }
 }
 
-// Resolve dispute
-export async function resolveDispute(disputeId: string, resolution: string) {
-  const dispute = await prisma.dispute.update({
-    where: { id: disputeId },
-    data: {
-      status: 'resolved',
-      resolution,
-      resolved_at: new Date(),
-    },
-    include: {
-      buyer: {
-        select: { id: true, email: true },
-      },
-      vendor: {
-        include: {
-          user: {
-            select: { id: true, email: true },
-          },
-        },
-      },
-    },
-  })
-
-  // Send notification to buyer
-  await createNotification({
-    userId: dispute.buyer_id,
-    type: 'dispute_resolved',
-    title: 'Your dispute has been resolved',
-    body: `Your dispute has been resolved. Resolution: ${resolution}`,
-    data: { disputeId, resolution },
-  })
-
-  // Send notification to vendor
-  await createNotification({
-    userId: dispute.vendor.user_id,
-    type: 'dispute_resolved',
-    title: 'A dispute has been resolved',
-    body: `A dispute involving your store has been resolved. Resolution: ${resolution}`,
-    data: { disputeId, resolution },
-  })
-
-  return { success: true }
+// Resolve dispute — moves escrow via shared dispute service
+export async function resolveDispute(
+  disputeId: string,
+  resolution: 'refund_buyer' | 'release_vendor',
+  adminNotes?: string
+) {
+  const { resolveDispute: resolveDisputeEscrow } = await import('../dispute/dispute.service')
+  return resolveDisputeEscrow(disputeId, resolution, adminNotes)
 }
 
 // Broadcast notification to all users or specific audience

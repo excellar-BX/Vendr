@@ -75,11 +75,13 @@ export async function walletRoutes(app: FastifyInstance) {
   app.post('/wallet/pay', { preHandler: authenticate }, async (request, reply) => {
     try {
       const userId = request.user.id
-      const { vendor_id, amount, payment_request_id, description } = request.body as {
+      const { vendor_id, amount, payment_request_id, description, order_type, delivery_address } = request.body as {
         vendor_id: string
         amount: number
         payment_request_id?: string
         description?: string
+        order_type?: 'pickup' | 'delivery'
+        delivery_address?: string
       }
 
       if (!vendor_id || !amount) {
@@ -90,11 +92,12 @@ export async function walletRoutes(app: FastifyInstance) {
       }
 
       const result = await processPayment(
-        userId, // buyer
+        userId,
         vendor_id,
         amount,
         payment_request_id || '',
-        description
+        description,
+        { order_type, delivery_address }
       )
 
       return reply.status(200).send({ success: true, data: result })

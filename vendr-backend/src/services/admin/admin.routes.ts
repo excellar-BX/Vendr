@@ -384,12 +384,20 @@ export async function adminRoutes(fastify: FastifyInstance) {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      const { resolution } = request.body as { resolution: string };
+      const { resolution, admin_notes } = request.body as {
+        resolution: 'refund_buyer' | 'release_vendor';
+        admin_notes?: string;
+      };
+      if (!resolution || !['refund_buyer', 'release_vendor'].includes(resolution)) {
+        return reply.status(400).send({ message: 'resolution must be refund_buyer or release_vendor' });
+      }
       try {
-        const result = await resolveDispute(id, resolution);
+        const result = await resolveDispute(id, resolution, admin_notes);
         return reply.send(result);
       } catch (error: any) {
-        reply.status(500).send({ message: error.message });
+        // If error has a statusCode (e.g., from service layer), use it; otherwise default to 500
+        const status = error.statusCode || 500;
+        reply.status(status).send({ message: error.message });
       }
     },
   });

@@ -161,12 +161,22 @@ export interface Dispute {
   vendor_id: string
   reason: string
   description: string | null
+  evidence_urls?: string[]
   status: string
   resolution: string | null
+  admin_notes?: string | null
   created_at: string
   updated_at: string
   buyer?: User
   vendor?: Vendor
+  order?: {
+    id: string
+    amount: number
+    status: string
+    order_type?: string
+    otp_confirmed?: boolean
+    buyer_confirmed_at?: string | null
+  }
 }
 
 export interface VendorReport {
@@ -255,8 +265,8 @@ export const adminApi = {
   getDisputes: (params?: { status?: string; limit?: number; offset?: number }) =>
     adminFetch('/admin/disputes', { query: params }),
 
-  resolveDispute: (id: string, resolution: string) =>
-    adminFetch(`/admin/disputes/${id}/resolve`, { method: 'POST', body: { resolution } }),
+  resolveDispute: (id: string, resolution: 'refund_buyer' | 'release_vendor', admin_notes?: string) =>
+    adminFetch(`/admin/disputes/${id}/resolve`, { method: 'POST', body: { resolution, admin_notes } }),
 
   // Waitlist
   getWaitlist: () => adminFetch('/admin/waitlist'),

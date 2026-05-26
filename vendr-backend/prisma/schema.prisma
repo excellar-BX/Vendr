@@ -187,8 +187,14 @@ model Order {
   conversation_id  String?
   amount           Float
   description      String?
+  order_type       String   @default("pickup") // pickup, delivery
+  delivery_address String?
+  otp_code         String?  // 4-digit; exposed to buyer only via API
+  otp_confirmed    Boolean  @default(false)
+  otp_confirmed_at DateTime?
+  buyer_confirmed_at DateTime? // pickup: buyer confirmed receipt
   status           String   @default("pending") // pending, completed, refunded, disputed
-  escrow_status    String   @default("held") // held, released, refunded
+  escrow_status    String   @default("held") // held, disputed, released, refunded
   delivery_confirmed_at DateTime?
   auto_release_at  DateTime?
   created_at       DateTime @default(now())
@@ -246,7 +252,8 @@ model Dispute {
   vendor_id    String
   reason       String
   description  String?
-  status       String   @default("open") // open, resolved
+  evidence_urls Json?   @default("[]")
+  status       String   @default("open") // open, resolved, dismissed
   resolution   String?  // refund_buyer, release_vendor
   admin_notes  String?
   resolved_at  DateTime?

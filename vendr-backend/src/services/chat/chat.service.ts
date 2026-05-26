@@ -882,8 +882,9 @@ export async function createPaymentRequest(
  */
 export async function payPaymentRequest(
   paymentRequestId: string,
-  buyerId: string
-): Promise<{ success: boolean; message: string }> {
+  buyerId: string,
+  options?: { order_type?: 'pickup' | 'delivery'; delivery_address?: string }
+): Promise<{ success: boolean; message: string; orderId?: string | null }> {
   // Get payment request
   const pr = await prisma.paymentRequest.findUnique({
     where: { id: paymentRequestId },
@@ -909,15 +910,23 @@ export async function payPaymentRequest(
   }
 
   // Process the payment via wallet service
-  await WalletService.processPayment(
+  const payResult = await WalletService.processPayment(
     buyerId,
     pr.vendor.user_id,
     pr.amount,
     pr.id,
-    pr.description ?? undefined
+    pr.description ?? undefined,
+    {
+      order_type: options?.order_type ?? 'pickup',
+      delivery_address: options?.delivery_address,
+    }
   )
 
-  return { success: true, message: 'Payment processed successfully' }
+  return {
+    success: true,
+    message: 'Payment processed successfully',
+    orderId: payResult.orderId,
+  }
 }
 
 /**

@@ -29,7 +29,7 @@ export default function VerificationSubmitScreen() {
     nin_card?: boolean;
     proof_of_address?: boolean;
   }>({});
-  const { alert, alertElement } = useVendrAlert();
+  const { showAlert, alertElement } = useVendrAlert();
   const [formData, setFormData] = useState({
     cac_number: '',
     nin_number: '',
@@ -57,19 +57,19 @@ export default function VerificationSubmitScreen() {
           setExistingStatus(data.latest_request.status);
           
           if (data.latest_request.status === 'pending') {
-            alert(
-              'Verification Pending',
-              'You already have a verification request in review. Please wait 3-4 business days for approval.',
-              [{ text: 'OK', onPress: () => router.back() }],
-              { type: 'info' }
-            );
+            showAlert({
+              title: 'Verification Pending',
+              message: 'You already have a verification request in review. Please wait 3-4 business days for approval.',
+              type: 'info',
+              buttons: [{ text: 'OK', onPress: () => router.back() }],
+            });
           } else if (data.latest_request.status === 'approved') {
-            alert(
-              'Already Verified',
-              'Your business is already verified!',
-              [{ text: 'OK', onPress: () => router.back() }],
-              { type: 'success' }
-            );
+            showAlert({
+              title: 'Already Verified',
+              message: 'Your business is already verified!',
+              type: 'success',
+              buttons: [{ text: 'OK', onPress: () => router.back() }],
+            });
           }
         }
       } catch (err) {
@@ -128,9 +128,9 @@ export default function VerificationSubmitScreen() {
         [docType]: signRes.data.publicUrl,
       }));
 
-      alert('Success', 'Document uploaded successfully', undefined, { type: 'success' });
+      showAlert({ title: 'Success', message: 'Document uploaded successfully', type: 'success' });
     } catch (error: any) {
-      alert('Error', error.message || 'Failed to upload document', undefined, { type: 'danger' });
+      showAlert({ title: 'Error', message: error.message || 'Failed to upload document', type: 'danger' });
     } finally {
       setUploading(prev => ({ ...prev, [docType]: false }));
     }
@@ -139,15 +139,15 @@ export default function VerificationSubmitScreen() {
   const handleSubmit = async () => {
     // Validation
     if (!formData.cac_number.trim()) {
-      alert('Error', 'Please enter your CAC registration number', undefined, { type: 'warning' });
+      showAlert({ title: 'Error', message: 'Please enter your CAC registration number', type: 'warning' });
       return;
     }
     if (!formData.nin_number.trim()) {
-      alert('Error', 'Please enter your NIN number', undefined, { type: 'warning' });
+      showAlert({ title: 'Error', message: 'Please enter your NIN number', type: 'warning' });
       return;
     }
     if (!formData.business_address.trim()) {
-      alert('Error', 'Please enter your business address', undefined, { type: 'warning' });
+      showAlert({ title: 'Error', message: 'Please enter your business address', type: 'warning' });
       return;
     }
 
@@ -161,14 +161,14 @@ export default function VerificationSubmitScreen() {
         documents,
       });
       
-      alert(
-        'Success',
-        'Your verification request has been submitted. You will be notified within 3-4 business days.',
-        [{ text: 'OK', onPress: () => router.back() }],
-        { type: 'success' }
-      );
+      showAlert({
+        title: 'Success',
+        message: 'Your verification request has been submitted. You will be notified within 3-4 business days.',
+        type: 'success',
+        buttons: [{ text: 'OK', onPress: () => router.back() }],
+      });
     } catch (error: any) {
-      alert('Error', error.message || 'Failed to submit verification request', undefined, { type: 'danger' });
+      showAlert({ title: 'Error', message: error.message || 'Failed to submit verification request', type: 'danger' });
     } finally {
       setLoading(false);
     }

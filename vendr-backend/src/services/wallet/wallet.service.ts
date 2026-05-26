@@ -5,6 +5,7 @@ const { createNotification } = require('../notification/notification.service')
 
 // Escrow service
 const { createEscrowHold } = require('../escrow/escrow.service')
+const { generateOtpCode, pickupFallbackReleaseAt } = require('../../lib/otp')
 
 /**
  * Get user's wallet balance
@@ -42,13 +43,19 @@ export async function getWalletBalance(userId: string): Promise<{ available_bala
  * Process payment from buyer to vendor
  * This creates a transaction, updates wallet balances, and marks payment request as paid
  */
+export interface ProcessPaymentOptions {
+  order_type?: 'pickup' | 'delivery'
+  delivery_address?: string
+}
+
 export async function processPayment(
   buyerId: string,
   vendorId: string,
   amount: number,
   paymentRequestId: string,
-  description?: string
-): Promise<{ success: boolean; message: string }> {
+  description?: string,
+  options?: ProcessPaymentOptions
+): Promise<{ success: boolean; message: string; orderId?: string | null }> {
   console.log('[Wallet] Processing payment:', { buyerId, vendorId, amount, paymentRequestId });
 
   // Validate amount
@@ -72,6 +79,14 @@ export async function processPayment(
   // Check sufficient balance
   if (buyerWallet.available_balance < amount) {
     throw { statusCode: 400, message: 'Insufficient balance' }
+  }
+
+  const orderType = options?.order_type ?? 'pickup'
+  if (orderType === 'delivery') {
+    const addr = (options?.delivery_address ?? '').trim()
+    if (!addr) {
+      throw { statusCode: 400, message: 'Delivery address is required for delivery orders' }
+    }
   }
 
   console.log('[Wallet] Wallets validated, proceeding with transaction');
@@ -126,7 +141,7 @@ export async function processPayment(
             data: { status: 'paid', paid_at: new Date() },
           });
 
-          // Create Order record with escrow status
+          const isDelivery = orderType === 'delivery'
           const order = await tx.order.create({
             data: {
               buyer_id: buyerId,
@@ -136,9 +151,12 @@ export async function processPayment(
               conversation_id: paymentRequest.conversation_id,
               amount: paymentRequest.amount,
               description: paymentRequest.description,
+              order_type: orderType,
+              delivery_address: isDelivery ? options!.delivery_address!.trim() : null,
+              otp_code: isDelivery ? generateOtpCode() : null,
               status: 'pending',
               escrow_status: 'held',
-              auto_release_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
+              auto_release_at: pickupFallbackReleaseAt(),
             },
           });
           orderId = order.id;
@@ -192,7 +210,11 @@ export async function processPayment(
       }
     }
 
-    return { success: true, message: 'Payment processed and held in escrow' }
+    return {
+      success: true,
+      message: 'Payment processed and held in escrow',
+      orderId: result.orderId,
+    }
   } catch (err: any) {
     console.error('[Wallet] Payment transaction failed:', err);
     throw err;

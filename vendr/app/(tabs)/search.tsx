@@ -230,7 +230,7 @@ function suggestionIcon(source: SuggestionSource): { name: IoniconsName; color: 
 export default function SearchScreen() {
   const { lat, lng } = useLocation();
   const { user } = useAuthStore();
-  const { showAlert: vendrAlert } = useVendrAlert();
+  const { showAlert: vendrAlert, alertElement } = useVendrAlert();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<RNTextInput>(null);
   const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -522,6 +522,7 @@ export default function SearchScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
+      {alertElement}
       <StatusBar style="light" />
 
       {/* Header */}

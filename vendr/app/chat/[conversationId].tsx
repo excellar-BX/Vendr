@@ -292,6 +292,10 @@ export default function ChatScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payDescription, setPayDescription] = useState('');
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
+  const [showPayOrderSheet, setShowPayOrderSheet] = useState(false);
+  const [pendingPayPr, setPendingPayPr] = useState<PaymentRequest | null>(null);
+  const [payOrderType, setPayOrderType] = useState<'pickup' | 'delivery'>('pickup');
+  const [payDeliveryAddress, setPayDeliveryAddress] = useState('');
 
   // Pinch-to-zoom state for image viewer
   const scale = useSharedValue(1);
@@ -680,12 +684,27 @@ export default function ChatScreen() {
     }
   };
 
-  const handlePayNow = async (pr: PaymentRequest) => {
-    if (!user?.id || !convId) return;
+  const handlePayNow = (pr: PaymentRequest) => {
+    setPendingPayPr(pr);
+    setPayOrderType('pickup');
+    setPayDeliveryAddress('');
+    setShowPayOrderSheet(true);
+  };
+
+  const confirmPayNow = async () => {
+    const pr = pendingPayPr;
+    if (!user?.id || !convId || !pr) return;
+    if (payOrderType === 'delivery' && !payDeliveryAddress.trim()) {
+      vendrAlert({ title: 'Address required', message: 'Enter your delivery address to continue.', type: 'warning' });
+      return;
+    }
+    setShowPayOrderSheet(false);
     setPaying(pr.id);
     try {
-      // Process payment via chat API (this updates payment_request status to paid)
-      const { data: payResult } = await chatApi.payPaymentRequest(pr.id);
+      const { data: payResult } = await chatApi.payPaymentRequest(pr.id, {
+        order_type: payOrderType,
+        delivery_address: payOrderType === 'delivery' ? payDeliveryAddress.trim() : undefined,
+      });
       if (!payResult?.success) {
         throw new Error('Payment failed');
       }
@@ -710,11 +729,17 @@ export default function ChatScreen() {
         type: 'text',
       });
 
+      const extra =
+        payOrderType === 'delivery'
+          ? ' Check Orders for your delivery code to give the rider at handoff.'
+          : ' Confirm receipt in Orders when you collect.';
+
       vendrAlert({
         title: 'Payment Successful',
-        message: `You paid ${formatAmount(pr.amount)}`,
+        message: `You paid ${formatAmount(pr.amount)}.${extra}`,
         type: 'success',
       });
+      setPendingPayPr(null);
 
     } catch (e: any) {
       vendrAlert({ title: 'Payment Failed', message: e.message || 'Payment processing failed', type: 'danger' });
@@ -1092,6 +1117,64 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      {/* ── Pay order type (buyer) ── */}
+      <Modal visible={showPayOrderSheet} transparent animationType="slide">
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowPayOrderSheet(false)} />
+        <View style={{ backgroundColor: '#1A1208', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: '#2A1F14', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 44 }}>
+          <View style={{ width: 40, height: 4, backgroundColor: '#3D3026', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 4 }}>How will you receive this?</Text>
+          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', marginBottom: 20 }}>
+            Payment stays in escrow until delivery is confirmed.
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            {(['pickup', 'delivery'] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                onPress={() => setPayOrderType(t)}
+                style={{
+                  flex: 1, padding: 14, borderRadius: 14, borderWidth: 1,
+                  borderColor: payOrderType === t ? '#E8521A' : '#2A1F14',
+                  backgroundColor: payOrderType === t ? 'rgba(232,82,26,0.12)' : '#0F0A06',
+                }}
+              >
+                <Ionicons name={t === 'pickup' ? 'storefront-outline' : 'bicycle-outline'} size={20} color={payOrderType === t ? '#E8521A' : '#6B5E50'} />
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: payOrderType === t ? '#E8521A' : '#FDF6EC', marginTop: 6 }}>
+                  {t === 'pickup' ? 'Pickup' : 'Delivery'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {payOrderType === 'delivery' ? (
+            <>
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#6B5E50', marginBottom: 8 }}>DELIVERY ADDRESS</Text>
+              <View style={{ backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#3D3026', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 20 }}>
+                <RNTextInput
+                  value={payDeliveryAddress}
+                  onChangeText={setPayDeliveryAddress}
+                  placeholder="Street, area, city..."
+                  placeholderTextColor="#6B5E50"
+                  multiline
+                  style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC', minHeight: 60 }}
+                />
+              </View>
+            </>
+          ) : null}
+          <TouchableOpacity
+            onPress={confirmPayNow}
+            disabled={paying === pendingPayPr?.id}
+            style={{ backgroundColor: '#E8521A', borderRadius: 16, height: 56, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {paying === pendingPayPr?.id ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>
+                Pay {pendingPayPr ? formatAmount(pendingPayPr.amount) : ''}
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
       </Modal>
 

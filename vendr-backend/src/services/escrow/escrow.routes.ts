@@ -5,6 +5,8 @@ import {
   refundEscrow,
   getEscrowStatus,
   confirmDelivery,
+  verifyDeliveryOtp,
+  getDeliveryOtp,
   autoReleaseEscrow,
 } from './escrow.service';
 import { authenticate } from '../../middlewares/authenticate';
@@ -24,18 +26,55 @@ export async function escrowRoutes(fastify: FastifyInstance) {
     },
   });
 
-  // Confirm delivery (buyer)
+  // Pickup: buyer confirms receipt (schedules release after hold window)
   fastify.post('/escrow/confirm-delivery/:orderId', {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const buyerId = (request as any).user.id;
       const { orderId } = request.params as { orderId: string };
-      
+
       try {
         const result = await confirmDelivery(orderId, buyerId);
-        return reply.send(result);
+        return reply.send({ success: true, data: result });
       } catch (error: any) {
-        reply.status(error.statusCode || 500).send({ message: error.message });
+        reply.status(error.statusCode || 500).send({ success: false, message: error.message });
+      }
+    },
+  });
+
+  // Delivery: buyer views OTP (buyer only)
+  fastify.get('/escrow/delivery-otp/:orderId', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const buyerId = (request as any).user.id;
+      const { orderId } = request.params as { orderId: string };
+
+      try {
+        const result = await getDeliveryOtp(orderId, buyerId);
+        return reply.send({ success: true, data: result });
+      } catch (error: any) {
+        reply.status(error.statusCode || 500).send({ success: false, message: error.message });
+      }
+    },
+  });
+
+  // Delivery: vendor enters OTP at handoff
+  fastify.post('/escrow/verify-otp/:orderId', {
+    preHandler: [authenticate],
+    handler: async (request, reply) => {
+      const vendorUserId = (request as any).user.id;
+      const { orderId } = request.params as { orderId: string };
+      const { code } = request.body as { code: string };
+
+      if (!code?.trim()) {
+        return reply.status(400).send({ success: false, message: 'Delivery code is required' });
+      }
+
+      try {
+        const result = await verifyDeliveryOtp(orderId, vendorUserId, code);
+        return reply.send({ success: true, data: result });
+      } catch (error: any) {
+        reply.status(error.statusCode || 500).send({ success: false, message: error.message });
       }
     },
   });
