@@ -209,10 +209,10 @@ export const monnifyService = {
       body,
     );
 
-    const account = data.accounts?.[0] || {};
+    const account = data.accounts?.[0] ?? data;
     return {
-      accountNumber: account.accountNumber || data.accountNumber,
-      bankName: account.bankName || data.bankName,
+      accountNumber: account.accountNumber,
+      bankName: account.bankName,
       accountName: data.accountName,
       reference: data.accountReference,
     };

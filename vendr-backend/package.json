@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Vendr backend API",
   "main": "dist/app.js",
-  "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
-    "build": "prisma generate && node --max-old-space-size=460",
-    "start": "node dist/app.js"
-  },
+ "scripts": {
+  "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+  "build": "tsc && prisma generate && node --max-old-space-size=460 ./node_modules/typescript/bin/tsc",
+  "start": "node dist/app.js"
+},
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1021.0",
     "@aws-sdk/s3-request-presigner": "^3.1021.0",

@@ -28,6 +28,7 @@ import {
   broadcastNotification,
 } from './admin.service';
 import * as VendorReportService from '../vendor-report/vendor-report.service';
+import { updateVendorReportSchema } from '../vendor-report/vendor-report.schema';
 import { authenticate } from '../../middlewares/authenticate';
 
 export async function adminRoutes(fastify: FastifyInstance) {
@@ -505,10 +506,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
     preHandler: [authenticate],
     handler: async (request, reply) => {
       const { reportId } = request.params as { reportId: string };
-      const { status, admin_notes } = request.body as {
-        status?: string;
-        admin_notes?: string;
-      };
+      const parseResult = updateVendorReportSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({ success: false, message: 'Invalid input', errors: parseResult.error.errors });
+      }
+      const { status, admin_notes } = parseResult.data;
       try {
         const result = await VendorReportService.updateVendorReport(
           reportId,

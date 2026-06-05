@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { authenticate } from '../../middlewares/authenticate';
-import { signUploadUrl, deleteFiles } from './storage.service';
+import { signUploadUrl, deleteFiles, type SignUploadRequest } from './storage.service';
 import { z } from 'zod';
 
 const signSchema = z.object({
@@ -20,8 +20,10 @@ export async function storageRoutes(app: FastifyInstance) {
       return reply.status(400).send({ success: false, errors: parsed.error.flatten().fieldErrors });
     }
 
+    const data = parsed.data as SignUploadRequest;
+
     try {
-      const { uploadUrl, publicUrl } = await signUploadUrl(parsed.data);
+      const { uploadUrl, publicUrl } = await signUploadUrl(data);
       return reply.status(200).send({ success: true, data: { uploadUrl, publicUrl } });
     } catch (error: any) {
       console.error('[Storage] Sign error:', error);

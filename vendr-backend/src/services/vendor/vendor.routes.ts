@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import prisma from '../../lib/prisma';
 import { authenticate } from '../../middlewares/authenticate';
-import { createVendor, getVendorByUserId, getAllVendorsByUserId, getVendorById, updateVendor, deleteVendorStore, updateVendorById, deleteVendorById } from './vendor.service';
+import { createVendor, getVendorByUserId, getAllVendorsByUserId, getVendorById, updateVendor, deleteVendorStore, updateVendorById, deleteVendorById, type CreateVendorInput } from './vendor.service';
 import { z } from 'zod';
 
 // Haversine distance in km
@@ -128,9 +128,11 @@ export async function vendorRoutes(app: FastifyInstance) {
       return reply.status(400).send({ success: false, errors: parsed.error.flatten().fieldErrors });
     }
 
+    const data = parsed.data as CreateVendorInput;
+
     try {
       const userId = request.user.id;
-      const vendor = await createVendor(userId, parsed.data);
+      const vendor = await createVendor(userId, data);
       return reply.status(201).send({ success: true, data: vendor });
     } catch (err: any) {
       return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });

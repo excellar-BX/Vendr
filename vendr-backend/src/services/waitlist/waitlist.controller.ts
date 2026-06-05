@@ -8,10 +8,23 @@ const waitlistSchema = z.object({
   type: z.string().optional(),
 })
 
+type WaitlistInput = z.infer<typeof waitlistSchema>
+
+interface WaitlistServiceInput {
+  name?: string;
+  email: string;
+  type?: string;
+}
+
 export async function joinWaitlist(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const data = waitlistSchema.parse(request.body)
-    const waitlist = await addToWaitlist(data)
+    const data = waitlistSchema.parse(request.body) as WaitlistInput
+    const serviceData: WaitlistServiceInput = {
+      name: data.name,
+      email: data.email,
+      type: data.type,
+    }
+    const waitlist = await addToWaitlist(serviceData)
     return reply.status(201).send({
       success: true,
       message: 'Successfully joined waitlist',
