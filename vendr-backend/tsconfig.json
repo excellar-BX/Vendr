@@ -5,16 +5,32 @@
     "lib": ["ES2020"],
     "outDir": "./dist",
     "rootDir": "./src",
+    
+    /* Strictness Settings */
     "strict": true,
+    "noImplicitAny": false,       // Kept as false per your config
+    "strictNullChecks": false,    // Kept as false per your config
+    
+    /* Module Resolution */
+    "moduleResolution": "node",   // Crucial for resolving custom paths/node_modules correctly
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    
+    /* Build Outputs */
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "noImplicitAny": false,
-    "strictNullChecks": false
+    "removeComments": true        // Helps slightly reduce build size/memory overhead
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "generated/prisma/client"     // Explicitly include your custom Prisma path so tsc tracks it
+  ],
+  "exclude": [
+    "node_modules", 
+    "dist",
+    "**/*.spec.ts",               // Exclude tests from production build to save memory
+    "**/*.test.ts"
+  ]
 }
