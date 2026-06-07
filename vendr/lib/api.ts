@@ -2,7 +2,7 @@ import { useAuthStore } from '../stores/authStore'
 import WebStorage from './secureStorage'
 
 
-const BASE_URL = 'https://unfoisted-annabel-virilocally.ngrok-free.dev/api' //process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api"
+const BASE_URL = 'https://vendr-production.up.railway.app/api' //process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api"
 console.log(BASE_URL)
 // ─── Token storage ────────────────────────────────────────────────────────────
 

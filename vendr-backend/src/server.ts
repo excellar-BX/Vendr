@@ -59,7 +59,7 @@ export async function buildServer() {
       // Add production origins via env: ALLOWED_ORIGINS=https://admin.vendr.ng,https://app.vendr.ng
       // Explicitly allow the current ngrok domain and web development origins
       const explicitOrigins = [
-        'https://unfoisted-annabel-virilocally.ngrok-free.dev',
+        'https://vendr-production.up.railway.app',
         'http://localhost:8081',
         'http://localhost:19006',
         ...(process.env.ALLOWED_ORIGINS ?? '')
