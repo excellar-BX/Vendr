@@ -8,6 +8,6 @@ const adapter = new PrismaNeon({
 const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-})
+} as any)
 
 export default prisma

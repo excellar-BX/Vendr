@@ -5,7 +5,7 @@
   "main": "dist/app.js",
  "scripts": {
   "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
-  "build": "tsc && prisma generate && node --max-old-space-size=460",
+  "build": "prisma generate && tsc",
   "start": "node dist/app.js"
 },
   "dependencies": {

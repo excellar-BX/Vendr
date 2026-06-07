@@ -1114,7 +1114,7 @@ export async function getUserSearchHistory(userId: string, limit = 10): Promise<
     take: limit,
     select: { query: true },
   })
-  return [...new Set(history.map((h) => h.query))]
+  return [...new Set(history.map((h) => h.query as string))]
 }
 
 export async function saveSearchQuery(userId: string, query: string): Promise<void> {
