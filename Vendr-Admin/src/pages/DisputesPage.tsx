@@ -214,7 +214,7 @@ export default function DisputesPage() {
                           onError={(e) => {
                             // Fallback to link display if image fails to load
                             (e.currentTarget as HTMLImageElement).style.display = 'none';
-                            const fallback = e.currentTarget.parentElement?.querySelector('.evidence-fallback');
+                            const fallback = e.currentTarget.parentElement?.querySelector('.evidence-fallback') as HTMLElement;
                             if (fallback) fallback.style.display = 'block';
                           }}
                         />
