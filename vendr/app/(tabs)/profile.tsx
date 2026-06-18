@@ -22,7 +22,7 @@ interface MenuItemProps {
   rightElement?: React.ReactNode;
   iconBg?: string;
   iconColor?: string;
-  danger?: boolean;
+  danger?: boolean; 
 }
 
 function MenuItem({ icon, label, sublabel, onPress, rightElement, iconBg = '#2E2214', iconColor = '#FDF6EC', danger = false }: MenuItemProps) {
@@ -55,7 +55,7 @@ function Divider() {
 }
 
 export default function ProfileScreen() {
-  const { user, clear } = useAuthStore();
+  const { user, clear, setJustLoggedOut } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [profile, setProfile] = useState<any>(null);
   const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0 });
@@ -135,6 +135,8 @@ export default function ProfileScreen() {
             } finally {
               await clearTokens();
               clear();
+              // Set flag to indicate intentional logout
+              setJustLoggedOut(true);
               router.replace('/(auth)/login');
             }
           },
@@ -275,7 +277,7 @@ export default function ProfileScreen() {
             <SectionHeader title="My Business" />
             <TouchableOpacity
               activeOpacity={0.85} onPress={() => router.push('/my-stores')}
-              className="mx-5 bg-dark-2 border border-faint rounded-3xl p-4 flex-row items-center gap-3"
+              className="mx-5 bg-dark-2 border border-faint rounded-3xl p-4 flex-row items-center gap-3 mb-2"
             >
               <View className="w-10 h-10 bg-orange/20 rounded-2xl items-center justify-center">
                 <Ionicons name="storefront-outline" size={20} color="#E8521A" />
@@ -285,6 +287,19 @@ export default function ProfileScreen() {
                 <Text className="text-muted text-xs mt-0.5">Manage your stores and products</Text>
               </View>
               <Ionicons name="arrow-forward" size={18} color="#E8521A" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85} onPress={() => router.push('/seller-analytics')}
+              className="mx-5 bg-dark-2 border border-faint rounded-3xl p-4 flex-row items-center gap-3"
+            >
+              <View className="w-10 h-10 bg-green-500/20 rounded-2xl items-center justify-center">
+                <Ionicons name="stats-chart-outline" size={20} color="#2D8653" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Seller Analytics</Text>
+                <Text className="text-muted text-xs mt-0.5">Track views, inquiries, and revenue</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color="#2D8653" />
             </TouchableOpacity>
           </>
         )}

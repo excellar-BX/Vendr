@@ -59,7 +59,6 @@ vendr/
 │       └── ChatListItem.tsx      # 🔲 Chat preview row
 │
 ├── lib/                          # Core utilities
-│   ├── supabase.ts               # ✅ Supabase client
 │   ├── paystack.ts               # 🔲 Paystack helpers
 │   ├── location.ts               # 🔲 Get coords + reverse geocode
 │   └── utils.ts                  # 🔲 Format price, distance, date

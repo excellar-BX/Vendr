@@ -35,8 +35,8 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes - data is fresh
-      gcTime: 1000 * 60 * 10, // 10 minutes - keep in cache after unmount
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
       retry: 2,
       refetchOnWindowFocus: false,
     },
@@ -57,11 +57,11 @@ Sentry.init({
 });
 
 function RootLayout() {
-  const { setUser, user, clear } = useAuthStore();
+  const { setUser, user, clear, justLoggedOut, setJustLoggedOut } = useAuthStore();
   const [appReady, setAppReady] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
-  
+
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
 
@@ -73,25 +73,25 @@ function RootLayout() {
     SpaceGrotesk_700Bold,
   });
 
-
-
-  // 1. Bootstrap Auth (Custom API Pattern)
+  // 1. Bootstrap Auth
   useEffect(() => {
     const bootstrapAuth = async () => {
       const token = await getAccessToken();
       try {
         console.log("🔐 Starting auth bootstrap...");
         console.log("🔑 Token exists:", !!token);
+
         if (!token) {
+          // No token at all — genuine first-time / logged-out user
+          // But only clear store if there's no persisted user already loaded.
+          // The persist middleware may have already rehydrated user from AsyncStorage;
+          // if there's no token, that cached user is stale — clear it.
           clear();
           disconnectSocket();
           console.log("❌ No token found - user not logged in");
-          // No token = first-time user (or logged out). Will show welcome.
         } else {
           try {
             console.log("🔍 Validating token with /users/me...");
-        console.log('[Auth] Access token:', token)
-
             const response = await apiFetch('/users/me');
             const userData = response.data;
             console.log("✅ Token valid, user:", userData.email);
@@ -106,52 +106,49 @@ function RootLayout() {
               setUser(userData);
               Sentry.setUser({ id: userData.id, email: userData.email });
 
-              // Connect to Socket.io
               connectSocket().catch(console.error);
 
-              // Handle push tokens if enabled
               if (userData?.notifications_enabled !== false) {
                 registerPushToken(userData.id);
               }
 
-              // Clear session expired flag if user successfully logged in
-              if (sessionExpired) {
-                setSessionExpired(false);
-              }
+              if (sessionExpired) setSessionExpired(false);
               console.log("✅ User successfully logged in");
             }
           } catch (validationError: any) {
-            // Token exists but validation failed - could be network error or expired token
             console.log("❌ Token validation failed:", validationError.statusCode, validationError.message);
 
-            // Only clear tokens if it's actually an auth error (401)
             if (validationError.statusCode === 401) {
+              // Genuine auth failure — token is expired/invalid. Boot them out.
               await clearTokens();
               clear();
               disconnectSocket();
               setSessionExpired(true);
               console.log("🚫 Token expired - session expired");
+            } else {
+              // Network error or server unreachable.
+              // Token exists + persisted user in store = treat as logged in (offline mode).
+              // The persist middleware already rehydrated `user` from AsyncStorage before
+              // this effect runs, so we don't need to do anything here — just let it ride.
+              console.log("⚠️ Network error during validation - using cached user if available");
             }
-            // For network errors, keep tokens and let user continue
           }
         }
       } catch (error: any) {
         console.error("Auth bootstrap failed:", error);
-        // Only clear tokens if it's a critical error, not network issues
         if (error.statusCode === 401 || error.message?.includes('session')) {
           await clearTokens();
           clear();
           disconnectSocket();
           setSessionExpired(true);
         }
-        // For other errors, continue without clearing tokens
+        // Non-auth errors: keep persisted user, let routing handle it
       } finally {
         setAppReady(true);
       }
     };
 
     bootstrapAuth();
-
 
     // 2. Notification Listeners
     responseListener.current = addNotificationResponseReceivedListener(response => {
@@ -197,6 +194,14 @@ function RootLayout() {
   // 4. Routing Logic
   useEffect(() => {
     if (!showSplash && appReady) {
+      // Handle intentional logout first
+      if (justLoggedOut) {
+        // Clear the flag and navigate to login
+        setJustLoggedOut(false);
+        router.replace('/(auth)/login');
+        return;
+      }
+
       if (user) {
         if (user.is_verified) {
           router.replace('/(tabs)');
@@ -209,7 +214,7 @@ function RootLayout() {
         router.replace('/(auth)/welcome');
       }
     }
-  }, [showSplash, appReady, user, sessionExpired]);
+  }, [showSplash, appReady, user, sessionExpired, justLoggedOut, setJustLoggedOut]);
 
   if (showSplash || !appReady || (!fontsLoaded && !fontError)) {
     return <SplashScreenView />;

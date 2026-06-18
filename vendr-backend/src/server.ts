@@ -19,6 +19,7 @@ import { escrowRoutes } from './services/escrow/escrow.routes'
 import { disputeRoutes } from './services/dispute/dispute.routes'
 import { adminRoutes } from './services/admin/admin.routes'
 import { vendorReportRoutes } from './services/vendor-report/vendor-report.routes'
+import { vendorAnalyticsRoutes } from './services/vendor-analytics/vendor-analytics.routes'
 import { initSocket } from './lib/socket'
 
 export async function buildServer() {
@@ -103,6 +104,7 @@ export async function buildServer() {
   await app.register(disputeRoutes, { prefix: '/api' })
   await app.register(adminRoutes, { prefix: '/api' })
   await app.register(vendorReportRoutes, { prefix: '/api' })
+  await app.register(vendorAnalyticsRoutes, { prefix: '/api' })
 
   // ─── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
