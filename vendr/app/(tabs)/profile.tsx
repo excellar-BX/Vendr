@@ -55,7 +55,7 @@ function Divider() {
 }
 
 export default function ProfileScreen() {
-  const { user, clear, setJustLoggedOut } = useAuthStore();
+  const { user, setJustLoggedOut } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [profile, setProfile] = useState<any>(null);
   const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0 });
@@ -134,7 +134,7 @@ export default function ProfileScreen() {
               // Logout best-effort — clear locally regardless
             } finally {
               await clearTokens();
-              clear();
+              setUser(null);
               // Set flag to indicate intentional logout
               setJustLoggedOut(true);
               router.replace('/(auth)/login');

@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthState>()(
 
       setFontSize: (size) => set({ fontScale: fontScaleMap[size] }),
 
-      clear: () => set({ user: null, isVendor: false, isBuyer: true, justLoggedOut: false }),
+      clear: () => set({ user: null, isVendor: false, isBuyer: true }),
 
       setJustLoggedOut: (flag: boolean) => set({ justLoggedOut: flag }),
     }),

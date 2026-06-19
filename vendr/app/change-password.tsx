@@ -13,7 +13,7 @@ import { apiFetch, clearTokens } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 export default function ChangePasswordScreen() {
-  const { clear, setJustLoggedOut } = useAuthStore();
+  const { setJustLoggedOut } = useAuthStore();
   const { alert, alertElement } = useVendrAlert();
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -60,7 +60,7 @@ export default function ChangePasswordScreen() {
       alert('Success!', response.data.message, [
         { text: 'OK', onPress: async () => {
           await clearTokens();
-          clear();
+          setUser(null);
           // Set flag to indicate intentional logout (password change)
           setJustLoggedOut(true);
           router.replace('/(auth)/login');

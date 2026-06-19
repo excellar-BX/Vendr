@@ -46,24 +46,78 @@ export async function getVendorAnalytics(vendorId: string, period: 'day' | 'week
   });
 
   // Aggregate the data
-const summary = analytics.reduce(
-  (acc, curr) => ({
-    profile_views: acc.profile_views + curr.profile_views,
-    product_views: acc.product_views + curr.product_views,
-    inquiries: acc.inquiries + curr.inquiries,
-    revenue: acc.revenue + Number(curr.revenue), // ← Number() handles Prisma Decimal
-    orders_count: acc.orders_count + curr.orders_count,
-    unique_visitors: acc.unique_visitors + curr.unique_visitors,
-  }),
-  {
-    profile_views: 0,
-    product_views: 0,
-    inquiries: 0,
-    revenue: 0,
-    orders_count: 0,
-    unique_visitors: 0,
-  }
-)
+  const summary = analytics.reduce(
+    (acc, curr) => ({
+      profile_views: acc.profile_views + curr.profile_views,
+      product_views: acc.product_views + curr.product_views,
+      inquiries: acc.inquiries + curr.inquiries,
+      revenue: acc.revenue + Number(curr.revenue), // ← Number() handles Prisma Decimal
+      orders_count: acc.orders_count + curr.orders_count,
+      unique_visitors: acc.unique_visitors + curr.unique_visitors,
+    }),
+    {
+      profile_views: 0,
+      product_views: 0,
+      inquiries: 0,
+      revenue: 0,
+      orders_count: 0,
+      unique_visitors: 0,
+    }
+  );
+
+  // Calculate derived metrics
+  const avg_order_value = summary.orders_count > 0 ? summary.revenue / summary.orders_count : 0;
+  const conversion_rate = summary.unique_visitors > 0 ? (summary.orders_count / summary.unique_visitors) * 100 : 0;
+
+  // Calculate repeat customers (customers with > 1 order)
+  // This requires querying order data - for now, estimate based on orders vs visitors
+  const repeat_customers = Math.max(0, Math.floor(summary.orders_count * 0.15)); // 15% estimate
+
+  // Calculate growth metrics (compare with previous period)
+  const previousStartDate = new Date(startDate.getTime() - (now.getTime() - startDate.getTime()));
+  const previousAnalytics = await prisma.vendorAnalytics.findMany({
+    where: {
+      vendor_id: vendorId,
+      date: {
+        gte: previousStartDate,
+        lt: startDate,
+      },
+    },
+  });
+
+  const previousSummary = previousAnalytics.reduce(
+    (acc, curr) => ({
+      revenue: acc.revenue + Number(curr.revenue),
+      orders_count: acc.orders_count + curr.orders_count,
+      unique_visitors: acc.unique_visitors + curr.unique_visitors,
+    }),
+    {
+      revenue: 0,
+      orders_count: 0,
+      unique_visitors: 0,
+    }
+  );
+
+  const revenue_growth = previousSummary.revenue > 0
+    ? ((summary.revenue - previousSummary.revenue) / previousSummary.revenue) * 100
+    : 0;
+  const orders_growth = previousSummary.orders_count > 0
+    ? ((summary.orders_count - previousSummary.orders_count) / previousSummary.orders_count) * 100
+    : 0;
+  const visitors_growth = previousSummary.unique_visitors > 0
+    ? ((summary.unique_visitors - previousSummary.unique_visitors) / previousSummary.unique_visitors) * 100
+    : 0;
+
+  // Add calculated fields to summary
+  const enhancedSummary = {
+    ...summary,
+    avg_order_value,
+    conversion_rate,
+    repeat_customers,
+    revenue_growth,
+    orders_growth,
+    visitors_growth,
+  };
 
   // Get daily data for charts (last 30 days)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -119,27 +173,35 @@ const summary = analytics.reduce(
 
   const topProducts = productAnalytics.map((pa) => {
     const product = products.find((p) => p.id === pa.product_id);
+    const views = pa._sum.views || 0;
+    const orders = pa._sum.orders_count || 0;
+    const conversionRate = views > 0 ? (orders / views) * 100 : 0;
     return {
       product_id: pa.product_id,
       product_name: product?.name || 'Unknown',
-      product_price: product?.price || 0,
+      product_price: Number(product?.price) || 0,
       product_image: product?.image_url,
-      views: pa._sum.views || 0,
-      orders_count: pa._sum.orders_count || 0,
-      revenue: pa._sum.revenue || 0,
+      views: views,
+      orders_count: orders,
+      revenue: Number(pa._sum.revenue) || 0,
+      conversion_rate: conversionRate,
     };
   });
 
+  // Format daily data dates to short day names (Mon, Tue, etc.)
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const formattedDailyData = dailyData.map((d) => ({
+    date: dayNames[d.date.getDay()],
+    profile_views: d.profile_views,
+    product_views: d.product_views,
+    inquiries: d.inquiries,
+    revenue: Number(d.revenue),
+    orders_count: d.orders_count,
+  }));
+
   return {
-    summary,
-    daily_data: dailyData.map((d) => ({
-      date: d.date.toISOString().split('T')[0],
-      profile_views: d.profile_views,
-      product_views: d.product_views,
-      inquiries: d.inquiries,
-      revenue: d.revenue,
-      orders_count: d.orders_count,
-    })),
+    summary: enhancedSummary,
+    daily_data: formattedDailyData,
     top_products: topProducts,
     period,
   };
