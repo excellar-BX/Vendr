@@ -1122,20 +1122,30 @@ export default function ChatScreen() {
         />
       )}
 
-      {/* Edit banner */}
-      {editingMsg && (
-        <View className="flex-row items-center px-4 py-2 bg-dark-2 border-t border-faint gap-3">
-          <Ionicons name="create-outline" size={16} color="#E8521A" />
-          <Text className="flex-1 text-orange text-xs" style={{ fontFamily: 'SpaceGrotesk_500Medium' }} numberOfLines={1}>
-            Editing: {editingMsg.content}
-          </Text>
-          <TouchableOpacity onPress={cancelEdit}>
-            <Ionicons name="close-circle" size={18} color="#6B5E50" />
-          </TouchableOpacity>
-        </View>
-      )}
+{/* Edit banner */}
+       {editingMsg && (
+         <View className="flex-row items-center px-4 py-2 bg-dark-2 border-t border-faint gap-3">
+           <Ionicons name="create-outline" size={16} color="#E8521A" />
+           <Text className="flex-1 text-orange text-xs" style={{ fontFamily: 'SpaceGrotesk_500Medium' }} numberOfLines={1}>
+             Editing: {editingMsg.content}
+           </Text>
+           <TouchableOpacity onPress={cancelEdit}>
+             <Ionicons name="close-circle" size={18} color="#6B5E50" />
+           </TouchableOpacity>
+         </View>
+       )}
 
-      {/* Input bar */}
+       {/* Scroll to bottom button */}
+       {showScrollButton && (
+         <TouchableOpacity
+           onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })}
+           style={{ position: 'absolute', bottom: 175, right: 20, backgroundColor: '#E8521A', width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', elevation: 5 }}
+         >
+           <Ionicons name="arrow-down" size={20} color="white" />
+         </TouchableOpacity>
+       )}
+
+       {/* Input bar */}
       <View className="flex-row items-end px-4 py-3 border-t border-faint bg-dark gap-2">
         <TouchableOpacity
           onPress={() => setShowAttachSheet(true)}

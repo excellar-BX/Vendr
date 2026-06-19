@@ -1,4 +1,5 @@
 import prisma from '../../lib/prisma'
+import * as VendorAnalyticsService from '../vendor-analytics/vendor-analytics.service'
 
 // Notification service
 const { createNotification } = require('../notification/notification.service')
@@ -161,6 +162,11 @@ export async function processPayment(
           });
           orderId = order.id;
           console.log('[Wallet] Order created with escrow:', order.id, 'for buyer:', buyerId, 'vendor:', vendorId);
+
+          // Record order analytics (fire and forget, don't block transaction)
+          VendorAnalyticsService.recordOrder(paymentRequest.vendor_id, '', paymentRequest.amount).catch(err => {
+            console.error('[Analytics] Failed to record order:', err);
+          });
 
           // Create escrow hold transaction
           await tx.walletTransaction.create({

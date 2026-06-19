@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import * as ProductService from './product.service'
 import { createProductSchema, updateProductSchema } from './product.schema'
+import * as VendorAnalyticsService from '../vendor-analytics/vendor-analytics.service'
 
 export async function getProductsController(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -37,6 +38,13 @@ export async function getProductController(request: FastifyRequest, reply: Fasti
   try {
     const { id } = request.params as { id: string }
     const product = await ProductService.getProductById(id, request.user?.id)
+    
+    // Record product view analytics (fire and forget, don't block response)
+    const userId = request.user?.id
+    VendorAnalyticsService.recordProductView(id, product.vendor_id, userId).catch(err => {
+      console.error('[Analytics] Failed to record product view:', err);
+    });
+    
     return reply.status(200).send({ success: true, data: product })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
