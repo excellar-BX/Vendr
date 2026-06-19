@@ -706,3 +706,37 @@ export const verificationApi = {
    */
   getByVendorId: (vendorId: string) => apiFetch(`/verification/vendor/${vendorId}`),
 }
+
+// ──────────────────────────────────────────────────────────────
+// Analytics API
+// ──────────────────────────────────────────────────────────────
+
+export const analyticsApi = {
+  /**
+   * Record a profile view for a vendor (public endpoint)
+   */
+  recordProfileView: (vendorId: string) =>
+    apiFetch(`/vendors/${vendorId}/analytics/profile-view`, { method: 'POST' }),
+
+  /**
+   * Record a product view (public endpoint)
+   */
+  recordProductView: (productId: string) =>
+    apiFetch(`/products/${productId}/analytics/view`, { method: 'POST' }),
+
+  /**
+   * Record an inquiry (conversation started) - authenticated
+   */
+  recordInquiry: (vendorId: string) =>
+    apiFetch(`/vendors/${vendorId}/analytics/inquiry`, { method: 'POST' }),
+
+  /**
+   * Record an order (payment completed) - authenticated
+   */
+  recordOrder: (data: {
+    vendorId: string;
+    productId: string;
+    amount: number;
+  }) =>
+    apiFetch('/vendors/analytics/order', { method: 'POST', body: data }),
+}

@@ -234,7 +234,7 @@ model VerificationRequest {
 model WalletTransaction {
   id          String   @id @default(uuid())
   vendor_id   String
-  order_id    String?
+  order_id    String? 
   amount      Float
   tx_type     String   // escrow_hold, escrow_release, debit, refund
   status      String   @default("pending") // pending, completed, frozen

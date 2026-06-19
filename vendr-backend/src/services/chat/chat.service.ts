@@ -1,5 +1,6 @@
 import prisma from '../../lib/prisma'
 import * as WalletService from '../wallet/wallet.service'
+import * as VendorAnalyticsService from '../vendor-analytics/vendor-analytics.service'
 import type {
   CreateConversationInput,
   ConversationOutput,
@@ -87,6 +88,11 @@ export async function getOrCreateConversation(
       vendor_unread: 0,
     }
   })
+
+  // Record inquiry analytics (fire and forget, don't block response)
+  VendorAnalyticsService.recordInquiry(vendorId).catch(err => {
+    console.error('[Analytics] Failed to record inquiry:', err);
+  });
 
   return {
     id: conversation.id,
@@ -201,9 +207,12 @@ export async function getUserConversations(userId: string): Promise<any[]> {
             id: true,
             shop_name: true,
             user_id: true,
+            logo_url: true,
             user: {
               select: {
                 is_vendor_verified: true,
+                avatar_url: true,
+                full_name: true,
               },
             },
           },
@@ -239,9 +248,11 @@ export async function getUserConversations(userId: string): Promise<any[]> {
     vendor_unread: c.vendor_unread,
     vendor: c.vendor ? {
       id: c.vendor.id,
-      business_name: c.vendor.shop_name, // alias
+      business_name: c.vendor.shop_name,
       is_verified: c.vendor.user?.is_vendor_verified,
       user_id: c.vendor.user_id,
+      logo_url: c.vendor.logo_url,
+      avatar_url: c.vendor.user?.avatar_url,
     } : null,
     buyer: null,
     iAmVendor: false,
@@ -264,30 +275,29 @@ export async function getUserConversations(userId: string): Promise<any[]> {
     iAmVendor: true,
   }))
 
-  // Merge and deduplicate, but keep vendor version if appears in both (vendor takes precedence for iAmVendor)
-  const allConvs = [...vendorList, ...buyerList]
+  // Merge and deduplicate, then sort by last_message_at desc
+  const allConvs: any[] = []
   const seenIds = new Set<string>()
-  const unique: any[] = []
 
-  for (const conv of allConvs) {
+  for (const conv of [...vendorList, ...buyerList]) {
     if (!seenIds.has(conv.id)) {
       seenIds.add(conv.id)
-      // If it's a buyerView and we also have a vendorView, skip buyerView (vendor already added first)
-      unique.push(conv)
+      allConvs.push(conv)
     } else {
-      // Already exists from other perspective - merge iAmVendor flag
-      const existing = unique.find(c => c.id === conv.id)
+      const existing = allConvs.find(c => c.id === conv.id)
       if (existing) {
         existing.iAmVendor = existing.iAmVendor || conv.iAmVendor
       }
     }
   }
 
+  allConvs.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
+
   // Now enrich with presence and last message details
-  if (unique.length === 0) return unique
+  if (allConvs.length === 0) return allConvs
 
   // Get all other user IDs for presence
-  const otherUserIds = unique.map(c =>
+  const otherUserIds = allConvs.map(c =>
     c.iAmVendor ? c.buyer_id : c.vendor?.user_id
   ).filter(Boolean) as string[]
 
@@ -295,7 +305,7 @@ export async function getUserConversations(userId: string): Promise<any[]> {
 
   // Get last message for each conversation
   const lastMsgs = await prisma.message.findMany({
-    where: { conversation_id: { in: unique.map(c => c.id) } },
+    where: { conversation_id: { in: allConvs.map(c => c.id) } },
     orderBy: { created_at: 'desc' },
   })
 
@@ -307,13 +317,13 @@ export async function getUserConversations(userId: string): Promise<any[]> {
   })
 
   // Combine all data
-  return unique.map(c => {
+  return allConvs.map(c => {
     const otherUserId = c.iAmVendor ? c.buyer_id : c.vendor?.user_id
     const lastMsg = lastMsgMap[c.id]
 
     return {
       ...c,
-      other_online: presenceMap[otherUserId] ?? false,
+      other_online: presenceMap[otherUserId]?.is_online ?? false,
       last_message_mine: lastMsg?.sender_id === userId,
       last_message_delivered: lastMsg?.delivered ?? false,
       last_message_read: lastMsg?.is_read ?? false,
@@ -719,16 +729,16 @@ export async function updateUserPresence(
 /**
  * Get user online status
  */
-export async function getUserPresence(userIds: string[]): Promise<Record<string, boolean>> {
+export async function getUserPresence(userIds: string[]): Promise<Record<string, { is_online: boolean; last_seen?: string }>> {
   if (userIds.length === 0) return {}
 
   const presenceRecords = await prisma.userPresence.findMany({
     where: { user_id: { in: userIds } },
-    select: { user_id: true, is_online: true }
+    select: { user_id: true, is_online: true, last_seen: true }
   })
 
   return Object.fromEntries(
-    presenceRecords.map(p => [p.user_id, p.is_online])
+    presenceRecords.map(p => [p.user_id, { is_online: p.is_online, last_seen: p.last_seen?.toISOString() }])
   )
 }
 

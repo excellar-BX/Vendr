@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, ScrollView, TouchableOpacity, Image, Modal,
   Share, Animated, Dimensions, ActivityIndicator, Alert,
   TextInput as RNTextInput, Linking,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
@@ -13,6 +13,7 @@ import { useVendrAlert } from '../../components/ui/VendrAlert';
 import { useAuthStore } from '../../stores/authStore';
 import { formatDistance, formatPrice } from '../../lib/utils';
 import { Vendor, Product } from '../../types';
+import { analyticsApi } from '../../lib/api';
 import {
   useVendor,
   useVendorProducts,
@@ -503,14 +504,25 @@ export default function VendorProfileScreen() {
     });
   };
 
-  const handleChat = () => {
+  const handleChat = async () => {
+    if (!vendor) return;
+    if (!isOwner) {
+      await analyticsApi.recordInquiry(vendor.id).catch(console.error);
+    }
     router.push({ pathname: '/chat/[conversationId]', params: { vendorId: id } });
   };
 
-  const handleProductEnquire = (product: Product) => {
+  const handleProductEnquire = async (product: Product) => {
     if (isOwner) {
       router.push('/my-stores');
       return;
+    }
+    try {
+      // Record product view and inquiry analytics
+      await analyticsApi.recordProductView(product.id);
+      await analyticsApi.recordInquiry(vendor.id);
+    } catch (err) {
+      console.log('Failed to record analytics:', err);
     }
     router.push({
       pathname: '/chat/[conversationId]',
@@ -541,6 +553,18 @@ export default function VendorProfileScreen() {
 
   // Owner check — vendor.user_id compared to logged-in user
   const isOwner = !!user?.id && !!vendor && vendor.user_id === user.id;
+
+  // Track profile view when screen is focused (only for non-owners)
+  useFocusEffect(
+    useCallback(() => {
+      if (id && !isOwner) {
+        // Record profile view analytics (fire and forget, don't block UI)
+        analyticsApi.recordProfileView(id).catch((err) => {
+          console.log('Failed to record profile view:', err);
+        });
+      }
+    }, [id, isOwner])
+  );
 
   const handleSubmitReview = async (rating: number, comment: string) => {
     if (!user?.id || !vendor) return;

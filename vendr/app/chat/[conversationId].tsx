@@ -1,23 +1,28 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, TextInput, TouchableOpacity, FlatList,
   KeyboardAvoidingView, Platform, Image, ActivityIndicator,
   Modal, Dimensions, TextInput as RNTextInput,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withRepeat,
+  withTiming,
+  FadeIn,
+  FadeOut,
+} from 'react-native-reanimated';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import * as ImagePicker from 'expo-image-picker';
-import { chatApi, searchApi, storageApi } from '../../lib/api';
+import { chatApi, searchApi, storageApi, analyticsApi } from '../../lib/api';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from 'react-native-reanimated';
+
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { connectSocket, disconnectSocket, joinConversation, leaveConversation } from '../../lib/socket';
 
@@ -59,6 +64,59 @@ function formatTime(iso: string) {
 
 function formatAmount(n: number) {
   return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2 });
+}
+
+function getDateLabel(dateString: string) {
+  const date = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+function TypingBubble() {
+  return (
+    <View className="self-start mb-3 ml-3">
+      <View style={{ backgroundColor: '#1A1208', padding: 10, borderRadius: 18, flexDirection: 'row', alignItems: 'center', width: 60, justifyContent: 'space-between' }}>
+        <Dot delay={0} />
+        <Dot delay={150} />
+        <Dot delay={300} />
+      </View>
+    </View>
+  );
+}
+
+function Dot({ delay }: { delay: number }) {
+  const opacity = useSharedValue(0.3);
+
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withTiming(1, { duration: 600 }),
+      -1,
+      true
+    );
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        { width: 6, height: 6, borderRadius: 3, backgroundColor: '#9A8570' },
+        style,
+      ]}
+    />
+  );
 }
 
 // ── Payment Request Bubble ─────────────────────────────────────────────────
@@ -185,20 +243,28 @@ function PaymentRequestBubble({
 
 // ── Text/Image Message Bubble ──────────────────────────────────────────────
 function MessageBubble({
-  msg, isMine, onLongPress, onImagePress,
+  msg, isMine, onLongPress, onImagePress, index, messages,
 }: {
   msg: Message;
   isMine: boolean;
   onLongPress: (msg: Message) => void;
   onImagePress: (url: string) => void;
+  index: number;
+  messages: Message[];
 }) {
+  const previous = messages[index - 1];
+  const next = messages[index + 1];
+
+  const isFirstInGroup = !previous || previous.sender_id !== msg.sender_id;
+  const isLastInGroup = !next || next.sender_id !== msg.sender_id;
+
   return (
     <TouchableOpacity
       onLongPress={() => isMine && onLongPress(msg)}
       activeOpacity={0.85}
       delayLongPress={350}
     >
-      <View className={`mb-2 max-w-xs ${isMine ? 'self-end items-end' : 'self-start items-start'}`}>
+      <View className={`max-w-xs ${isMine ? 'self-end items-end' : 'self-start items-start'}`}>
         {msg.type === 'image' && msg.image_url ? (
           <TouchableOpacity
             onPress={() => onImagePress(msg.image_url!)}
@@ -208,12 +274,32 @@ function MessageBubble({
           >
             <Image
               source={{ uri: msg.image_url }}
-              style={{ width: 220, height: 220, borderRadius: 16 }}
+              style={{
+                width: 220,
+                height: 220,
+                borderRadius: 16,
+                marginBottom: isLastInGroup ? 6 : 2,
+                marginTop: isFirstInGroup ? 0 : 2,
+              }}
               resizeMode="cover"
             />
           </TouchableOpacity>
-        ) : (
-          <View className={`px-4 py-3 rounded-2xl ${isMine ? 'bg-orange rounded-tr-sm' : 'bg-dark-2 border border-faint rounded-tl-sm'}`}>
+        ) : null}
+        {msg.type !== 'image' && (
+          <View
+            className={`${isMine ? 'bg-orange' : 'bg-dark-2 border border-faint'}`}
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 18,
+              marginBottom: isLastInGroup ? 6 : 2,
+              marginTop: isFirstInGroup ? 0 : 2,
+              borderTopRightRadius: isMine ? 18 : 6,
+              borderBottomRightRadius: isMine ? 18 : 6,
+              borderTopLeftRadius: isMine ? 6 : 18,
+              borderBottomLeftRadius: isMine ? 6 : 18,
+            }}
+          >
             <Text
               className={isMine ? 'text-white text-sm' : 'text-cream text-sm'}
               style={{ fontFamily: 'SpaceGrotesk_400Regular' }}
@@ -227,21 +313,25 @@ function MessageBubble({
             )}
           </View>
         )}
-        <View className="flex-row items-center gap-1 mt-1 px-1">
-          <Text className="text-muted" style={{ fontSize: 10, fontFamily: 'SpaceGrotesk_400Regular' }}>
-            {formatTime(msg.created_at)}
-          </Text>
-          {isMine && msg.id.startsWith('temp-') && (
-            <Ionicons name="time-outline" size={11} color="#6B5E50" />
-          )}
-          {isMine && !msg.id.startsWith('temp-') && (
-            <Ionicons
-              name={msg.is_read ? 'checkmark-done' : msg.delivered ? 'checkmark-done' : 'checkmark'}
-              size={12}
-              color={msg.is_read ? '#E8521A' : msg.delivered ? '#9A8570' : '#6B5E50'}
-            />
-          )}
-        </View>
+        {isLastInGroup && (
+          <View className="flex-row items-center gap-1 px-1">
+            <Text className="text-muted" style={{ fontSize: 10, fontFamily: 'SpaceGrotesk_400Regular' }}>
+              {formatTime(msg.created_at)}
+            </Text>
+            {isMine && msg.id.startsWith('temp-') && (
+              <Ionicons name="time-outline" size={11} color="#6B5E50" />
+            )}
+            {isMine && !msg.id.startsWith('temp-') && (
+              <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)}>
+                <Ionicons
+                  name={msg.is_read ? 'checkmark-done' : msg.delivered ? 'checkmark-done' : 'checkmark'}
+                  size={12}
+                  color={msg.is_read ? '#4FC3F7' : msg.delivered ? '#9A8570' : '#6B5E50'}
+                />
+              </Animated.View>
+            )}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -264,6 +354,8 @@ export default function ChatScreen() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<Record<string, PaymentRequest>>({});
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [convId, setConvId] = useState<string | null>(null);
   const [buyerId, setBuyerId] = useState<string>('');
   const [vendorDbId, setVendorDbId] = useState<string>('');
@@ -272,6 +364,7 @@ export default function ChatScreen() {
   const [vendorActualId, setVendorActualId] = useState('');
   const [isVerified, setIsVerified] = useState(false);
   const [otherOnline, setOtherOnline] = useState(false);
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
   const [actingAsVendor, setActingAsVendor] = useState(false);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -289,6 +382,7 @@ export default function ChatScreen() {
   const [showProductEnquiry, setShowProductEnquiry] = useState(false);
   // Payment request sheet
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [payDescription, setPayDescription] = useState('');
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
@@ -367,9 +461,12 @@ export default function ChatScreen() {
         setIsVerified(vendor?.is_verified ?? false);
       }
 
-      // Load messages
-      const { data: msgs } = await chatApi.getMessages(cid, { limit: 100 });
+      // Load messages (paginated)
+      const { data: msgs } = await chatApi.getMessages(cid, { limit: 30 });
       setMessages(msgs ?? []);
+      if (!msgs || msgs.length < 30) {
+        setHasMore(false);
+      }
 
       // Mark messages as delivered and reset unread count
       await chatApi.markDelivered(cid);
@@ -396,11 +493,12 @@ export default function ChatScreen() {
           }
         });
 
-        // Listen for user_presence event (real-time online status)
-        socket.on('user_presence', (data: { userId: string; isOnline: boolean }) => {
+        // Listen for user_presence event (real-time online status + last seen)
+        socket.on('user_presence', (data: { userId: string; isOnline: boolean; lastSeen?: string }) => {
           const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
           if (data.userId === otherUserId) {
             setOtherOnline(data.isOnline);
+            setLastSeen(data.lastSeen ?? null);
           }
         });
 
@@ -417,14 +515,17 @@ export default function ChatScreen() {
         });
       }
 
-      // Get other user's presence (initial fetch)
+      // Get other user's presence (initial fetch - includes last_seen)
       const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
       if (otherUserId) {
         try {
           const { data: presenceData } = await chatApi.getPresence([otherUserId]);
-          setOtherOnline(presenceData[otherUserId] ?? false);
+          const presence = (presenceData as any)[otherUserId] || presenceData;
+          setOtherOnline(presence?.is_online ?? presence ?? false);
+          setLastSeen(presence?.last_seen ?? null);
         } catch (e) {
           setOtherOnline(false);
+          setLastSeen(null);
         }
       }
 
@@ -445,18 +546,46 @@ export default function ChatScreen() {
 
   useEffect(() => {
     return () => {
-      // Leave conversation room and disconnect socket
       if (convId) {
         leaveConversation(convId);
       }
       disconnectSocket();
 
-      // Set user as offline when leaving chat
       if (user?.id) {
         chatApi.setPresence(false).catch(console.error);
       }
     };
   }, [convId]);
+
+  const loadOlderMessages = async () => {
+    if (!convId || loadingMore || !hasMore || messages.length === 0) return;
+
+    setLoadingMore(true);
+
+    try {
+      const oldest = messages[0];
+
+      const { data } = await chatApi.getMessages(convId, {
+        limit: 30,
+        before: oldest.created_at,
+      });
+
+      if (!data || data.length === 0) {
+        setHasMore(false);
+        return;
+      }
+
+      setMessages(prev => [...data, ...prev]);
+
+      if (data.length < 30) {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error('Pagination error:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   // ─── Image Upload ──────────────────────────────────────────────────────────
   const pickFromGallery = async () => {
@@ -485,7 +614,7 @@ export default function ChatScreen() {
     try {
       const tempMsg: Message = {
         id: tempId, conversation_id: convId, sender_id: user!.id,
-        content: 'Sending image...', image_url: null, type: 'text',
+        content: null, image_url: uri, type: 'image',
         is_read: false, delivered: false, edited: false, created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, tempMsg]);
@@ -709,6 +838,15 @@ export default function ChatScreen() {
         throw new Error('Payment failed');
       }
 
+      // Record order analytics (fire and forget, don't block UI)
+      analyticsApi.recordOrder({
+        vendorId: pr.vendor_id,
+        productId: '', // Payment requests may not be tied to specific products
+        amount: pr.amount,
+      }).catch((err) => {
+        console.log('Failed to record order:', err);
+      });
+
       // Update the payment request in both state stores optimistically
       const updatedPr = { ...pr, status: 'paid' as const, paid_at: new Date().toISOString() };
       setPaymentRequests(prev => ({
@@ -857,11 +995,19 @@ export default function ChatScreen() {
           className="flex-row items-center gap-3 flex-1"
         >
           <View className="relative">
-            <View className="w-10 h-10 rounded-full bg-dark-2 border border-faint items-center justify-center">
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>
-                {vendorName.slice(0, 2).toUpperCase()}
-              </Text>
-            </View>
+            {!actingAsVendor && vendor?.logo_url ? (
+              <Image source={{ uri: vendor.logo_url }} className="w-10 h-10 rounded-full border border-faint" />
+            ) : !actingAsVendor && vendor?.avatar_url ? (
+              <Image source={{ uri: vendor.avatar_url }} className="w-10 h-10 rounded-full border border-faint" />
+            ) : actingAsVendor && buyer?.avatar_url ? (
+              <Image source={{ uri: buyer.avatar_url }} className="w-10 h-10 rounded-full border border-faint" />
+            ) : (
+              <View className="w-10 h-10 rounded-full bg-dark-2 border border-faint items-center justify-center">
+                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>
+                  {vendorName.slice(0, 2).toUpperCase()}
+                </Text>
+              </View>
+            )}
             <View className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-dark ${otherOnline ? 'bg-green-500' : 'bg-dark-3'}`} />
           </View>
           <View className="flex-1">
@@ -871,7 +1017,11 @@ export default function ChatScreen() {
               {!actingAsVendor && vendorActualId && <Ionicons name="chevron-forward" size={12} color="#6B5E50" />}
             </View>
             <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_400Regular', color: otherOnline ? '#4CAF50' : '#6B5E50' }}>
-              {otherOnline ? 'Online' : 'Offline'}
+              {otherOnline
+                ? 'Online'
+                : lastSeen
+                  ? `Last seen ${formatTime(lastSeen)}`
+                  : 'Offline'}
             </Text>
           </View>
         </TouchableOpacity>
@@ -900,33 +1050,73 @@ export default function ChatScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={m => m.id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          renderItem={({ item }) => {
+<FlatList
+           ref={flatListRef}
+           data={messages}
+           keyExtractor={m => m.id}
+           contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
+           inverted
+           onScroll={(event) => {
+             const offset = event.nativeEvent.contentOffset.y;
+             setShowScrollButton(offset > 200);
+           }}
+           onEndReached={loadOlderMessages}
+           onEndReachedThreshold={0.2}
+           maintainVisibleContentPosition={{
+             minIndexForVisible: 1,
+           }}
+          ListFooterComponent={
+            loadingMore ? (
+              <ActivityIndicator size="small" color="#E8521A" />
+            ) : null
+          }
+          renderItem={({ item, index }) => {
+            const prevItem = messages[index + 1]; // Next in array = previous in inverted list
+            const showDate = !prevItem || getDateLabel(item.created_at) !== getDateLabel(prevItem.created_at);
+
             if (item.type === 'payment_request') {
               return (
-                <PaymentRequestBubble
-                  msg={item}
-                  isMine={item.sender_id === user?.id}
-                  paymentRequest={item.payment_request ?? null}
-                  onPay={handlePayNow}
-                  onCancel={handleCancelRequest}
-                  paying={paying}
-                />
+                <View key={`date-${item.id}`}>
+                  {showDate && (
+                    <View className="items-center my-3">
+                      <View style={{ backgroundColor: '#2A1F14', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_500Medium', color: '#9A8570' }}>
+                          {getDateLabel(item.created_at)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                  <PaymentRequestBubble
+                    msg={item}
+                    isMine={item.sender_id === user?.id}
+                    paymentRequest={item.payment_request ?? null}
+                    onPay={handlePayNow}
+                    onCancel={handleCancelRequest}
+                    paying={paying}
+                  />
+                </View>
               );
             }
             return (
-              <MessageBubble
-                msg={item}
-                isMine={item.sender_id === user?.id}
-                onLongPress={handleLongPress}
-                onImagePress={setViewingImage}
-              />
+              <View key={`date-${item.id}`}>
+                {showDate && (
+                  <View className="items-center my-3">
+                    <View style={{ backgroundColor: '#2A1F14', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_500Medium', color: '#9A8570' }}>
+                        {getDateLabel(item.created_at)}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                <MessageBubble
+                  msg={item}
+                  isMine={item.sender_id === user?.id}
+                  onLongPress={handleLongPress}
+                  onImagePress={setViewingImage}
+                  index={index}
+                  messages={messages}
+                />
+              </View>
             );
           }}
         />

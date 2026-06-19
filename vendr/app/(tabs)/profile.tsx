@@ -55,7 +55,7 @@ function Divider() {
 }
 
 export default function ProfileScreen() {
-  const { user, setJustLoggedOut } = useAuthStore();
+  const { user, setUser, setJustLoggedOut, clear } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [profile, setProfile] = useState<any>(null);
   const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0 });

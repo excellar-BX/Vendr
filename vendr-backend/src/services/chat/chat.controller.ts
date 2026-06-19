@@ -37,6 +37,7 @@ export async function getConversationController(request: FastifyRequest, reply: 
         user_id: vendor.user_id,
         ...(vendor.user && {
           owner_name: vendor.user.full_name,
+          avatar_url: vendor.user.avatar_url,
           owner_avatar: vendor.user.avatar_url,
         }),
       },
@@ -171,33 +172,7 @@ export async function markAsReadController(request: FastifyRequest, reply: Fasti
     const { id } = request.params as { id: string }
     const userId = request.user.id
 
-    const { messageIds, senderId } = await ChatService.markMessagesAsRead(id, userId)
-
-    // Emit Socket.io event to sender (non-blocking)
-    try {
-      const { getSocketIO } = require('../../lib/socket')
-      const io = getSocketIO()
-
-      if (io && messageIds.length > 0) {
-        // Emit to the sender's personal room
-        io.to(`user:${senderId}`).emit('messages_read', {
-          conversationId: id,
-          messageIds,
-          readBy: userId,
-          timestamp: new Date().toISOString(),
-        })
-
-        // Also emit to the conversation room
-        io.to(`conversation:${id}`).emit('messages_read', {
-          conversationId: id,
-          messageIds,
-          readBy: userId,
-          timestamp: new Date().toISOString(),
-        })
-      }
-    } catch (socketError) {
-      console.error('[Chat] Socket.io emit error in markAsRead:', socketError)
-    }
+    const { messageIds } = await ChatService.markMessagesAsRead(id, userId)
 
     return reply.status(200).send({
       success: true,
@@ -266,6 +241,25 @@ export async function presenceController(request: FastifyRequest, reply: Fastify
     return reply.status(200).send({
       success: true,
       message: 'Presence updated',
+    })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({
+      success: false,
+      message: err.message
+    })
+  }
+}
+
+export async function getPresenceController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { user_ids } = request.query as { user_ids?: string }
+    const userIds = user_ids?.split(',').filter(Boolean) || []
+
+    const presence = await ChatService.getUserPresence(userIds)
+
+    return reply.status(200).send({
+      success: true,
+      data: presence,
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({

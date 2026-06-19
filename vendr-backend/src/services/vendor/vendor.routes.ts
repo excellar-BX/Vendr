@@ -3,6 +3,7 @@ import prisma from '../../lib/prisma';
 import { authenticate } from '../../middlewares/authenticate';
 import { createVendor, getVendorByUserId, getAllVendorsByUserId, getVendorById, updateVendor, deleteVendorStore, updateVendorById, deleteVendorById, type CreateVendorInput } from './vendor.service';
 import { z } from 'zod';
+import * as VendorAnalyticsService from '../vendor-analytics/vendor-analytics.service';
 
 // Haversine distance in km
 function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -45,6 +46,13 @@ export async function vendorRoutes(app: FastifyInstance) {
     try {
       const { id } = request.params as { id: string };
       const vendor = await getVendorById(id);
+      
+      // Record profile view analytics (fire and forget, don't block response)
+      const userId = (request.user as any)?.id;
+      VendorAnalyticsService.recordProfileView(id, userId).catch(err => {
+        console.error('[Analytics] Failed to record profile view:', err);
+      });
+      
       return reply.status(200).send({ success: true, data: vendor });
     } catch (err: any) {
       return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });

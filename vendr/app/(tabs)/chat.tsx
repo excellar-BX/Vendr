@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator,
+  View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -9,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import { chatApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
-import { connectSocket, disconnectSocket } from '../../lib/socket';
+import { connectSocket, disconnectSocket } from '../../lib/socket'; 
 
 interface Conversation {
   id: string;
@@ -22,7 +23,7 @@ interface Conversation {
   last_message_mine?: boolean;
   last_message_delivered?: boolean;
   last_message_read?: boolean;
-  vendor: { id: string; business_name: string; is_verified: boolean; user_id: string } | null;
+  vendor: { id: string; logo_url?: string | null; avatar_url?: string | null; business_name: string; is_verified: boolean; user_id: string } | null;
   buyer: { id: string; name: string; avatar_url: string | null } | null;
   other_online?: boolean;
   // Derived per-conversation role
@@ -40,12 +41,19 @@ function formatTime(iso: string) {
 }
 
 function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) {
-  // Role is per-conversation, not global
   const otherName = conv.iAmVendor
     ? (conv.buyer?.name || 'Unknown Buyer')
     : (conv.vendor?.business_name || 'Unknown Vendor');
   const unread = conv.iAmVendor ? conv.vendor_unread : conv.buyer_unread;
   const initials = (otherName ?? 'U').slice(0, 2).toUpperCase();
+
+  const fallbackAvatar = () => (
+    <View className="w-12 h-12 rounded-full bg-dark-2 border border-faint items-center justify-center">
+      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#E8521A' }}>
+        {initials}
+      </Text>
+    </View>
+  );
 
   return (
     <TouchableOpacity
@@ -54,14 +62,18 @@ function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) 
       className="flex-row items-center px-5 py-4 border-b border-faint gap-3"
     >
       <View className="relative">
-        <View className="w-12 h-12 rounded-full bg-dark-2 border border-faint items-center justify-center">
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#E8521A' }}>
-            {initials}
-          </Text>
-        </View>
-        {conv.other_online && (
-          <View className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-dark" />
+        {conv.iAmVendor ? (
+          conv.buyer?.avatar_url ? (
+            <Image source={{ uri: conv.buyer.avatar_url }} className="w-12 h-12 rounded-full border border-faint" />
+          ) : fallbackAvatar()
+        ) : (
+          conv.vendor?.logo_url ? (
+            <Image source={{ uri: conv.vendor.logo_url }} className="w-12 h-12 rounded-full border border-faint" />
+          ) : conv.vendor?.avatar_url ? (
+            <Image source={{ uri: conv.vendor.avatar_url }} className="w-12 h-12 rounded-full border border-faint" />
+          ) : fallbackAvatar()
         )}
+        <View className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dark ${conv.other_online ? 'bg-green-500' : 'bg-dark-3'}`} />
       </View>
 
       <View className="flex-1">
@@ -134,48 +146,71 @@ export default function ChatListScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const fetchConversations = async () => {
+  const fetchConversations = async (isSilent = false) => {
     if (!user?.id) return;
-    setLoading(true);
-    setRefreshing(true);
+    if (!isSilent && !refreshing) setLoading(true);
 
     try {
       const { data } = await chatApi.getConversations();
       setConversations(data || []);
-    } catch (error) {
-      console.error('Failed to fetch conversations:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useFocusEffect(useCallback(() => { fetchConversations(); }, [user]));
+  useFocusEffect(useCallback(() => { fetchConversations(true); }, [user]));
 
-  // Socket.io for real-time updates
+  // FIX #10: Filter logic
+  const filteredConversations = conversations.filter(c => {
+    const name = c.iAmVendor ? c.buyer?.name : c.vendor?.business_name;
+    return name?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  // FIX #1: Real-time update list WITHOUT full API refresh
   useEffect(() => {
     let mounted = true;
-    
+    let socketListenerCleanup: (() => void) | undefined;
+
     const setupSocket = async () => {
       const socket = await connectSocket();
       if (!socket || !mounted) return;
 
-      // Listen for new messages
-      socket.on('new_message', (data: { conversation_id: string; sender_id: string }) => {
-        // Refresh conversations to get updated last message and unread count
-        fetchConversations();
-      });
+      const onNewMessage = (data: { conversation_id: string; content: string; sender_id: string }) => {
+        setConversations(prev => {
+          const index = prev.findIndex(c => c.id === data.conversation_id);
+          if (index === -1) {
+            fetchConversations(true);
+            return prev;
+          }
+          const updated = [...prev];
+          const conv = { ...updated[index] };
+          conv.last_message = data.content;
+          conv.last_message_at = new Date().toISOString();
+          if (data.sender_id !== user?.id) {
+             conv.iAmVendor ? conv.vendor_unread++ : conv.buyer_unread++;
+          }
+          updated.splice(index, 1);
+          return [conv, ...updated];
+        });
+      };
 
-      // Listen for messages read (to update unread count)
-      socket.on('messages_read', (data: { conversationId: string; readBy: string }) => {
-        // Refresh conversations to get updated unread count
-        fetchConversations();
-      });
+      const onMessagesRead = (data: { conversationId: string; readBy: string }) => {
+        setConversations(prev => prev.map(conv => {
+          if (conv.id !== data.conversationId) return conv;
+          const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
+          if (otherUserId === data.readBy && conv.last_message_mine) {
+            const updated = { ...conv };
+            updated.last_message_read = true;
+            return updated;
+          }
+          return conv;
+        }));
+      };
 
-      // Listen for user presence updates
-      socket.on('user_presence', (data: { userId: string; isOnline: boolean }) => {
-        // Update online status for conversations with this user
+      const onUserPresence = (data: { userId: string; isOnline: boolean }) => {
         setConversations(prev => prev.map(conv => {
           const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
           if (otherUserId === data.userId) {
@@ -183,14 +218,24 @@ export default function ChatListScreen() {
           }
           return conv;
         }));
-      });
+      };
+
+      socket.on('new_message', onNewMessage);
+      socket.on('messages_read', onMessagesRead);
+      socket.on('user_presence', onUserPresence);
+
+      socketListenerCleanup = () => {
+        socket.off('new_message', onNewMessage);
+        socket.off('messages_read', onMessagesRead);
+        socket.off('user_presence', onUserPresence);
+      };
     };
 
     setupSocket();
 
     return () => {
       mounted = false;
-      // Socket cleanup is handled by the global disconnectSocket
+      socketListenerCleanup?.();
     };
   }, [user]);
 
@@ -203,36 +248,46 @@ export default function ChatListScreen() {
       <StatusBar style="light" />
 
       <View className="px-5 pt-14 pb-4 border-b border-faint">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-cream text-2xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Messages</Text>
-            {totalUnread > 0 && (
-              <Text className="text-orange text-xs mt-0.5" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-                {totalUnread} unread message{totalUnread > 1 ? 's' : ''}
-              </Text>
-            )}
-          </View>
+        <Text style={{fontFamily: 'SpaceGrotesk_700Bold'}} className="text-cream text-2xl">Messages</Text>
+        
+        {/* FIX #10: Search Bar */}
+        <View className="mt-4 bg-dark-2 rounded-xl flex-row items-center px-3 py-2 border border-faint">
+          <Ionicons name="search" size={18} color="#6B5E50" />
+          <TextInput 
+            className="flex-1 ml-2 text-cream" 
+            placeholder="Search chats..." 
+            placeholderTextColor="#6B5E50"
+            value={searchQuery}
+            style={{fontFamily: 'SpaceGrotesk_500Medium'}}
+            onChangeText={setSearchQuery}
+          />
         </View>
       </View>
-
+      
       {loading ? (
         <View className="flex-1 items-center justify-center gap-3">
           <ActivityIndicator size="large" color="#E8521A" />
         </View>
-      ) : conversations.length === 0 ? (
+      ) : filteredConversations.length === 0 ? (
         <View className="flex-1 items-center justify-center gap-4 px-8">
           <View className="w-20 h-20 rounded-3xl bg-dark-2 border border-faint items-center justify-center">
             <Ionicons name="chatbubbles-outline" size={36} color="#3D3026" />
           </View>
-          <Text className="text-cream text-xl text-center" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>No messages yet</Text>
-          <Text className="text-muted text-sm text-center">Find a vendor and tap Chat to start a conversation</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)')} className="bg-orange rounded-2xl px-6 py-3 mt-2">
-            <Text className="text-white text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Browse Vendors</Text>
-          </TouchableOpacity>
+          <Text className="text-cream text-xl text-center" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            {searchQuery ? 'No results found' : 'No messages yet'}
+          </Text>
+          <Text className="text-muted text-sm text-center">
+            {searchQuery ? 'Try a different search term' : 'Find a vendor and tap Chat to start a conversation'}
+          </Text>
+          {!searchQuery && (
+            <TouchableOpacity onPress={() => router.push('/(tabs)')} className="bg-orange rounded-2xl px-6 py-3 mt-2">
+              <Text className="text-white text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Browse Vendors</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <FlatList
-          data={conversations}
+          data={filteredConversations}
           keyExtractor={c => c.id}
           renderItem={({ item }) => (
             <ConversationItem conv={item} myId={user?.id ?? ''} />
