@@ -255,8 +255,9 @@ function MessageBubble({
   const previous = messages[index - 1];
   const next = messages[index + 1];
 
-  const isFirstInGroup = !previous || previous.sender_id !== msg.sender_id;
-  const isLastInGroup = !next || next.sender_id !== msg.sender_id;
+  // For inverted list: next in array = visually above, previous in array = visually below
+  const isFirstInGroup = !next || next.sender_id !== msg.sender_id;
+  const isLastInGroup = !previous || previous.sender_id !== msg.sender_id;
 
   return (
     <TouchableOpacity
@@ -381,6 +382,7 @@ export default function ChatScreen() {
   const [showActions, setShowActions] = useState(false);
   const [selectedMsg, setSelectedMsg] = useState<Message | null>(null);
   const [editingMsg, setEditingMsg] = useState<Message | null>(null);
+  const [showProductEnquiry, setShowProductEnquiry] = useState(false);
   const [buyerAvatar, setBuyerAvatar] = useState<string | null>(null); // buyer avatar for when acting as vendor
   // Payment request sheet
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
@@ -1007,14 +1009,14 @@ socket.on('new_message', (newMsg: Message) => {
           activeOpacity={actingAsVendor ? 1 : 0.7}
           className="flex-row items-center gap-3 flex-1"
         >
-<View className="relative">
-             {!actingAsVendor && vendorLogoUrl ? (
-               <Image source={{ uri: vendorLogoUrl }} className="w-10 h-10 rounded-full border border-faint" />
-             ) : !actingAsVendor && vendorAvatarUrl ? (
-               <Image source={{ uri: vendorAvatarUrl }} className="w-10 h-10 rounded-full border border-faint" />
-             ) : actingAsVendor && buyerAvatar ? (
-               <Image source={{ uri: buyerAvatar }} className="w-10 h-10 rounded-full border border-faint" />
-             ) : (
+          <View className="relative">
+            {!actingAsVendor && vendorLogoUrl ? (
+              <Image source={{ uri: vendorLogoUrl }} className="w-10 h-10 rounded-full border border-faint" />
+            ) : !actingAsVendor && vendorAvatarUrl ? (
+              <Image source={{ uri: vendorAvatarUrl }} className="w-10 h-10 rounded-full border border-faint" />
+            ) : actingAsVendor && buyerAvatar ? (
+              <Image source={{ uri: buyerAvatar }} className="w-10 h-10 rounded-full border border-faint" />
+            ) : (
               <View className="w-10 h-10 rounded-full bg-dark-2 border border-faint items-center justify-center">
                 <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>
                   {vendorName.slice(0, 2).toUpperCase()}
@@ -1051,7 +1053,7 @@ socket.on('new_message', (newMsg: Message) => {
         )}
       </View>
 
-      {/* Messages */}
+{/* Messages */}
       {messages.length === 0 ? (
         <View className="flex-1 items-center justify-center gap-3 px-8">
           <View className="w-16 h-16 rounded-2xl bg-dark-2 border border-faint items-center justify-center">
@@ -1063,21 +1065,21 @@ socket.on('new_message', (newMsg: Message) => {
           </Text>
         </View>
       ) : (
-<FlatList
-           ref={flatListRef}
-           data={messages}
-           keyExtractor={m => m.id}
-           contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
-           inverted
-           onScroll={(event) => {
-             const offset = event.nativeEvent.contentOffset.y;
-             setShowScrollButton(offset > 200);
-           }}
-           onEndReached={loadOlderMessages}
-           onEndReachedThreshold={0.2}
-           maintainVisibleContentPosition={{
-             minIndexForVisible: 1,
-           }}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={m => m.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
+          inverted
+          onScroll={(event) => {
+            const offset = event.nativeEvent.contentOffset.y;
+            setShowScrollButton(offset > 200);
+          }}
+          onEndReached={loadOlderMessages}
+          onEndReachedThreshold={0.2}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 1,
+          }}
           ListFooterComponent={
             loadingMore ? (
               <ActivityIndicator size="small" color="#E8521A" />
@@ -1132,35 +1134,35 @@ socket.on('new_message', (newMsg: Message) => {
               </View>
             );
           }}
-/>
+        />
       )}
 
       {otherUserTyping && <TypingBubble />}
 
       {/* Edit banner */}
-       {editingMsg && (
-         <View className="flex-row items-center px-4 py-2 bg-dark-2 border-t border-faint gap-3">
-           <Ionicons name="create-outline" size={16} color="#E8521A" />
-           <Text className="flex-1 text-orange text-xs" style={{ fontFamily: 'SpaceGrotesk_500Medium' }} numberOfLines={1}>
-             Editing: {editingMsg.content}
-           </Text>
-           <TouchableOpacity onPress={cancelEdit}>
-             <Ionicons name="close-circle" size={18} color="#6B5E50" />
-           </TouchableOpacity>
-         </View>
-       )}
+      {editingMsg && (
+        <View className="flex-row items-center px-4 py-2 bg-dark-2 border-t border-faint gap-3">
+          <Ionicons name="create-outline" size={16} color="#E8521A" />
+          <Text className="flex-1 text-orange text-xs" style={{ fontFamily: 'SpaceGrotesk_500Medium' }} numberOfLines={1}>
+            Editing: {editingMsg.content}
+          </Text>
+          <TouchableOpacity onPress={cancelEdit}>
+            <Ionicons name="close-circle" size={18} color="#6B5E50" />
+          </TouchableOpacity>
+        </View>
+      )}
 
-       {/* Scroll to bottom button */}
-       {showScrollButton && (
-         <TouchableOpacity
-           onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })}
-           style={{ position: 'absolute', bottom: 175, right: 20, backgroundColor: '#E8521A', width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', elevation: 5 }}
-         >
-           <Ionicons name="arrow-down" size={20} color="white" />
-         </TouchableOpacity>
-       )}
+      {/* Scroll to bottom button */}
+      {showScrollButton && (
+        <TouchableOpacity
+          onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })}
+          style={{ position: 'absolute', bottom: 175, right: 20, backgroundColor: '#E8521A', width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', elevation: 5 }}
+        >
+          <Ionicons name="arrow-down" size={20} color="white" />
+        </TouchableOpacity>
+      )}
 
-       {/* Input bar */}
+      {/* Input bar */}
       <View className="flex-row items-end px-4 py-3 border-t border-faint bg-dark gap-2">
         <TouchableOpacity
           onPress={() => setShowAttachSheet(true)}

@@ -143,9 +143,9 @@ export default function SellerAnalyticsScreen() {
   const fetchAnalytics = async (period: typeof selectedPeriod) => {
     try {
       const res = await apiFetch(`/users/me/analytics?period=${period}`, { method: 'GET' });
-      setAnalytics(res.data ?? DUMMY);
+      setAnalytics(res.data ?? null);
     } catch {
-      setAnalytics(DUMMY); // graceful fallback
+      setAnalytics(null); // show no data state instead of dummy
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -154,8 +154,11 @@ export default function SellerAnalyticsScreen() {
 
   const fetchVendorId = async () => {
     try {
-      const profileRes = await apiFetch('/users/me', { method: 'GET' });
-      const hasVendor = !!profileRes.data?.is_vendor;
+      const [profileRes, vendorRes] = await Promise.all([
+        apiFetch('/users/me', { method: 'GET' }),
+        apiFetch('/vendors/me', { method: 'GET' }),
+      ]);
+      const hasVendor = !!profileRes.data?.vendor || !!vendorRes.data;
       setIsVendor(hasVendor);
       if (hasVendor) {
         await fetchAnalytics(selectedPeriod);
@@ -203,8 +206,8 @@ export default function SellerAnalyticsScreen() {
     return <NotVendorState />;
   }
 
-  const data = analytics ?? DUMMY;
-  const { summary, daily_data, top_products } = data;
+  const data = analytics;
+  const { summary, daily_data, top_products } = data || {};
 
   // ── Animated header opacity ────────────────────────────────────────────────
 
@@ -213,6 +216,8 @@ export default function SellerAnalyticsScreen() {
     outputRange: ['rgba(15,10,6,0)', 'rgba(15,10,6,1)'],
     extrapolate: 'clamp',
   });
+
+  const showEmptyState = !analytics || !summary || daily_data.length === 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
@@ -250,32 +255,34 @@ export default function SellerAnalyticsScreen() {
         contentContainerStyle={{ paddingBottom: 60 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E8521A" />}
       >
-        {/* Hero Revenue Card */}
-        <HeroCard summary={summary} period={selectedPeriod} />
+        {/* Hero Revenue Card - only show if we have data */}
+        {!showEmptyState && <HeroCard summary={summary} period={selectedPeriod} />}
 
         {/* Period Selector */}
         <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
-          <View style={{ flexDirection: 'row', backgroundColor: '#1A1208', borderRadius: 14, padding: 4, gap: 4 }}>
-            {PERIODS.map((p) => (
-              <TouchableOpacity
-                key={p.value}
-                onPress={() => handlePeriodChange(p.value)}
-                activeOpacity={0.75}
-                style={{
-                  flex: 1, paddingVertical: 10, borderRadius: 10,
-                  backgroundColor: selectedPeriod === p.value ? '#E8521A' : 'transparent',
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{
-                  fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
-                  color: selectedPeriod === p.value ? 'white' : '#9A8570',
-                }}>
-                  {p.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {!showEmptyState && (
+            <View style={{ flexDirection: 'row', backgroundColor: '#1A1208', borderRadius: 14, padding: 4, gap: 4 }}>
+              {PERIODS.map((p) => (
+                <TouchableOpacity
+                  key={p.value}
+                  onPress={() => handlePeriodChange(p.value)}
+                  activeOpacity={0.75}
+                  style={{
+                    flex: 1, paddingVertical: 10, borderRadius: 10,
+                    backgroundColor: selectedPeriod === p.value ? '#E8521A' : 'transparent',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{
+                    fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
+                    color: selectedPeriod === p.value ? 'white' : '#9A8570',
+                  }}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Tab Switcher */}
@@ -304,29 +311,35 @@ export default function SellerAnalyticsScreen() {
 
         {/* ── Overview Tab ──────────────────────────────────────────── */}
         {activeTab === 'overview' && (
-          <>
-            <StatGrid summary={summary} />
-            <RevenueChart data={daily_data} />
-            <OrdersBarChart data={daily_data} />
-            <ConversionFunnel summary={summary} />
-          </>
+          showEmptyState ? <EmptyState /> : (
+            <>
+              <StatGrid summary={summary!} />
+              <RevenueChart data={daily_data!} />
+              <OrdersBarChart data={daily_data!} />
+              <ConversionFunnel summary={summary!} />
+            </>
+          )
         )}
 
         {/* ── Products Tab ──────────────────────────────────────────── */}
         {activeTab === 'products' && (
-          <>
-            <TopProductsList products={top_products} />
-            <ProductPerformanceChart products={top_products} />
-          </>
+          showEmptyState ? <EmptyState /> : (
+            <>
+              <TopProductsList products={top_products || []} />
+              <ProductPerformanceChart products={top_products || []} />
+            </>
+          )
         )}
 
         {/* ── Insights Tab ──────────────────────────────────────────── */}
         {activeTab === 'insights' && (
-          <>
-            <PerformanceRing summary={summary} />
-            <InsightsCards summary={summary} />
-            <GoalsSection summary={summary} />
-          </>
+          showEmptyState ? <EmptyState /> : (
+            <>
+              <PerformanceRing summary={summary!} />
+              <InsightsCards summary={summary!} />
+              <GoalsSection summary={summary!} />
+            </>
+          )
         )}
       </Animated.ScrollView>
     </View>
@@ -907,6 +920,18 @@ function EmptyProducts() {
       >
         <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Add Products</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+function EmptyState() {
+  return (
+    <View style={{ marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
+      <Ionicons name="analytics-outline" size={32} color="#3D3026" />
+      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No analytics data yet</Text>
+      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
+        Check back later once you have activity
+      </Text>
     </View>
   );
 }

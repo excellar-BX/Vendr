@@ -314,21 +314,8 @@ export async function getVendorAnalytics(vendorId: string, period: 'day' | 'week
     });
   }
 
-  // If no top products from analytics, get all products
+  // If no top products from analytics, only return products if there are actual orders
   if (topProducts.length === 0) {
-    const allProducts = await prisma.product.findMany({
-      where: {
-        vendor_id: vendorId,
-      },
-      select: {
-        id: true,
-        name: true,
-        price: true,
-        image_url: true,
-      },
-    });
-
-    // Get orders for this vendor to calculate product metrics
     const orders = await prisma.order.findMany({
       where: {
         vendor_id: vendorId,
@@ -338,19 +325,34 @@ export async function getVendorAnalytics(vendorId: string, period: 'day' | 'week
       },
     });
 
-    const totalRevenue = orders.reduce((sum, order) => sum + order.amount, 0);
-    const ordersCount = orders.length;
+    // Only return products if there are actual orders with data
+    if (orders.length > 0) {
+      const allProducts = await prisma.product.findMany({
+        where: {
+          vendor_id: vendorId,
+        },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          image_url: true,
+        },
+      });
 
-    topProducts = allProducts.map(product => ({
-      product_id: product.id,
-      product_name: product.name,
-      product_price: Number(product.price),
-      product_image: product.image_url,
-      views: 0,
-      orders_count: allProducts.length > 0 ? Math.floor(ordersCount / allProducts.length) : 0,
-      revenue: allProducts.length > 0 ? totalRevenue / allProducts.length : 0,
-      conversion_rate: 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+      const totalRevenue = orders.reduce((sum, order) => sum + order.amount, 0);
+      const ordersCount = orders.length;
+
+      topProducts = allProducts.map(product => ({
+        product_id: product.id,
+        product_name: product.name,
+        product_price: Number(product.price),
+        product_image: product.image_url,
+        views: 0,
+        orders_count: allProducts.length > 0 ? Math.floor(ordersCount / allProducts.length) : 0,
+        revenue: allProducts.length > 0 ? totalRevenue / allProducts.length : 0,
+        conversion_rate: 0,
+      })).sort((a, b) => b.revenue - a.revenue);
+    }
   }
 
   // Format daily data dates to short day names (Mon, Tue, etc.)
@@ -888,13 +890,8 @@ export async function getUserAnalytics(userId: string, period: 'day' | 'week' | 
     });
   }
 
-  // If no top products from analytics, get all products
+  // If no top products from analytics, only return products if there are actual orders
   if (topProducts.length === 0) {
-    const allProducts = await prisma.product.findMany({
-      where: { vendor_id: { in: vendorIds } },
-      select: { id: true, name: true, price: true, image_url: true },
-    });
-
     const orders = await prisma.order.findMany({
       where: {
         vendor_id: { in: vendorIds },
@@ -902,19 +899,27 @@ export async function getUserAnalytics(userId: string, period: 'day' | 'week' | 
       },
     });
 
-    const totalRevenue = orders.reduce((sum, order) => sum + order.amount, 0);
-    const ordersCount = orders.length;
+    // Only return products if there are actual orders with data
+    if (orders.length > 0) {
+      const allProducts = await prisma.product.findMany({
+        where: { vendor_id: { in: vendorIds } },
+        select: { id: true, name: true, price: true, image_url: true },
+      });
 
-    topProducts = allProducts.map(product => ({
-      product_id: product.id,
-      product_name: product.name,
-      product_price: Number(product.price),
-      product_image: product.image_url,
-      views: 0,
-      orders_count: allProducts.length > 0 ? Math.floor(ordersCount / allProducts.length) : 0,
-      revenue: allProducts.length > 0 ? totalRevenue / allProducts.length : 0,
-      conversion_rate: 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+      const totalRevenue = orders.reduce((sum, order) => sum + order.amount, 0);
+      const ordersCount = orders.length;
+
+      topProducts = allProducts.map(product => ({
+        product_id: product.id,
+        product_name: product.name,
+        product_price: Number(product.price),
+        product_image: product.image_url,
+        views: 0,
+        orders_count: allProducts.length > 0 ? Math.floor(ordersCount / allProducts.length) : 0,
+        revenue: allProducts.length > 0 ? totalRevenue / allProducts.length : 0,
+        conversion_rate: 0,
+      })).sort((a, b) => b.revenue - a.revenue);
+    }
   }
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
