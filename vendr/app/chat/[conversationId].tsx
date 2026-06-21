@@ -1053,7 +1053,7 @@ socket.on('new_message', (newMsg: Message) => {
         )}
       </View>
 
-{/* Messages */}
+      {/* Messages */}
       {messages.length === 0 ? (
         <View className="flex-1 items-center justify-center gap-3 px-8">
           <View className="w-16 h-16 rounded-2xl bg-dark-2 border border-faint items-center justify-center">

@@ -59,42 +59,6 @@ interface AnalyticsData {
   period: 'day' | 'week' | 'month' | 'all';
 }
 
-// ─── Dummy Fallback ───────────────────────────────────────────────────────────
-
-const DUMMY: AnalyticsData = {
-  period: 'week',
-  summary: {
-    profile_views: 3840,
-    product_views: 12490,
-    inquiries: 284,
-    revenue: 1845600,
-    orders_count: 127,
-    unique_visitors: 2910,
-    avg_order_value: 14531,       // ← make sure this exists
-    conversion_rate: 4.36,        // ← make sure this exists
-    repeat_customers: 38,         // ← make sure this exists
-    revenue_growth: 18.4,         // ← make sure this exists
-    orders_growth: 12.1,          // ← make sure this exists
-    visitors_growth: -3.2,        // ← make sure this exists
-  },
-  daily_data: [
-    { date: 'Mon', profile_views: 480, product_views: 1620, inquiries: 32, revenue: 210000, orders_count: 14 },
-    { date: 'Tue', profile_views: 520, product_views: 1890, inquiries: 41, revenue: 265000, orders_count: 18 },
-    { date: 'Wed', profile_views: 390, product_views: 1340, inquiries: 28, revenue: 180000, orders_count: 12 },
-    { date: 'Thu', profile_views: 610, product_views: 2100, inquiries: 55, revenue: 342000, orders_count: 23 },
-    { date: 'Fri', profile_views: 740, product_views: 2480, inquiries: 67, revenue: 415000, orders_count: 28 },
-    { date: 'Sat', profile_views: 680, product_views: 2260, inquiries: 38, revenue: 298000, orders_count: 21 },
-    { date: 'Sun', profile_views: 420, product_views: 800,  inquiries: 23, revenue: 135600, orders_count: 11 },
-  ],
-  top_products: [
-    { product_id: '1', product_name: 'Ankara Print Dress',    product_price: 18500, views: 1840, orders_count: 42, revenue: 777000, conversion_rate: 2.28 },
-    { product_id: '2', product_name: 'Hand-Woven Basket Set', product_price: 12000, views: 1240, orders_count: 31, revenue: 372000, conversion_rate: 2.50 },
-    { product_id: '3', product_name: 'Leather Crossbody Bag', product_price: 24500, views: 980,  orders_count: 24, revenue: 588000, conversion_rate: 2.45 },
-    { product_id: '4', product_name: 'Beaded Necklace Set',   product_price: 8750,  views: 760,  orders_count: 18, revenue: 157500, conversion_rate: 2.37 },
-    { product_id: '5', product_name: 'Kente Throw Pillow',    product_price: 6500,  views: 540,  orders_count: 12, revenue: 78000,  conversion_rate: 2.22 },
-  ],
-};
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatAmount(n: number | undefined | null) {
@@ -202,22 +166,23 @@ export default function SellerAnalyticsScreen() {
     );
   }
 
-  if (!isVendor) {
+if (!isVendor) {
     return <NotVendorState />;
   }
 
   const data = analytics;
-  const { summary, daily_data, top_products } = data || {};
+  const summary = data?.summary;
+  const daily_data = data?.daily_data ?? [];
+  const top_products = data?.top_products ?? [];
+
+  const showEmptyState = !analytics || !summary || daily_data.length === 0;
 
   // ── Animated header opacity ────────────────────────────────────────────────
-
   const headerBg = scrollY.interpolate({
     inputRange: [0, 80],
     outputRange: ['rgba(15,10,6,0)', 'rgba(15,10,6,1)'],
     extrapolate: 'clamp',
   });
-
-  const showEmptyState = !analytics || !summary || daily_data.length === 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
@@ -256,7 +221,7 @@ export default function SellerAnalyticsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E8521A" />}
       >
         {/* Hero Revenue Card - only show if we have data */}
-        {!showEmptyState && <HeroCard summary={summary} period={selectedPeriod} />}
+        {!showEmptyState && summary && <HeroCard summary={summary} period={selectedPeriod} />}
 
         {/* Period Selector */}
         <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
@@ -313,10 +278,10 @@ export default function SellerAnalyticsScreen() {
         {activeTab === 'overview' && (
           showEmptyState ? <EmptyState /> : (
             <>
-              <StatGrid summary={summary!} />
-              <RevenueChart data={daily_data!} />
-              <OrdersBarChart data={daily_data!} />
-              <ConversionFunnel summary={summary!} />
+              <StatGrid summary={summary} />
+              <RevenueChart data={daily_data} />
+              <OrdersBarChart data={daily_data} />
+              <ConversionFunnel summary={summary} />
             </>
           )
         )}
@@ -325,8 +290,8 @@ export default function SellerAnalyticsScreen() {
         {activeTab === 'products' && (
           showEmptyState ? <EmptyState /> : (
             <>
-              <TopProductsList products={top_products || []} />
-              <ProductPerformanceChart products={top_products || []} />
+              <TopProductsList products={top_products} />
+              <ProductPerformanceChart products={top_products} />
             </>
           )
         )}
@@ -335,9 +300,9 @@ export default function SellerAnalyticsScreen() {
         {activeTab === 'insights' && (
           showEmptyState ? <EmptyState /> : (
             <>
-              <PerformanceRing summary={summary!} />
-              <InsightsCards summary={summary!} />
-              <GoalsSection summary={summary!} />
+              <PerformanceRing summary={summary} />
+              <InsightsCards summary={summary} />
+              <GoalsSection summary={summary} />
             </>
           )
         )}
@@ -444,7 +409,8 @@ function NotVendorState() {
 }
 // ─── Hero Card ────────────────────────────────────────────────────────────────
 
-function HeroCard({ summary, period }: { summary: AnalyticsSummary; period: string }) {
+function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; period: string }) {
+  if (!summary) return null;
   const growth = summary.revenue_growth ?? 0;
   const isPositive = growth >= 0;
 
@@ -910,8 +876,8 @@ function EmptyProducts() {
   return (
     <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
       <Ionicons name="cube-outline" size={32} color="#3D3026" />
-      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No product data yet</Text>
-      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
+      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No product data yet, Check back later</Text>
+      {/* <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
         Add products to start tracking performance
       </Text>
       <TouchableOpacity
@@ -919,7 +885,7 @@ function EmptyProducts() {
         style={{ backgroundColor: 'rgba(232,82,26,0.15)', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 }}
       >
         <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Add Products</Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
     </View>
   );
 }
