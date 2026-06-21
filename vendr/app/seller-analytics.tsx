@@ -876,7 +876,7 @@ function EmptyProducts() {
   return (
     <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
       <Ionicons name="cube-outline" size={32} color="#3D3026" />
-      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No product data yet, Check back later</Text>
+      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', textAlign: 'center', fontSize: 14, color: '#6B5E50' }}>No product data yet, Check back later</Text>
       {/* <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
         Add products to start tracking performance
       </Text>
