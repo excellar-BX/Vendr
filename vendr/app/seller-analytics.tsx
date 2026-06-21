@@ -140,9 +140,9 @@ export default function SellerAnalyticsScreen() {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
-  const fetchAnalytics = async (vid: string, period: typeof selectedPeriod) => {
+  const fetchAnalytics = async (period: typeof selectedPeriod) => {
     try {
-      const res = await apiFetch(`/vendors/${vid}/analytics?period=${period}`, { method: 'GET' });
+      const res = await apiFetch(`/users/me/analytics?period=${period}`, { method: 'GET' });
       setAnalytics(res.data ?? DUMMY);
     } catch {
       setAnalytics(DUMMY); // graceful fallback
@@ -154,16 +154,11 @@ export default function SellerAnalyticsScreen() {
 
   const fetchVendorId = async () => {
     try {
-      const [profileRes, vendorRes] = await Promise.all([
-        apiFetch('/users/me', { method: 'GET' }),
-        apiFetch('/vendors/me', { method: 'GET' }),
-      ]);
-      const hasVendor = !!profileRes.data?.vendor;
+      const profileRes = await apiFetch('/users/me', { method: 'GET' });
+      const hasVendor = !!profileRes.data?.is_vendor;
       setIsVendor(hasVendor);
-      if (hasVendor && vendorRes.data?.id) {
-        const vid = vendorRes.data.id;
-        setVendorId(vid);
-        await fetchAnalytics(vid, selectedPeriod);
+      if (hasVendor) {
+        await fetchAnalytics(selectedPeriod);
       } else {
         setLoading(false);
       }
@@ -180,16 +175,15 @@ export default function SellerAnalyticsScreen() {
   }, [user?.id]));
 
   const onRefresh = async () => {
-    if (!vendorId) return;
     setRefreshing(true);
-    await fetchAnalytics(vendorId, selectedPeriod);
+    await fetchAnalytics(selectedPeriod);
   };
 
   const handlePeriodChange = async (period: typeof selectedPeriod) => {
-    if (!vendorId || period === selectedPeriod) return;
+    if (period === selectedPeriod) return;
     setSelectedPeriod(period);
     setLoading(true);
-    await fetchAnalytics(vendorId, period);
+    await fetchAnalytics(period);
   };
 
   // ── Guards ─────────────────────────────────────────────────────────────────
@@ -476,18 +470,7 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary; period: stri
             backgroundColor: 'rgba(232,82,26,0.08)',
           }}
         />
-        <View
-          style={{
-            position: 'absolute',
-            bottom: -30,
-            left: -20,
-            width: 120,
-            height: 120,
-            borderRadius: 60,
-            backgroundColor: 'rgba(255,255,255,0.02)',
-          }}
-        />
-
+       
         <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570', marginBottom: 6 }}>
           Total Revenue
         </Text>

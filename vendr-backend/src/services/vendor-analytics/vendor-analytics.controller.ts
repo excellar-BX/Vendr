@@ -186,3 +186,34 @@ export async function getProductAnalyticsController(
       .send({ success: false, message: err.message ?? 'Internal server error' })
   }
 }
+
+/**
+ * Get analytics for current user across all their vendors
+ */
+export async function getUserAnalyticsController(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const { period } = request.query as { period?: 'day' | 'week' | 'month' | 'all' }
+    const userId = request.user.id
+
+    const parsed = getAnalyticsSchema.safeParse({ period: period || 'all' })
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send({ success: false, errors: parsed.error.flatten().fieldErrors })
+    }
+
+    const analytics = await VendorAnalyticsService.getUserAnalytics(
+      userId,
+      parsed.data.period
+    )
+    return reply.status(200).send({ success: true, data: analytics })
+  } catch (err: any) {
+    request.log.error(err, 'getUserAnalyticsController error')
+    return reply
+      .status(err.statusCode ?? 500)
+      .send({ success: false, message: err.message ?? 'Internal server error' })
+  }
+}

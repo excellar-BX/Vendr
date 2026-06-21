@@ -385,6 +385,7 @@ export default function ChatScreen() {
   // Payment request sheet
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [payDescription, setPayDescription] = useState('');
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
@@ -508,17 +509,24 @@ export default function ChatScreen() {
         });
 
         // Listen for new_message event (real-time message delivery)
-        socket.on('new_message', (newMsg: Message) => {
-          if (newMsg.conversation_id === cid) {
-            setMessages(prev => {
-              // Check if message already exists (avoid duplicates)
-              if (prev.some(m => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-          }
-        });
-      }
+socket.on('new_message', (newMsg: Message) => {
+           if (newMsg.conversation_id === cid) {
+             setMessages(prev => {
+               // Check if message already exists (avoid duplicates)
+               if (prev.some(m => m.id === newMsg.id)) return prev;
+               return [...prev, newMsg];
+             });
+             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+           }
+         });
+
+         socket.on('user_typing', (data: { conversationId: string; userId: string }) => {
+           if (data.conversationId === cid) {
+             setOtherUserTyping(true);
+             setTimeout(() => setOtherUserTyping(false), 3000);
+           }
+         });
+       }
 
       // Get other user's presence (initial fetch - includes last_seen)
       const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
@@ -1124,10 +1132,12 @@ export default function ChatScreen() {
               </View>
             );
           }}
-        />
+/>
       )}
 
-{/* Edit banner */}
+      {otherUserTyping && <TypingBubble />}
+
+      {/* Edit banner */}
        {editingMsg && (
          <View className="flex-row items-center px-4 py-2 bg-dark-2 border-t border-faint gap-3">
            <Ionicons name="create-outline" size={16} color="#E8521A" />

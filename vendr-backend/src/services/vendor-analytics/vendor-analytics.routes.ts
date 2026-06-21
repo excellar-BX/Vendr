@@ -7,9 +7,17 @@ import {
   recordInquiryController,
   recordOrderController,
   getProductAnalyticsController,
+  getUserAnalyticsController,
 } from './vendor-analytics.controller'
 
 export async function vendorAnalyticsRoutes(app: FastifyInstance) {
+  // Protected: Get analytics for current user across all their vendors
+  app.get(
+    '/users/me/analytics',
+    { preHandler: authenticate },
+    getUserAnalyticsController
+  )
+
   // Protected: Get analytics for a vendor (vendor only)
   app.get(
     '/vendors/:vendorId/analytics',
