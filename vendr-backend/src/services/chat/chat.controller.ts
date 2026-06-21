@@ -269,25 +269,6 @@ export async function getPresenceController(request: FastifyRequest, reply: Fast
   }
 }
 
-export async function getPresenceController(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { user_ids } = request.query as { user_ids?: string }
-    const userIds = user_ids?.split(',').filter(Boolean) || []
-
-    const presence = await ChatService.getUserPresence(userIds)
-
-    return reply.status(200).send({
-      success: true,
-      data: presence,
-    })
-  } catch (err: any) {
-    return reply.status(err.statusCode ?? 500).send({
-      success: false,
-      message: err.message
-    })
-  }
-}
-
 export async function createPaymentRequestController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = request.user.id

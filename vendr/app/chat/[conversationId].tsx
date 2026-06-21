@@ -362,6 +362,8 @@ export default function ChatScreen() {
   const [vendorUserId, setVendorUserId] = useState<string>(''); // vendors.user_id for wallet ops
   const [vendorName, setVendorName] = useState('');
   const [vendorActualId, setVendorActualId] = useState('');
+  const [vendorLogoUrl, setVendorLogoUrl] = useState<string | null>(null);
+  const [vendorAvatarUrl, setVendorAvatarUrl] = useState<string | null>(null);
   const [isVerified, setIsVerified] = useState(false);
   const [otherOnline, setOtherOnline] = useState(false);
   const [lastSeen, setLastSeen] = useState<string | null>(null);
@@ -379,7 +381,7 @@ export default function ChatScreen() {
   const [showActions, setShowActions] = useState(false);
   const [selectedMsg, setSelectedMsg] = useState<Message | null>(null);
   const [editingMsg, setEditingMsg] = useState<Message | null>(null);
-  const [showProductEnquiry, setShowProductEnquiry] = useState(false);
+  const [buyerAvatar, setBuyerAvatar] = useState<string | null>(null); // buyer avatar for when acting as vendor
   // Payment request sheet
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -455,9 +457,12 @@ export default function ChatScreen() {
 
       if (actingAsVendor) {
         setVendorName(buyer?.name ?? 'Unknown Buyer');
+        setBuyerAvatar(buyer?.avatar_url ?? null);
       } else {
         setVendorName(vendor?.business_name ?? 'Vendor');
         setVendorActualId(vendor?.id ?? '');
+        setVendorLogoUrl(vendor?.logo_url ?? null);
+        setVendorAvatarUrl(vendor?.avatar_url ?? null);
         setIsVerified(vendor?.is_verified ?? false);
       }
 
@@ -994,14 +999,14 @@ export default function ChatScreen() {
           activeOpacity={actingAsVendor ? 1 : 0.7}
           className="flex-row items-center gap-3 flex-1"
         >
-          <View className="relative">
-            {!actingAsVendor && vendor?.logo_url ? (
-              <Image source={{ uri: vendor.logo_url }} className="w-10 h-10 rounded-full border border-faint" />
-            ) : !actingAsVendor && vendor?.avatar_url ? (
-              <Image source={{ uri: vendor.avatar_url }} className="w-10 h-10 rounded-full border border-faint" />
-            ) : actingAsVendor && buyer?.avatar_url ? (
-              <Image source={{ uri: buyer.avatar_url }} className="w-10 h-10 rounded-full border border-faint" />
-            ) : (
+<View className="relative">
+             {!actingAsVendor && vendorLogoUrl ? (
+               <Image source={{ uri: vendorLogoUrl }} className="w-10 h-10 rounded-full border border-faint" />
+             ) : !actingAsVendor && vendorAvatarUrl ? (
+               <Image source={{ uri: vendorAvatarUrl }} className="w-10 h-10 rounded-full border border-faint" />
+             ) : actingAsVendor && buyerAvatar ? (
+               <Image source={{ uri: buyerAvatar }} className="w-10 h-10 rounded-full border border-faint" />
+             ) : (
               <View className="w-10 h-10 rounded-full bg-dark-2 border border-faint items-center justify-center">
                 <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>
                   {vendorName.slice(0, 2).toUpperCase()}
