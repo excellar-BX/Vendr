@@ -32,6 +32,12 @@ interface AnalyticsSummary {
   visitors_growth: number;
 }
 
+interface Goals {
+  monthly_revenue_goal: number;
+  monthly_orders_goal: number;
+  monthly_visitors_goal: number;
+}
+
 interface DailyData {
   date: string;
   profile_views: number;
@@ -57,6 +63,7 @@ interface AnalyticsData {
   daily_data: DailyData[];
   top_products: TopProduct[];
   period: 'day' | 'week' | 'month' | 'all';
+  goals?: Goals;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -174,6 +181,7 @@ if (!isVendor) {
   const summary = data?.summary;
   const daily_data = data?.daily_data ?? [];
   const top_products = data?.top_products ?? [];
+  const goals = data?.goals;
 
   const showEmptyState = !analytics || !summary || daily_data.length === 0;
 
@@ -302,7 +310,7 @@ if (!isVendor) {
             <>
               <PerformanceRing summary={summary} />
               <InsightsCards summary={summary} />
-              <GoalsSection summary={summary} />
+              <GoalsSection summary={summary} goals={goals} />
             </>
           )
         )}
@@ -824,18 +832,24 @@ function InsightsCards({ summary }: { summary: AnalyticsSummary }) {
 
 // ─── Goals Section ────────────────────────────────────────────────────────────
 
-function GoalsSection({ summary }: { summary: AnalyticsSummary }) {
-  const goals = [
-    { label: 'Revenue Goal', current: summary.revenue, target: 2_000_000, color: '#2D8653', format: formatCompact },
-    { label: 'Orders Goal', current: summary.orders_count, target: 150, color: '#E8521A', format: formatNumber },
-    { label: 'Visitor Goal', current: summary.unique_visitors, target: 5_000, color: '#5599E8', format: formatNumber },
+function GoalsSection({ summary, goals }: { summary: AnalyticsSummary; goals?: Goals }) {
+  const goalTargets = goals || {
+    monthly_revenue_goal: 2_000_000,
+    monthly_orders_goal: 150,
+    monthly_visitors_goal: 5_000,
+  };
+
+  const goalItems = [
+    { label: 'Revenue Goal', current: summary.revenue, target: goalTargets.monthly_revenue_goal, color: '#2D8653', format: formatCompact },
+    { label: 'Orders Goal', current: summary.orders_count, target: goalTargets.monthly_orders_goal, color: '#E8521A', format: formatNumber },
+    { label: 'Visitor Goal', current: summary.unique_visitors, target: goalTargets.monthly_visitors_goal, color: '#5599E8', format: formatNumber },
   ];
 
   return (
     <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
       <SectionHeader title="Monthly Goals" subtitle="Set in store settings" />
       <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 20, gap: 18 }}>
-        {goals.map((g) => {
+        {goalItems.map((g) => {
           const pct = Math.min((g.current / g.target) * 100, 100);
           return (
             <View key={g.label}>

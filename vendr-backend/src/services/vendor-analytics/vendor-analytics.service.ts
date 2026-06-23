@@ -366,11 +366,32 @@ export async function getVendorAnalytics(vendorId: string, period: 'day' | 'week
     orders_count: d.orders_count,
   }));
 
+  // Get vendor goals
+  const vendor = await prisma.vendor.findFirst({
+    where: { id: vendorId },
+    select: {
+      monthly_revenue_goal: true,
+      monthly_orders_goal: true,
+      monthly_visitors_goal: true,
+    },
+  });
+
+  const goals = vendor ? {
+    monthly_revenue_goal: vendor.monthly_revenue_goal,
+    monthly_orders_goal: vendor.monthly_orders_goal,
+    monthly_visitors_goal: vendor.monthly_visitors_goal,
+  } : {
+    monthly_revenue_goal: 2000000,
+    monthly_orders_goal: 150,
+    monthly_visitors_goal: 5000,
+  };
+
   return {
     summary,
     daily_data: formattedDailyData,
     top_products: topProducts,
     period,
+    goals,
   };
 }
 
@@ -932,11 +953,32 @@ export async function getUserAnalytics(userId: string, period: 'day' | 'week' | 
     orders_count: d.orders_count,
   }));
 
+  // Get vendor goals (aggregate from first vendor or use defaults)
+  const vendor = await prisma.vendor.findFirst({
+    where: { id: vendorIds[0] },
+    select: {
+      monthly_revenue_goal: true,
+      monthly_orders_goal: true,
+      monthly_visitors_goal: true,
+    },
+  });
+
+  const goals = vendor ? {
+    monthly_revenue_goal: vendor.monthly_revenue_goal,
+    monthly_orders_goal: vendor.monthly_orders_goal,
+    monthly_visitors_goal: vendor.monthly_visitors_goal,
+  } : {
+    monthly_revenue_goal: 2000000,
+    monthly_orders_goal: 150,
+    monthly_visitors_goal: 5000,
+  };
+
   return {
     summary,
     daily_data: formattedDailyData,
     top_products: topProducts,
     period,
+    goals,
   };
 }
 

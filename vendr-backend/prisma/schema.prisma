@@ -138,6 +138,9 @@ model Vendor {
   is_fraud_flagged   Boolean  @default(false)
   fraud_flag_reason  String?
   fraud_flagged_at   DateTime?
+  monthly_revenue_goal Float   @default(2000000)
+  monthly_orders_goal Int      @default(150)
+  monthly_visitors_goal Int    @default(5000)
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 
@@ -381,21 +384,41 @@ model Conversation {
 }
 
 model Message {
-  id             String   @id @default(uuid())
+  id              String   @id @default(uuid())
   conversation_id String
-  sender_id      String
-  content        String?
-  image_url      String?
-  type           String   @default("text") // text, image, payment_request, system
-  is_read        Boolean  @default(false)
-  delivered      Boolean  @default(false)
-  edited         Boolean  @default(false)
-  created_at     DateTime @default(now())
+  sender_id       String
+  content         String?
+  image_url       String?
+  type            String   @default("text") // text, image, payment_request, system
+  is_read         Boolean  @default(false)
+  delivered       Boolean  @default(false)
+  edited          Boolean  @default(false)
+  deleted         Boolean  @default(false)  // soft delete instead of hard delete
+  deleted_at      DateTime?                 // when was it deleted
+  reply_to_id     String?                   // for reply feature
+  created_at      DateTime @default(now())
 
-  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
-  sender       User         @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+  conversation Conversation   @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender       User           @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+  reply_to     Message?       @relation("MessageReplies", fields: [reply_to_id], references: [id], onDelete: SetNull)
+  replies      Message[]      @relation("MessageReplies")
+  reactions    MessageReaction[]
 
   @@map("messages")
+}
+
+model MessageReaction {
+  id         String   @id @default(uuid())
+  message_id String
+  user_id    String
+  emoji      String   // "❤️", "😂", "👍", "🔥", "😮", "😢"
+  created_at DateTime @default(now())
+
+  message Message @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([message_id, user_id])
+  @@map("message_reactions")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
