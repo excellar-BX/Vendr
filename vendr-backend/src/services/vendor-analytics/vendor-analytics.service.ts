@@ -367,7 +367,7 @@ export async function getVendorAnalytics(vendorId: string, period: 'day' | 'week
   }));
 
   // Get vendor goals
-  const vendor = await prisma.vendor.findFirst({
+  const vendorWithGoals = await prisma.vendor.findFirst({
     where: { id: vendorId },
     select: {
       monthly_revenue_goal: true,
@@ -376,10 +376,10 @@ export async function getVendorAnalytics(vendorId: string, period: 'day' | 'week
     },
   });
 
-  const goals = vendor ? {
-    monthly_revenue_goal: vendor.monthly_revenue_goal,
-    monthly_orders_goal: vendor.monthly_orders_goal,
-    monthly_visitors_goal: vendor.monthly_visitors_goal,
+  const goals = vendorWithGoals ? {
+    monthly_revenue_goal: vendorWithGoals.monthly_revenue_goal,
+    monthly_orders_goal: vendorWithGoals.monthly_orders_goal,
+    monthly_visitors_goal: vendorWithGoals.monthly_visitors_goal,
   } : {
     monthly_revenue_goal: 2000000,
     monthly_orders_goal: 150,
