@@ -6,8 +6,10 @@ import type {
   ConversationOutput,
   SendMessageInput,
   MessageOutput,
+  ReactionOutput,
   ConversationListItem,
   EnrichedConversation,
+  AddReactionInput,
 } from './chat.schema'
 
 // Socket.io import for real-time events
@@ -372,6 +374,27 @@ export async function getConversationMessages(
     where,
     orderBy: { created_at: 'asc' },
     take: limit ?? 100,
+    include: {
+      reply_to: {
+        select: {
+          id: true,
+          sender_id: true,
+          content: true,
+          image_url: true,
+          type: true,
+          deleted: true,
+        }
+      },
+      reactions: {
+        select: {
+          id: true,
+          message_id: true,
+          user_id: true,
+          emoji: true,
+          created_at: true,
+        }
+      }
+    }
   })
 
   // Fetch payment request details for payment_request type messages
@@ -404,14 +427,32 @@ export async function getConversationMessages(
     id: m.id,
     conversation_id: m.conversation_id,
     sender_id: m.sender_id,
-    content: m.content,
-    image_url: m.image_url,
+    content: m.deleted ? null : m.content,
+    image_url: m.deleted ? null : m.image_url,
     type: m.type as 'text' | 'image' | 'payment_request',
     is_read: m.is_read,
     delivered: m.delivered,
     edited: m.edited,
+    deleted: m.deleted,
+    reply_to_id: m.reply_to_id ?? null,
+    reply_to: m.reply_to ? {
+      id: m.reply_to.id,
+      sender_id: m.reply_to.sender_id,
+      content: m.reply_to.deleted ? null : m.reply_to.content,
+      image_url: m.reply_to.deleted ? null : m.reply_to.image_url,
+      type: m.reply_to.type,
+    } : null,
+    reactions: m.reactions.map(r => ({
+      id: r.id,
+      message_id: r.message_id,
+      user_id: r.user_id,
+      emoji: r.emoji,
+      created_at: r.created_at.toISOString(),
+    })),
     created_at: m.created_at.toISOString(),
-    payment_request: m.type === 'payment_request' && m.content ? paymentRequestsMap[m.content] : null,
+    payment_request: m.type === 'payment_request' && m.content
+      ? paymentRequestsMap[m.content]
+      : null,
   }))
 }
 
@@ -423,7 +464,7 @@ export async function sendMessage(
   senderId: string,
   input: SendMessageInput
 ): Promise<MessageOutput> {
-  const { content, type, image_url, payment_request_id } = input
+  const { content, type, image_url, payment_request_id, reply_to_id } = input
 
   // Verify conversation exists and user is participant
   const conv = await prisma.conversation.findUnique({
@@ -451,29 +492,56 @@ export async function sendMessage(
     throw { statusCode: 403, message: 'Cannot message in your own store' }
   }
 
+  if (reply_to_id) {
+    const replyMsg = await prisma.message.findUnique({
+      where: { id: reply_to_id },
+      select: { conversation_id: true }
+    })
+    if (!replyMsg || replyMsg.conversation_id !== conversationId) {
+      throw { statusCode: 400, message: 'Invalid reply target' }
+    }
+  }
+
   // Create message
   const message = await prisma.message.create({
     data: {
       conversation_id: conversationId,
       sender_id: senderId,
-      content: type === 'image' ? null : content,
+      content: type === 'image' ? null : (content ?? null),
       image_url: type === 'image' ? image_url : null,
       type,
       is_read: false,
       delivered: false,
       edited: false,
+      deleted: false,
+      reply_to_id: reply_to_id ?? null,
+    },
+    include: {
+      reply_to: {
+        select: {
+          id: true,
+          sender_id: true,
+          content: true,
+          image_url: true,
+          type: true,
+          deleted: true,
+        }
+      },
+      reactions: true,
     }
   })
 
   // Update conversation last message
-  const lastMessage = type === 'payment_request' && payment_request_id
-    ? `Payment request`
-    : (type === 'image' ? 'Image' : content)
+  const lastMessageText = type === 'payment_request'
+    ? 'Payment request'
+    : type === 'image'
+    ? 'Photo'
+    : (content ?? '')
 
   await prisma.conversation.update({
     where: { id: conversationId },
     data: {
-      last_message: lastMessage,
+      last_message: lastMessageText,
       last_message_at: new Date(),
     }
   })
@@ -487,7 +555,7 @@ export async function sendMessage(
     }
   })
 
-  const messageOutput = {
+  const messageOutput: MessageOutput = {
     id: message.id,
     conversation_id: message.conversation_id,
     sender_id: message.sender_id,
@@ -497,7 +565,24 @@ export async function sendMessage(
     is_read: message.is_read,
     delivered: message.delivered,
     edited: message.edited,
+    deleted: message.deleted,
+    reply_to_id: message.reply_to_id ?? null,
+    reply_to: message.reply_to ? {
+      id: message.reply_to.id,
+      sender_id: message.reply_to.sender_id,
+      content: message.reply_to.deleted ? null : message.reply_to.content,
+      image_url: message.reply_to.deleted ? null : message.reply_to.image_url,
+      type: message.reply_to.type,
+    } : null,
+    reactions: message.reactions.map(r => ({
+      id: r.id,
+      message_id: r.message_id,
+      user_id: r.user_id,
+      emoji: r.emoji,
+      created_at: r.created_at.toISOString(),
+    })),
     created_at: message.created_at.toISOString(),
+    payment_request: null,
   }
 
   // Emit Socket.io event for new message (non-blocking)
@@ -524,7 +609,9 @@ export async function sendMessage(
       userId: otherUserId,
       type: 'new_message',
       title: 'New message',
-      body: content || 'Sent you a message',
+      body: reply_to_id
+        ? '↩️ Replied to your message'
+        : (content || (type === 'image' ? 'Sent a photo' : 'Sent you a message')),
       data: { conversation_id: conversationId, message_id: messageOutput.id },
     })
   } catch (notifError) {
@@ -1013,7 +1100,49 @@ export async function updateMessage(
   const updated = await prisma.message.update({
     where: { id: messageId },
     data: { content, edited: true },
+    include: {
+      reply_to: {
+        select: {
+          id: true,
+          sender_id: true,
+          content: true,
+          image_url: true,
+          type: true,
+          deleted: true,
+        }
+      },
+      reactions: {
+        select: {
+          id: true,
+          message_id: true,
+          user_id: true,
+          emoji: true,
+          created_at: true,
+        }
+      }
+    }
   })
+
+  // Fetch any payment request data if needed
+  let paymentRequestData = null
+  if (updated.type === 'payment_request' && updated.content) {
+    const pr = await prisma.paymentRequest.findUnique({
+      where: { id: updated.content },
+    })
+    if (pr) {
+      paymentRequestData = {
+        id: pr.id,
+        vendor_id: pr.vendor_id,
+        buyer_id: pr.buyer_id,
+        conversation_id: pr.conversation_id,
+        amount: pr.amount,
+        description: pr.description,
+        status: pr.status,
+        paid_at: pr.paid_at?.toISOString() ?? null,
+        created_at: pr.created_at.toISOString(),
+      }
+    }
+  }
 
   // If this is the last message in the conversation, update conversation last_message
   const conv = await prisma.conversation.findUnique({
@@ -1042,12 +1171,29 @@ export async function updateMessage(
     is_read: updated.is_read,
     delivered: updated.delivered,
     edited: updated.edited,
+    deleted: updated.deleted,
+    reply_to_id: updated.reply_to_id ?? null,
+    reply_to: updated.reply_to ? {
+      id: updated.reply_to.id,
+      sender_id: updated.reply_to.sender_id,
+      content: updated.reply_to.deleted ? null : updated.reply_to.content,
+      image_url: updated.reply_to.deleted ? null : updated.reply_to.image_url,
+      type: updated.reply_to.type,
+    } : null,
+    reactions: updated.reactions.map(r => ({
+      id: r.id,
+      message_id: r.message_id,
+      user_id: r.user_id,
+      emoji: r.emoji,
+      created_at: r.created_at.toISOString(),
+    })),
     created_at: updated.created_at.toISOString(),
+    payment_request: paymentRequestData,
   }
 }
 
 /**
- * Delete a message (only sender can delete)
+ * Delete a message (only sender can delete) — soft delete
  */
 export async function deleteMessage(
   messageId: string,
@@ -1067,38 +1213,160 @@ export async function deleteMessage(
 
   const conversationId = message.conversation_id
 
-  await prisma.message.delete({
+  await prisma.message.update({
     where: { id: messageId },
+    data: {
+      deleted: true,
+      deleted_at: new Date(),
+      content: null,
+      image_url: null,
+    }
   })
 
   // Update conversation last message if this was the last
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
+  const lastMsg = await prisma.message.findFirst({
+    where: {
+      conversation_id: conversationId,
+      deleted: false,
+    },
+    orderBy: { created_at: 'desc' },
   })
-  if (conv) {
-    const lastMsg = await prisma.message.findFirst({
-      where: { conversation_id: conversationId },
-      orderBy: { created_at: 'desc' },
+
+  if (lastMsg) {
+    const lastMessageText = lastMsg.type === 'image' ? 'Photo' : (lastMsg.content ?? '')
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        last_message: lastMessageText,
+        last_message_at: lastMsg.created_at,
+      },
     })
-    if (!lastMsg) {
-      // No messages left
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          last_message: null,
-          last_message_at: new Date(),
-        },
-      })
-    } else {
-      // Update to new last message
-      const lastMessageText = lastMsg.type === 'image' ? 'Image' : (lastMsg.content ?? '')
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          last_message: lastMessageText,
-          last_message_at: lastMsg.created_at,
-        },
+  } else {
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        last_message: null,
+        last_message_at: new Date(),
+      },
+    })
+  }
+
+  // Emit deletion via socket
+  try {
+    const io = getSocketIO()
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('message_deleted', {
+        messageId,
+        conversationId,
       })
     }
+  } catch (socketError) {
+    console.error('[Chat] Socket.io emit error for message_deleted:', socketError)
+  }
+}
+
+// ─── REACTIONS ────────────────────────────────────────────────────────────
+
+export async function addReaction(
+  messageId: string,
+  userId: string,
+  emoji: string
+): Promise<ReactionOutput> {
+  // Check message exists
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    select: { conversation_id: true, sender_id: true }
+  })
+
+  if (!message) throw { statusCode: 404, message: 'Message not found' }
+
+  // Verify user is part of conversation
+  const conv = await prisma.conversation.findUnique({
+    where: { id: message.conversation_id },
+    include: { vendor: { select: { user_id: true } } }
+  })
+
+  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
+
+  const isBuyer = conv.buyer_id === userId
+  const isVendor = conv.vendor.user_id === userId
+  if (!isBuyer && !isVendor) throw { statusCode: 403, message: 'Not authorized' }
+
+  // Upsert reaction
+  const reaction = await prisma.messageReaction.upsert({
+    where: {
+      message_id_user_id: {
+        message_id: messageId,
+        user_id: userId,
+      }
+    },
+    update: { emoji },
+    create: {
+      message_id: messageId,
+      user_id: userId,
+      emoji,
+    }
+  })
+
+  const output: ReactionOutput = {
+    id: reaction.id,
+    message_id: reaction.message_id,
+    user_id: reaction.user_id,
+    emoji: reaction.emoji,
+    created_at: reaction.created_at.toISOString(),
+  }
+
+  // Emit via socket
+  try {
+    const io = getSocketIO()
+    if (io) {
+      io.to(`conversation:${message.conversation_id}`).emit('reaction_added', {
+        messageId,
+        reaction: output,
+      })
+    }
+  } catch (socketError) {
+    console.error('[Chat] Reaction socket error:', socketError)
+  }
+
+  return output
+}
+
+export async function removeReaction(
+  messageId: string,
+  userId: string
+): Promise<void> {
+  const existing = await prisma.messageReaction.findUnique({
+    where: {
+      message_id_user_id: {
+        message_id: messageId,
+        user_id: userId,
+      }
+    },
+    select: { id: true, message: { select: { conversation_id: true } } }
+  })
+
+  if (!existing) throw { statusCode: 404, message: 'Reaction not found' }
+
+  await prisma.messageReaction.delete({
+    where: {
+      message_id_user_id: {
+        message_id: messageId,
+        user_id: userId,
+      }
+    }
+  })
+
+  // Emit via socket
+  try {
+    const io = getSocketIO()
+    if (io) {
+      io.to(`conversation:${existing.message.conversation_id}`).emit('reaction_removed', {
+        messageId,
+        userId,
+      })
+    }
+  } catch (socketError) {
+    console.error('[Chat] Reaction remove socket error:', socketError)
   }
 }

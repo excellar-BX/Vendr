@@ -60,6 +60,7 @@ model User {
   messages                   Message[]
   conversations              Conversation[] @relation("ConversationParticipants")
   vendorReports              VendorReport[]
+  messageReactions           MessageReaction[]
 
   @@map("users")
 }

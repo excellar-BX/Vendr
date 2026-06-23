@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import * as ChatService from './chat.service'
-import { createConversationSchema, sendMessageSchema } from './chat.schema'
+import { createConversationSchema, sendMessageSchema, addReactionSchema } from './chat.schema'
 
 export async function getConversationsController(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -381,6 +381,52 @@ export async function deleteMessageController(request: FastifyRequest, reply: Fa
     return reply.status(200).send({
       success: true,
       message: 'Message deleted',
+    })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({
+      success: false,
+      message: err.message
+    })
+  }
+}
+
+export async function addReactionController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.user.id
+    const { emoji } = request.body as { emoji: string }
+
+    if (!emoji) {
+      return reply.status(400).send({
+        success: false,
+        message: 'emoji is required',
+      })
+    }
+
+    const reaction = await ChatService.addReaction(id, userId, emoji)
+
+    return reply.status(201).send({
+      success: true,
+      data: reaction,
+    })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({
+      success: false,
+      message: err.message
+    })
+  }
+}
+
+export async function removeReactionController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.user.id
+
+    await ChatService.removeReaction(id, userId)
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Reaction removed',
     })
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({

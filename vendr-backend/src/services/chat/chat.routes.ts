@@ -8,6 +8,8 @@ import {
   sendMessageController,
   updateMessageController,
   deleteMessageController,
+  addReactionController,
+  removeReactionController,
   markDeliveredController,
   markAsReadController,
   resetUnreadController,
@@ -50,6 +52,14 @@ export async function chatRoutes(app: FastifyInstance) {
 
   app.delete('/messages/:id', authOptions, async (request, reply) => {
     return deleteMessageController(request, reply)
+  })
+
+  app.post('/messages/:id/reactions', authOptions, async (request, reply) => {
+    return addReactionController(request, reply)
+  })
+
+  app.delete('/messages/:id/reactions', authOptions, async (request, reply) => {
+    return removeReactionController(request, reply)
   })
 
   // Payment Requests
