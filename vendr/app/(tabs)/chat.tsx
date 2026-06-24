@@ -178,7 +178,7 @@ export default function ChatListScreen() {
       const socket = await connectSocket();
       if (!socket || !mounted) return;
 
-      const onNewMessage = (data: { conversation_id: string; content: string; sender_id: string }) => {
+      const onNewMessage = (data: { conversation_id: string; content: string; sender_id: string; type?: string }) => {
         setConversations(prev => {
           const index = prev.findIndex(c => c.id === data.conversation_id);
           if (index === -1) {
@@ -187,11 +187,20 @@ export default function ChatListScreen() {
           }
           const updated = [...prev];
           const conv = { ...updated[index] };
-          conv.last_message = data.content;
+
+          conv.last_message = data.type === 'image'
+            ? 'Photo'
+            : data.type === 'payment_request'
+            ? 'Payment request'
+            : data.content;
           conv.last_message_at = new Date().toISOString();
+          conv.last_message_mine = data.sender_id === user?.id;
+
           if (data.sender_id !== user?.id) {
-             conv.iAmVendor ? conv.vendor_unread++ : conv.buyer_unread++;
+            if (conv.iAmVendor) conv.vendor_unread = (conv.vendor_unread ?? 0) + 1;
+            else conv.buyer_unread = (conv.buyer_unread ?? 0) + 1;
           }
+
           updated.splice(index, 1);
           return [conv, ...updated];
         });
@@ -223,11 +232,21 @@ export default function ChatListScreen() {
       socket.on('new_message', onNewMessage);
       socket.on('messages_read', onMessagesRead);
       socket.on('user_presence', onUserPresence);
+      socket.on('message_deleted', (data: { conversationId: string }) => {
+        setConversations(prev => prev.map(conv => {
+          if (conv.id !== data.conversationId) return conv;
+          return {
+            ...conv,
+            last_message: conv.last_message_mine ? 'Deleted' : (conv.last_message ?? ''),
+          };
+        }));
+      });
 
       socketListenerCleanup = () => {
         socket.off('new_message', onNewMessage);
         socket.off('messages_read', onMessagesRead);
         socket.off('user_presence', onUserPresence);
+        socket.off('message_deleted', () => {});
       };
     };
 

@@ -450,8 +450,24 @@ export const chatApi = {
     content: string
     type?: 'text' | 'image' | 'payment_request'
     image_url?: string
-    payment_request_id?: string
+    payment_request_id?: string | null
+    reply_to_id?: string | null
   }) => apiFetch('/messages', { method: 'POST', body: data }),
+
+  /**
+   * Add reaction to a message
+   */
+  addReaction: (messageId: string, emoji: string) =>
+    apiFetch(`/messages/${messageId}/reactions`, {
+      method: 'POST',
+      body: { emoji },
+    }),
+
+  /**
+   * Remove reaction from a message
+   */
+  removeReaction: (messageId: string) =>
+    apiFetch(`/messages/${messageId}/reactions`, { method: 'DELETE' }),
 
   /**
    * Mark messages as delivered/read

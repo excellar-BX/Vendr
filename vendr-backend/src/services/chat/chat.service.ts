@@ -802,10 +802,11 @@ export async function updateUserPresence(
 
     if (io) {
       // Emit to all connected clients (they will filter for relevant user IDs)
-      io.emit('user_presence', {
-        userId,
-        isOnline
-      })
+       io.emit('user_presence', {
+         userId,
+         isOnline,
+         lastSeen: new Date().toISOString(),
+       })
     }
   } catch (socketError) {
     console.error('[Chat] Socket.io emit error for user_presence:', socketError)
@@ -1254,12 +1255,13 @@ export async function deleteMessage(
   // Emit deletion via socket
   try {
     const io = getSocketIO()
-    if (io) {
-      io.to(`conversation:${conversationId}`).emit('message_deleted', {
-        messageId,
-        conversationId,
-      })
-    }
+      if (io) {
+        io.emit('user_presence', {
+          userId,
+          isOnline,
+          lastSeen: new Date().toISOString(),
+        })
+      }
   } catch (socketError) {
     console.error('[Chat] Socket.io emit error for message_deleted:', socketError)
   }

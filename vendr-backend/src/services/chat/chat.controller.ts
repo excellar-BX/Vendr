@@ -227,11 +227,10 @@ export async function presenceController(request: FastifyRequest, reply: Fastify
       const io = getSocketIO()
 
       if (io) {
-        // Broadcast to all connected users
         io.emit('user_presence', {
           userId,
           isOnline: is_online ?? true,
-          timestamp: new Date().toISOString(),
+          lastSeen: new Date().toISOString(),
         })
       }
     } catch (socketError) {
