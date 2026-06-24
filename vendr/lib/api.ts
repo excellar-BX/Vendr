@@ -443,6 +443,11 @@ export const chatApi = {
   }) => apiFetch(`/conversations/${conversationId}/messages`, { query: params }),
 
   /**
+   * Get a single message by ID
+   */
+  getMessage: (messageId: string) => apiFetch(`/messages/${messageId}`),
+
+  /**
    * Send a message
    */
   sendMessage: (data: {

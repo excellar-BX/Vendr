@@ -63,6 +63,7 @@ interface Reaction {
 interface ReplyPreview {
   id: string;
   sender_id: string;
+  sender_name: string | null;
   content: string | null;
   image_url: string | null;
   type: string;
@@ -72,6 +73,7 @@ interface Message {
   id: string;
   conversation_id: string;
   sender_id: string;
+  sender_name: string | null;
   content: string | null;
   image_url: string | null;
   type: 'text' | 'image' | 'payment_request';
@@ -213,7 +215,7 @@ function ReplyQuote({ replyTo, isMine, myId }: {
         fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11,
         color: '#E8521A', marginBottom: 2,
       }}>
-        {isOwn ? 'You' : 'Them'}
+        {isOwn ? 'You' : replyTo.sender_name || 'Unknown'}
       </Text>
       {replyTo.type === 'image' ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -856,9 +858,10 @@ function FloatingReactionPicker({
 }
 
 // ── Reply Strip ────────────────────────────────────────────────────────────
-function ReplyStrip({ replyTo, myId, onCancel }: {
-  replyTo: Message; myId: string; onCancel: () => void;
+function ReplyStrip({ replyTo, myId, onCancel, senderName }: {
+  replyTo: Message; myId: string; onCancel: () => void; senderName: string | null;
 }) {
+  const isOwn = replyTo.sender_id === myId;
   return (
     <Animated.View
       entering={FadeInDown.duration(180)}
@@ -876,7 +879,7 @@ function ReplyStrip({ replyTo, myId, onCancel }: {
           fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12,
           color: '#E8521A', marginBottom: 2,
         }}>
-          {replyTo.sender_id === myId ? 'Replying to yourself' : 'Replying'}
+          {isOwn ? 'Replying to yourself' : `Replying to ${senderName || 'Unknown'}`}
         </Text>
         {replyTo.type === 'image' ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -998,6 +1001,16 @@ export default function ChatScreen() {
       setVendorUserId(vendor?.user_id ?? '');
       if (!actingAsVendor && vendor?.user_id === userId) throw new Error('You cannot chat with your own store.');
 
+      // Use local variables instead of state for message mapping
+      const resolvedVendorName = actingAsVendor
+        ? buyer?.name ?? 'Unknown Buyer'
+        : vendor?.business_name ?? 'Vendor';
+
+      const resolveSenderName = (senderId: string) => {
+        if (senderId === userId) return user?.name ?? null;
+        return actingAsVendor ? buyer?.name ?? resolvedVendorName : resolvedVendorName;
+      };
+
       if (actingAsVendor) {
         setVendorName(buyer?.name ?? 'Unknown Buyer');
         setBuyerAvatar(buyer?.avatar_url ?? null);
@@ -1010,7 +1023,56 @@ export default function ChatScreen() {
       }
 
       const { data: msgs } = await chatApi.getMessages(cid, { limit: 30 });
-      setMessages(msgs ?? []);
+      // Populate sender_name and reconstruct reply_to objects for messages that don't have them
+      const messagesWithNames = await Promise.all((msgs ?? []).map(async msg => {
+        const senderName = msg.sender_name ?? resolveSenderName(msg.sender_id);
+
+        // Patch sender_name onto reply_to from backend since it doesn't send it
+        let replyTo = msg.reply_to
+          ? {
+              ...msg.reply_to,
+              sender_name: msg.reply_to.sender_name ?? resolveSenderName(msg.reply_to.sender_id),
+            }
+          : null;
+
+        // If message has reply_to_id but no reply_to object, try to find the original message
+        if (msg.reply_to_id && !msg.reply_to) {
+          const originalMsg = (msgs ?? []).find(m => m.id === msg.reply_to_id);
+          if (originalMsg) {
+            replyTo = {
+              id: originalMsg.id,
+              sender_id: originalMsg.sender_id,
+              sender_name: originalMsg.sender_name ?? resolveSenderName(originalMsg.sender_id),
+              content: originalMsg.content,
+              image_url: originalMsg.image_url,
+              type: originalMsg.type,
+            };
+          } else {
+            // Original message not in current batch, fetch it individually
+            try {
+              const { data: fetchedMsg } = await chatApi.getMessage(msg.reply_to_id);
+              if (fetchedMsg) {
+                replyTo = {
+                  id: fetchedMsg.id,
+                  sender_id: fetchedMsg.sender_id,
+                  sender_name: fetchedMsg.sender_name ?? resolveSenderName(fetchedMsg.sender_id),
+                  content: fetchedMsg.content,
+                  image_url: fetchedMsg.image_url,
+                  type: fetchedMsg.type,
+                };
+              }
+            } catch (e) {
+              console.error('Failed to fetch original message for reply:', e);
+            }
+          }
+        }
+        return {
+          ...msg,
+          sender_name: senderName,
+          reply_to: replyTo,
+        };
+      }));
+      setMessages(messagesWithNames);
       if (!msgs || msgs.length < 30) setHasMore(false);
 
       await chatApi.markDelivered(cid);
@@ -1046,7 +1108,36 @@ export default function ChatScreen() {
         });
         socket.on('new_message', (newMsg: Message) => {
           if (newMsg.conversation_id === cid) {
-            setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+            setMessages(prev => {
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              // Populate sender_name if not provided by server
+              const msgWithName = {
+                ...newMsg,
+                sender_name: newMsg.sender_name ?? resolveSenderName(newMsg.sender_id),
+              };
+              // Patch sender_name onto reply_to from backend since it doesn't send it
+              let replyTo = msgWithName.reply_to
+                ? {
+                    ...msgWithName.reply_to,
+                    sender_name: msgWithName.reply_to.sender_name ?? resolveSenderName(msgWithName.reply_to.sender_id),
+                  }
+                : null;
+              // If the new message has reply_to_id but no reply_to object, try to find the original message
+              if (msgWithName.reply_to_id && !msgWithName.reply_to) {
+                const originalMsg = prev.find(m => m.id === msgWithName.reply_to_id);
+                if (originalMsg) {
+                  replyTo = {
+                    id: originalMsg.id,
+                    sender_id: originalMsg.sender_id,
+                    sender_name: originalMsg.sender_name,
+                    content: originalMsg.content,
+                    image_url: originalMsg.image_url,
+                    type: originalMsg.type,
+                  };
+                }
+              }
+              return [...prev, { ...msgWithName, reply_to: replyTo }];
+            });
             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
           }
         });
@@ -1246,11 +1337,11 @@ export default function ChatScreen() {
     const tempId = `temp-img-${Date.now()}`;
     try {
       const tempMsg: Message = {
-        id: tempId, conversation_id: convId, sender_id: user!.id,
+        id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.name ?? null,
         content: null, image_url: uri, type: 'image',
         is_read: false, delivered: false, edited: false, deleted: false,
         reply_to_id: replyingTo?.id ?? null,
-        reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, image_url: replyingTo.image_url, type: replyingTo.type } : null,
+        reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, sender_name: replyingTo.sender_name, content: replyingTo.content, image_url: replyingTo.image_url, type: replyingTo.type } : null,
         reactions: [], created_at: new Date().toISOString(),
       };
       setMessages(prev => [...prev, tempMsg]);
@@ -1273,7 +1364,7 @@ export default function ChatScreen() {
         image_url: publicUrl, reply_to_id: replyingTo?.id ?? null,
       });
 
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, reactions: [] } : m));
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, reactions: [], reply_to: tempMsg.reply_to } : m));
       setReplyingTo(null);
     } catch (e: any) {
       vendrAlert({ title: 'Upload Failed', message: e.message || 'Something went wrong', type: 'danger' });
@@ -1308,11 +1399,11 @@ export default function ChatScreen() {
     const replySnapshot = replyingTo;
 
     setMessages(prev => [...prev, {
-      id: tempId, conversation_id: convId, sender_id: user!.id,
+      id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.name ?? null,
       content, image_url: null, type: 'text',
       is_read: false, delivered: false, edited: false, deleted: false,
       reply_to_id: replySnapshot?.id ?? null,
-      reply_to: replySnapshot ? { id: replySnapshot.id, sender_id: replySnapshot.sender_id, content: replySnapshot.content, image_url: replySnapshot.image_url, type: replySnapshot.type } : null,
+      reply_to: replySnapshot ? { id: replySnapshot.id, sender_id: replySnapshot.sender_id, sender_name: replySnapshot.sender_name, content: replySnapshot.content, image_url: replySnapshot.image_url, type: replySnapshot.type } : null,
       reactions: [], created_at: new Date().toISOString(),
     }]);
     setReplyingTo(null);
@@ -1323,7 +1414,7 @@ export default function ChatScreen() {
         conversation_id: convId, content, type: 'text',
         reply_to_id: replySnapshot?.id ?? null,
       });
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, reactions: inserted.reactions ?? [] } : m));
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, reactions: inserted.reactions ?? [], reply_to: replySnapshot ? { id: replySnapshot.id, sender_id: replySnapshot.sender_id, sender_name: replySnapshot.sender_name, content: replySnapshot.content, image_url: replySnapshot.image_url, type: replySnapshot.type } : null } : m));
     } catch (err: any) {
       vendrAlert({ title: 'Send Failed', message: err.message, type: 'danger' });
       setMessages(prev => prev.filter(m => m.id !== tempId));
@@ -1666,6 +1757,7 @@ export default function ChatScreen() {
           <ReplyStrip
             replyTo={replyingTo}
             myId={user?.id ?? ''}
+            senderName={replyingTo.sender_name}
             onCancel={() => setReplyingTo(null)}
           />
         )}

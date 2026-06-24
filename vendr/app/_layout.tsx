@@ -28,6 +28,8 @@ import {
   addNotificationReceivedListener,
   addNotificationResponseReceivedListener
 } from '../lib/notifications';
+import { NetworkToast } from '../components/ui/NetworkToast';
+import { useNetwork } from '../hooks/useNetwork';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -64,6 +66,8 @@ function RootLayout() {
 
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
+
+  const { isOnline } = useNetwork();
 
   const [fontsLoaded, fontError] = useFonts({
     SpaceGrotesk_300Light,
@@ -227,6 +231,7 @@ function RootLayout() {
     >
       <View className="flex-1 bg-dark">
         <StatusBar style="light" />
+        <NetworkToast visible={!isOnline} />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(tabs)" />
