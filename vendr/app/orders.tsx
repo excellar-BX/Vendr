@@ -157,6 +157,7 @@ function OrderCard({
   onDispute,
   onUpdateStatus,
   onConfirmReceipt,
+  onOpenStatusModal,
   actionLoading,
   deliveryCode,
 }: {
@@ -169,6 +170,7 @@ function OrderCard({
   onDispute: (order: Order) => void;
   onUpdateStatus: (orderId: string, status: string) => void;
   onConfirmReceipt: (orderId: string) => void;
+  onOpenStatusModal: (order: Order) => void;
   actionLoading: string | null;
   deliveryCode: string | null;
 }) {
@@ -435,6 +437,9 @@ export default function OrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [deliveryCodes, setDeliveryCodes] = useState<Record<string, string>>({});
+
+  // Status update modal
+  const [statusModalOrder, setStatusModalOrder] = useState<Order | null>(null);
 
   const [disputeOrder, setDisputeOrder] = useState<Order | null>(null);
   const [disputeReason, setDisputeReason] = useState('');

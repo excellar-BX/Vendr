@@ -614,43 +614,49 @@ export async function recordOrder(vendorId: string, productId: string, amount: n
     });
   }
 
-  // Update product analytics
-  const existingProductAnalytics = await prisma.productAnalytics.findUnique({
-    where: {
-      product_id_date: {
-        product_id: productId,
-        date: today,
-      },
-    },
+  // Update product analytics - only if product exists
+  const product = await prisma.product.findUnique({
+    where: { id: productId, vendor_id: vendorId },
   });
 
-  if (existingProductAnalytics) {
-    await prisma.productAnalytics.update({
+  if (product) {
+    const existingProductAnalytics = await prisma.productAnalytics.findUnique({
       where: {
         product_id_date: {
           product_id: productId,
           date: today,
         },
       },
-      data: {
-        revenue: {
-          increment: amount,
-        },
-        orders_count: {
-          increment: 1,
-        },
-      },
     });
-  } else {
-    await prisma.productAnalytics.create({
-      data: {
-        product_id: productId,
-        vendor_id: vendorId,
-        date: today,
-        revenue: amount,
-        orders_count: 1,
-      },
-    });
+
+    if (existingProductAnalytics) {
+      await prisma.productAnalytics.update({
+        where: {
+          product_id_date: {
+            product_id: productId,
+            date: today,
+          },
+        },
+        data: {
+          revenue: {
+            increment: amount,
+          },
+          orders_count: {
+            increment: 1,
+          },
+        },
+      });
+    } else {
+      await prisma.productAnalytics.create({
+        data: {
+          product_id: productId,
+          vendor_id: vendorId,
+          date: today,
+          revenue: amount,
+          orders_count: 1,
+        },
+      });
+    }
   }
 
   return { success: true };
