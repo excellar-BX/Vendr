@@ -37,10 +37,15 @@ interface Order {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: IoniconsName }> = {
-  completed: { label: 'Completed', color: '#2D8653', icon: 'checkmark-circle-outline' },
+  pending: { label: 'Pending', color: '#F5A623', icon: 'time-outline' },
+  confirmed: { label: 'Confirmed', color: '#2D8653', icon: 'checkmark-circle-outline' },
+  preparing: { label: 'Preparing', color: '#5599E8', icon: 'restaurant-outline' },
+  ready: { label: 'Ready', color: '#9B59B6', icon: 'cube-outline' },
+  delivered: { label: 'Delivered', color: '#27AE60', icon: 'checkmark-done-circle-outline' },
+  cancelled: { label: 'Cancelled', color: '#E74C3C', icon: 'close-circle-outline' },
   refunded: { label: 'Refunded', color: '#5599E8', icon: 'refresh-circle-outline' },
   disputed: { label: 'Disputed', color: '#E85555', icon: 'alert-circle-outline' },
-  pending: { label: 'Pending', color: '#F5A623', icon: 'time-outline' },
+  completed: { label: 'Completed', color: '#2D8653', icon: 'checkmark-circle-outline' },
 };
 
 function formatAmount(n: number) {
@@ -70,6 +75,78 @@ function groupByDate(orders: Order[]) {
   return groups;
 }
 
+// Order status flow for tracking
+const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'delivered'];
+
+function OrderStatusStepper({ status }: { status: string }) {
+  const currentIndex = STATUS_FLOW.indexOf(status);
+  const isCancelled = status === 'cancelled';
+  const isRefunded = status === 'refunded';
+  const isDisputed = status === 'disputed';
+
+  if (isCancelled || isRefunded || isDisputed) {
+    return null; // Show special status badge instead
+  }
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+      {STATUS_FLOW.map((step, index) => {
+        const isCompleted = index < currentIndex;
+        const isCurrent = index === currentIndex;
+        const isPending = index > currentIndex;
+
+        return (
+          <View key={step} style={{ flex: 1, alignItems: 'center' }}>
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 12,
+                backgroundColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#2A1F14',
+                borderWidth: 2,
+                borderColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#3D3026',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {isCompleted ? (
+                <Ionicons name="checkmark" size={12} color="white" />
+              ) : (
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: isCurrent ? '#E8521A' : '#6B5E50' }}>
+                  {index + 1}
+                </Text>
+              )}
+            </View>
+            <Text
+              style={{
+                fontFamily: 'SpaceGrotesk_500Medium',
+                fontSize: 9,
+                color: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#6B5E50',
+                marginTop: 4,
+                textTransform: 'capitalize',
+              }}
+            >
+              {step}
+            </Text>
+            {index < STATUS_FLOW.length - 1 && (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 12,
+                  left: '50%',
+                  width: '100%',
+                  height: 2,
+                  backgroundColor: isCompleted ? '#2D8653' : '#3D3026',
+                }}
+              />
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function OrderCard({
   order,
   mode,
@@ -78,6 +155,8 @@ function OrderCard({
   onShowDeliveryCode,
   onVerifyOtp,
   onDispute,
+  onUpdateStatus,
+  onConfirmReceipt,
   actionLoading,
   deliveryCode,
 }: {
@@ -88,6 +167,8 @@ function OrderCard({
   onShowDeliveryCode: (order: Order) => void;
   onVerifyOtp: (order: Order) => void;
   onDispute: (order: Order) => void;
+  onUpdateStatus: (orderId: string, status: string) => void;
+  onConfirmReceipt: (orderId: string) => void;
   actionLoading: string | null;
   deliveryCode: string | null;
 }) {
@@ -97,6 +178,11 @@ function OrderCard({
   const isPickup = order.order_type === 'pickup';
   const isDelivery = order.order_type === 'delivery';
 
+  // New order tracking logic
+  const showBuyerConfirm = isBought && order.status === 'ready';
+  const showVendorStatusUpdate = !isBought && ['pending', 'confirmed', 'preparing'].includes(order.status);
+
+  // Legacy escrow logic (keep for backward compatibility)
   const showPickupConfirm =
     isBought && isHeld && isPickup && !order.buyer_confirmed_at;
   const showDeliveryCode =
@@ -113,6 +199,21 @@ function OrderCard({
     if (isDelivery) return 'Share your delivery code with the rider at handoff';
     return 'Payment held in escrow until you confirm receipt';
   })();
+
+  // Get next valid status for vendor
+  const getNextStatus = (current: string): string[] => {
+    const transitions: Record<string, string[]> = {
+      pending: ['confirmed', 'cancelled'],
+      confirmed: ['preparing', 'cancelled'],
+      preparing: ['ready', 'cancelled'],
+      ready: [],
+      delivered: [],
+      cancelled: [],
+    };
+    return transitions[current] || [];
+  };
+
+  const nextStatuses = getNextStatus(order.status);
 
   return (
     <View style={{
@@ -139,6 +240,9 @@ function OrderCard({
           </Text>
         </View>
       </View>
+
+      {/* Order Status Stepper */}
+      <OrderStatusStepper status={order.status} />
 
       {escrowHint ? (
         <View style={{
@@ -233,6 +337,30 @@ function OrderCard({
       </View>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {/* New order tracking actions */}
+        {showBuyerConfirm ? (
+          <ActionBtn
+            label={actionLoading === order.id ? 'Confirming...' : 'Confirm Receipt'}
+            icon="checkmark-circle"
+            color="#2D8653"
+            loading={actionLoading === order.id}
+            onPress={() => onConfirmReceipt(order.id)}
+          />
+        ) : null}
+        {showVendorStatusUpdate && nextStatuses.length > 0 ? (
+          nextStatuses.map((status) => (
+            <ActionBtn
+              key={status}
+              label={STATUS_CONFIG[status]?.label || status}
+              icon={STATUS_CONFIG[status]?.icon || 'arrow-forward'}
+              color={STATUS_CONFIG[status]?.color || '#E8521A'}
+              loading={actionLoading === `${order.id}-${status}`}
+              onPress={() => onUpdateStatus(order.id, status)}
+            />
+          ))
+        ) : null}
+
+        {/* Legacy escrow actions */}
         {showPickupConfirm ? (
           <ActionBtn
             label={actionLoading === order.id ? 'Confirming...' : "I've received this"}
@@ -360,6 +488,44 @@ export default function OrdersScreen() {
       }
     } catch (e: any) {
       showAlert({ title: 'Error', message: e.message || 'Could not confirm receipt', type: 'danger' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUpdateStatus = async (orderId: string, status: string) => {
+    setActionLoading(`${orderId}-${status}`);
+    try {
+      const res = await orderApi.updateStatus(orderId, status);
+      if (res.success) {
+        showAlert({
+          title: 'Status updated',
+          message: `Order marked as ${STATUS_CONFIG[status]?.label || status}`,
+          type: 'success',
+        });
+        await fetchOrders();
+      }
+    } catch (e: any) {
+      showAlert({ title: 'Error', message: e.message || 'Could not update order status', type: 'danger' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleConfirmReceipt = async (orderId: string) => {
+    setActionLoading(orderId);
+    try {
+      const res = await orderApi.confirmReceipt(orderId);
+      if (res.success) {
+        showAlert({
+          title: 'Order confirmed',
+          message: 'You have confirmed receipt of this order',
+          type: 'success',
+        });
+        await fetchOrders();
+      }
+    } catch (e: any) {
+      showAlert({ title: 'Error', message: e.message || 'Could not confirm order receipt', type: 'danger' });
     } finally {
       setActionLoading(null);
     }
@@ -580,6 +746,8 @@ export default function OrdersScreen() {
                     onShowDeliveryCode={handleShowDeliveryCode}
                     onVerifyOtp={(o) => { setOtpModalOrder(o); setOtpInput(''); }}
                     onDispute={(o) => { setDisputeOrder(o); setDisputeStep('reason'); }}
+                    onUpdateStatus={handleUpdateStatus}
+                    onConfirmReceipt={handleConfirmReceipt}
                     actionLoading={actionLoading}
                     deliveryCode={deliveryCodes[order.id] ?? null}
                   />

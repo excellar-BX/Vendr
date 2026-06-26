@@ -115,6 +115,25 @@ export async function getMessagesController(request: FastifyRequest, reply: Fast
   }
 }
 
+export async function getMessageController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.user.id
+
+    const message = await ChatService.getMessage(id, userId)
+
+    return reply.status(200).send({
+      success: true,
+      data: message,
+    })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({
+      success: false,
+      message: err.message
+    })
+  }
+}
+
 export async function sendMessageController(request: FastifyRequest, reply: FastifyReply) {
   const parsed = sendMessageSchema.safeParse(request.body)
   if (!parsed.success) {
@@ -126,7 +145,7 @@ export async function sendMessageController(request: FastifyRequest, reply: Fast
 
   try {
     const userId = request.user.id
-    const { conversation_id, content, type, image_url, payment_request_id } = parsed.data
+    const { conversation_id, content, type, image_url, payment_request_id, reply_to_id } = parsed.data
 
     const message = await ChatService.sendMessage(conversation_id, userId, {
       conversation_id,
@@ -134,6 +153,7 @@ export async function sendMessageController(request: FastifyRequest, reply: Fast
       type,
       image_url,
       payment_request_id,
+      reply_to_id,
     })
 
     return reply.status(201).send({

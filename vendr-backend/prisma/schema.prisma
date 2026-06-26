@@ -200,7 +200,7 @@ model Order {
   otp_confirmed    Boolean  @default(false)
   otp_confirmed_at DateTime?
   buyer_confirmed_at DateTime? // pickup: buyer confirmed receipt
-  status           String   @default("pending") // pending, completed, refunded, disputed
+  status           String   @default("pending") // pending, confirmed, preparing, ready, delivered, cancelled, refunded, disputed
   escrow_status    String   @default("held") // held, disputed, released, refunded
   delivery_confirmed_at DateTime?
   auto_release_at  DateTime?

@@ -46,6 +46,7 @@ export type SendMessageInput = z.infer<typeof sendMessageSchema>
 export const replyPreviewSchema = z.object({
   id: z.string(),
   sender_id: z.string(),
+  sender_name: z.string().nullable(),
   content: z.string().nullable(),
   image_url: z.string().nullable(),
   type: z.string(),

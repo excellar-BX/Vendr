@@ -5,6 +5,7 @@ import {
   getConversationController,
   createConversationController,
   getMessagesController,
+  getMessageController,
   sendMessageController,
   updateMessageController,
   deleteMessageController,
@@ -40,6 +41,10 @@ export async function chatRoutes(app: FastifyInstance) {
   // Messages
   app.get('/conversations/:id/messages', authOptions, async (request, reply) => {
     return getMessagesController(request, reply)
+  })
+
+  app.get('/messages/:id', authOptions, async (request, reply) => {
+    return getMessageController(request, reply)
   })
 
   app.post('/messages', authOptions, async (request, reply) => {

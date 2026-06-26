@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import { chatApi, storageApi, analyticsApi } from '../../lib/api';
+import { chatApi, storageApi, analyticsApi, orderApi } from '../../lib/api';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useAuthStore } from '../../stores/authStore';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
@@ -965,6 +965,11 @@ export default function ChatScreen() {
   const [payOrderType, setPayOrderType] = useState<'pickup' | 'delivery'>('pickup');
   const [payDeliveryAddress, setPayDeliveryAddress] = useState('');
 
+  // Order tracking
+  const [activeOrder, setActiveOrder] = useState<any>(null);
+  const [showOrderTracking, setShowOrderTracking] = useState(false);
+  const [updatingOrderStatus, setUpdatingOrderStatus] = useState(false);
+
   // Image viewer zoom
   const scale = useSharedValue(1);
   const pinchGesture = Gesture.Pinch()
@@ -1493,6 +1498,66 @@ export default function ChatScreen() {
     finally { setSending(false); }
   };
 
+  // Fetch active order for this conversation
+  const fetchActiveOrder = async () => {
+    if (!convId) return;
+    try {
+      const type = actingAsVendor ? 'sold' : 'bought';
+      const { data: orders } = await orderApi.getOrders(type);
+      const conversationOrder = orders?.find((o: any) => o.conversation_id === convId && ['pending', 'confirmed', 'preparing', 'ready'].includes(o.status));
+      setActiveOrder(conversationOrder || null);
+    } catch (e) {
+      console.error('Failed to fetch active order:', e);
+    }
+  };
+
+  // Fetch order when conversation loads
+  useEffect(() => {
+    if (convId) fetchActiveOrder();
+  }, [convId, actingAsVendor]);
+
+  // Handle order status update (vendor)
+  const handleUpdateOrderStatus = async (status: string) => {
+    if (!activeOrder) return;
+    setUpdatingOrderStatus(true);
+    try {
+      const res = await orderApi.updateStatus(activeOrder.id, status);
+      if (res.success) {
+        setActiveOrder(res.data);
+        vendrAlert({
+          title: 'Status updated',
+          message: `Order marked as ${status}`,
+          type: 'success',
+        });
+      }
+    } catch (e: any) {
+      vendrAlert({ title: 'Error', message: e.message || 'Could not update status', type: 'danger' });
+    } finally {
+      setUpdatingOrderStatus(false);
+    }
+  };
+
+  // Handle buyer order confirmation
+  const handleConfirmOrderReceipt = async () => {
+    if (!activeOrder) return;
+    setUpdatingOrderStatus(true);
+    try {
+      const res = await orderApi.confirmReceipt(activeOrder.id);
+      if (res.success) {
+        setActiveOrder(res.data);
+        vendrAlert({
+          title: 'Order confirmed',
+          message: 'You have confirmed receipt of this order',
+          type: 'success',
+        });
+      }
+    } catch (e: any) {
+      vendrAlert({ title: 'Error', message: e.message || 'Could not confirm order', type: 'danger' });
+    } finally {
+      setUpdatingOrderStatus(false);
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -1559,6 +1624,24 @@ export default function ChatScreen() {
                 style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
               </TouchableOpacity>
+
+              {/* Order tracking banner */}
+              {activeOrder && (
+                <TouchableOpacity
+                  onPress={() => setShowOrderTracking(!showOrderTracking)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+                    backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                  }}
+                >
+                  <Ionicons name="cube-outline" size={14} color="#E8521A" />
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#E8521A' }}>
+                    Order: {activeOrder.status}
+                  </Text>
+                  <Ionicons name={showOrderTracking ? 'chevron-up' : 'chevron-down'} size={12} color="#6B5E50" />
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 onPress={() => !actingAsVendor && vendorActualId && router.push({ pathname: '/vendor/[id]', params: { id: vendorActualId } })}
@@ -1629,6 +1712,156 @@ export default function ChatScreen() {
             </>
           )}
         </View>
+
+        {/* ── Order Tracking Panel ── */}
+        {activeOrder && showOrderTracking && (
+          <View style={{
+            backgroundColor: '#1A1208', borderBottomWidth: 1, borderBottomColor: '#2A1F14',
+            paddingHorizontal: 16, paddingVertical: 12, gap: 12,
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#FDF6EC' }}>
+                Order Status
+              </Text>
+              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#E8521A' }}>
+                ₦{activeOrder.amount.toLocaleString()}
+              </Text>
+            </View>
+
+            {/* Status stepper (simplified version for chat) */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              {['pending', 'confirmed', 'preparing', 'ready', 'delivered'].map((step, index) => {
+                const isCompleted = ['pending', 'confirmed', 'preparing', 'ready', 'delivered'].indexOf(activeOrder.status) > index;
+                const isCurrent = activeOrder.status === step;
+                return (
+                  <View key={step} style={{ alignItems: 'center', flex: 1 }}>
+                    <View style={{
+                      width: 20, height: 20, borderRadius: 10,
+                      backgroundColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#2A1F14',
+                      borderWidth: 2, borderColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#3D3026',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {isCompleted ? <Ionicons name="checkmark" size={10} color="white" /> : null}
+                    </View>
+                    <Text style={{
+                      fontFamily: 'SpaceGrotesk_500Medium', fontSize: 8,
+                      color: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#6B5E50',
+                      marginTop: 4, textTransform: 'capitalize',
+                    }}>
+                      {step}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Action buttons */}
+            {actingAsVendor && ['pending', 'confirmed', 'preparing'].includes(activeOrder.status) ? (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {activeOrder.status === 'pending' && (
+                  <TouchableOpacity
+                    onPress={() => handleUpdateOrderStatus('confirmed')}
+                    disabled={updatingOrderStatus}
+                    style={{
+                      flex: 1, backgroundColor: '#2D8653', borderRadius: 10,
+                      paddingVertical: 10, alignItems: 'center', flexDirection: 'row',
+                      justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    {updatingOrderStatus ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle" size={14} color="white" />
+                        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: 'white' }}>
+                          Confirm Order
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+                {activeOrder.status === 'confirmed' && (
+                  <TouchableOpacity
+                    onPress={() => handleUpdateOrderStatus('preparing')}
+                    disabled={updatingOrderStatus}
+                    style={{
+                      flex: 1, backgroundColor: '#5599E8', borderRadius: 10,
+                      paddingVertical: 10, alignItems: 'center', flexDirection: 'row',
+                      justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    {updatingOrderStatus ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <Ionicons name="restaurant" size={14} color="white" />
+                        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: 'white' }}>
+                          Start Preparing
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+                {activeOrder.status === 'preparing' && (
+                  <TouchableOpacity
+                    onPress={() => handleUpdateOrderStatus('ready')}
+                    disabled={updatingOrderStatus}
+                    style={{
+                      flex: 1, backgroundColor: '#9B59B6', borderRadius: 10,
+                      paddingVertical: 10, alignItems: 'center', flexDirection: 'row',
+                      justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    {updatingOrderStatus ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <Ionicons name="cube" size={14} color="white" />
+                        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: 'white' }}>
+                          Mark Ready
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => handleUpdateOrderStatus('cancelled')}
+                  disabled={updatingOrderStatus}
+                  style={{
+                    backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 1, borderColor: '#E74C3C',
+                    borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10,
+                  }}
+                >
+                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#E74C3C' }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {!actingAsVendor && activeOrder.status === 'ready' && (
+              <TouchableOpacity
+                onPress={handleConfirmOrderReceipt}
+                disabled={updatingOrderStatus}
+                style={{
+                  backgroundColor: '#2D8653', borderRadius: 10, paddingVertical: 12,
+                  alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+                }}
+              >
+                {updatingOrderStatus ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={14} color="white" />
+                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: 'white' }}>
+                      Confirm Receipt
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* ── Messages ── */}
         {messages.length === 0 ? (

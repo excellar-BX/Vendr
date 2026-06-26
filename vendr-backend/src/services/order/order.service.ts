@@ -99,3 +99,86 @@ export async function getOrdersStats(userId: string): Promise<OrdersStats> {
 
   return { bought: boughtCount, sold: soldCount }
 }
+
+export async function updateOrderStatus(orderId: string, vendorUserId: string, status: string): Promise<OrderOutput> {
+  // Validate status transitions
+  const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']
+  if (!validStatuses.includes(status)) {
+    throw new Error('Invalid order status')
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+  })
+
+  if (!order) {
+    throw new Error('Order not found')
+  }
+
+  if (order.vendor_user_id !== vendorUserId) {
+    throw new Error('You do not have permission to update this order')
+  }
+
+  // Prevent invalid status transitions
+  const currentStatus = order.status
+  const allowedTransitions: Record<string, string[]> = {
+    pending: ['confirmed', 'cancelled'],
+    confirmed: ['preparing', 'cancelled'],
+    preparing: ['ready', 'cancelled'],
+    ready: ['delivered'],
+    delivered: [],
+    cancelled: [],
+  }
+
+  if (!allowedTransitions[currentStatus]?.includes(status)) {
+    throw new Error(`Cannot transition from ${currentStatus} to ${status}`)
+  }
+
+  const updatedOrder = await prisma.order.update({
+    where: { id: orderId },
+    data: { status },
+    include: {
+      vendor: { select: { shop_name: true } },
+    },
+  })
+
+  return {
+    ...mapOrderBase(updatedOrder),
+    vendor_name: updatedOrder.vendor?.shop_name ?? 'Unknown Vendor',
+  }
+}
+
+export async function confirmOrderReceipt(orderId: string, buyerId: string): Promise<OrderOutput> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+  })
+
+  if (!order) {
+    throw new Error('Order not found')
+  }
+
+  if (order.buyer_id !== buyerId) {
+    throw new Error('You do not have permission to confirm this order')
+  }
+
+  if (order.status !== 'ready') {
+    throw new Error('Order must be in "ready" status to confirm receipt')
+  }
+
+  const updatedOrder = await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status: 'delivered',
+      buyer_confirmed_at: new Date(),
+      delivery_confirmed_at: new Date(),
+    },
+    include: {
+      vendor: { select: { shop_name: true } },
+    },
+  })
+
+  return {
+    ...mapOrderBase(updatedOrder),
+    vendor_name: updatedOrder.vendor?.shop_name ?? 'Unknown Vendor',
+  }
+}

@@ -32,3 +32,36 @@ export async function getOrdersStatsController(request: FastifyRequest, reply: F
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
   }
 }
+
+export async function updateOrderStatusController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const userId = request.user.id
+    const { orderId } = request.params as { orderId: string }
+    const { status } = request.body as { status: string }
+
+    if (!orderId || !status) {
+      return reply.status(400).send({ success: false, message: 'orderId and status are required' })
+    }
+
+    const order = await OrderService.updateOrderStatus(orderId, userId, status)
+    return reply.status(200).send({ success: true, data: order })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
+  }
+}
+
+export async function confirmOrderReceiptController(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const userId = request.user.id
+    const { orderId } = request.params as { orderId: string }
+
+    if (!orderId) {
+      return reply.status(400).send({ success: false, message: 'orderId is required' })
+    }
+
+    const order = await OrderService.confirmOrderReceipt(orderId, userId)
+    return reply.status(200).send({ success: true, data: order })
+  } catch (err: any) {
+    return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
+  }
+}

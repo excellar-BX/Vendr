@@ -334,6 +334,95 @@ export async function getUserConversations(userId: string): Promise<any[]> {
 }
 
 /**
+ * Get a single message by ID
+ */
+export async function getMessage(
+  messageId: string,
+  userId: string
+): Promise<MessageOutput> {
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    include: {
+      conversation: {
+        select: { buyer_id: true, vendor_id: true }
+      },
+      reply_to: {
+        select: {
+          id: true,
+          sender_id: true,
+          sender: {
+            select: {
+              full_name: true,
+            }
+          },
+          content: true,
+          image_url: true,
+          type: true,
+          deleted: true,
+        }
+      },
+      reactions: {
+        select: {
+          id: true,
+          message_id: true,
+          user_id: true,
+          emoji: true,
+          created_at: true,
+        }
+      }
+    }
+  })
+
+  if (!message) {
+    throw { statusCode: 404, message: 'Message not found' }
+  }
+
+  // Verify access
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: message.conversation.vendor_id },
+    select: { user_id: true }
+  })
+
+  const isBuyer = message.conversation.buyer_id === userId
+  const isVendor = vendor?.user_id === userId
+
+  if (!isBuyer && !isVendor) {
+    throw { statusCode: 403, message: 'Not authorized' }
+  }
+
+  return {
+    id: message.id,
+    conversation_id: message.conversation_id,
+    sender_id: message.sender_id,
+    content: message.deleted ? null : message.content,
+    image_url: message.deleted ? null : message.image_url,
+    type: message.type as 'text' | 'image' | 'payment_request',
+    is_read: message.is_read,
+    delivered: message.delivered,
+    edited: message.edited,
+    deleted: message.deleted,
+    reply_to_id: message.reply_to_id ?? null,
+    reply_to: message.reply_to ? {
+      id: message.reply_to.id,
+      sender_id: message.reply_to.sender_id,
+      sender_name: message.reply_to.sender?.full_name ?? null,
+      content: message.reply_to.deleted ? null : message.reply_to.content,
+      image_url: message.reply_to.deleted ? null : message.reply_to.image_url,
+      type: message.reply_to.type,
+    } : null,
+    reactions: message.reactions.map(r => ({
+      id: r.id,
+      message_id: r.message_id,
+      user_id: r.user_id,
+      emoji: r.emoji,
+      created_at: r.created_at.toISOString(),
+    })),
+    created_at: message.created_at.toISOString(),
+    payment_request: null,
+  }
+}
+
+/**
  * Get messages for a conversation
  */
 export async function getConversationMessages(
@@ -379,6 +468,11 @@ export async function getConversationMessages(
         select: {
           id: true,
           sender_id: true,
+          sender: {
+            select: {
+              full_name: true,
+            }
+          },
           content: true,
           image_url: true,
           type: true,
@@ -438,6 +532,7 @@ export async function getConversationMessages(
     reply_to: m.reply_to ? {
       id: m.reply_to.id,
       sender_id: m.reply_to.sender_id,
+      sender_name: m.reply_to.sender?.full_name ?? null,
       content: m.reply_to.deleted ? null : m.reply_to.content,
       image_url: m.reply_to.deleted ? null : m.reply_to.image_url,
       type: m.reply_to.type,
@@ -521,6 +616,11 @@ export async function sendMessage(
         select: {
           id: true,
           sender_id: true,
+          sender: {
+            select: {
+              full_name: true,
+            }
+          },
           content: true,
           image_url: true,
           type: true,
@@ -570,6 +670,7 @@ export async function sendMessage(
     reply_to: message.reply_to ? {
       id: message.reply_to.id,
       sender_id: message.reply_to.sender_id,
+      sender_name: message.reply_to.sender?.full_name ?? null,
       content: message.reply_to.deleted ? null : message.reply_to.content,
       image_url: message.reply_to.deleted ? null : message.reply_to.image_url,
       type: message.reply_to.type,
@@ -1255,13 +1356,9 @@ export async function deleteMessage(
   // Emit deletion via socket
   try {
     const io = getSocketIO()
-      if (io) {
-        io.emit('user_presence', {
-          userId,
-          isOnline,
-          lastSeen: new Date().toISOString(),
-        })
-      }
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('message_deleted', { messageId })
+    }
   } catch (socketError) {
     console.error('[Chat] Socket.io emit error for message_deleted:', socketError)
   }

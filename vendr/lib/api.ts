@@ -683,6 +683,14 @@ export const orderApi = {
 
   getStats: () => apiFetch('/orders/me/stats'),
 
+  /** Vendor: update order status */
+  updateStatus: (orderId: string, status: string) =>
+    apiFetch(`/orders/${orderId}/status`, { method: 'PATCH', body: { status } }),
+
+  /** Buyer: confirm order receipt */
+  confirmReceipt: (orderId: string) =>
+    apiFetch(`/orders/${orderId}/confirm`, { method: 'POST' }),
+
   /** Pickup: buyer confirms they received the order */
   confirmDelivery: (orderId: string) =>
     apiFetch(`/escrow/confirm-delivery/${orderId}`, { method: 'POST' }),
