@@ -90,7 +90,9 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.387863147372-nr6ckt72856a2epqi0aiqh5hhp569e96"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-status-bar"
     ],
     "extra": {
       "router": {},

@@ -1,13 +1,28 @@
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin'
+let GoogleSignin: any = null
+let statusCodes: any = null
 
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!,
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID!,
-  offlineAccess: false,
-})
+try {
+  const module = require('@react-native-google-signin/google-signin')
+  GoogleSignin = module.GoogleSignin
+  statusCodes = module.statusCodes
+
+  GoogleSignin.configure({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID!,
+    offlineAccess: false,
+  })
+} catch (e) {
+  console.log('[GoogleAuth] Native module not available (Expo Go)')
+}
 
 export function useGoogleAuth() {
+  const isAvailable = GoogleSignin !== null
+
   async function signInWithGoogle(): Promise<string | null> {
+    if (!isAvailable) {
+      throw new Error('Google Sign-in requires a development build. Use email/password for now.')
+    }
+
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
       await GoogleSignin.signOut()
@@ -31,10 +46,11 @@ export function useGoogleAuth() {
   }
 
   async function signOutFromGoogle() {
+    if (!isAvailable) return
     try {
       await GoogleSignin.signOut()
     } catch {}
   }
 
-  return { signInWithGoogle, signOutFromGoogle }
+  return { signInWithGoogle, signOutFromGoogle, isAvailable }
 }

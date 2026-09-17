@@ -349,17 +349,13 @@ function OrderCard({
             onPress={() => onConfirmReceipt(order.id)}
           />
         ) : null}
-        {showVendorStatusUpdate && nextStatuses.length > 0 ? (
-          nextStatuses.map((status) => (
-            <ActionBtn
-              key={status}
-              label={STATUS_CONFIG[status]?.label || status}
-              icon={STATUS_CONFIG[status]?.icon || 'arrow-forward'}
-              color={STATUS_CONFIG[status]?.color || '#E8521A'}
-              loading={actionLoading === `${order.id}-${status}`}
-              onPress={() => onUpdateStatus(order.id, status)}
-            />
-          ))
+        {showVendorStatusUpdate ? (
+          <ActionBtn
+            label="Update Status"
+            icon="arrow-down-circle-outline"
+            color="#E8521A"
+            onPress={() => onOpenStatusModal(order)}
+          />
         ) : null}
 
         {/* Legacy escrow actions */}
@@ -753,6 +749,7 @@ export default function OrdersScreen() {
                     onDispute={(o) => { setDisputeOrder(o); setDisputeStep('reason'); }}
                     onUpdateStatus={handleUpdateStatus}
                     onConfirmReceipt={handleConfirmReceipt}
+                    onOpenStatusModal={(o) => setStatusModalOrder(o)}
                     actionLoading={actionLoading}
                     deliveryCode={deliveryCodes[order.id] ?? null}
                   />
@@ -802,6 +799,130 @@ export default function OrdersScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* Status Update Modal */}
+      <Modal visible={!!statusModalOrder} transparent animationType="slide" onRequestClose={() => setStatusModalOrder(null)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setStatusModalOrder(null)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#1A1208',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 24,
+              paddingBottom: 32,
+              borderWidth: 1,
+              borderColor: '#2A1F14',
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC' }}>
+                Update Order Status
+              </Text>
+              <TouchableOpacity onPress={() => setStatusModalOrder(null)}>
+                <Ionicons name="close" size={24} color="#6B5E50" />
+              </TouchableOpacity>
+            </View>
+
+            {statusModalOrder && (
+              <>
+                <View style={{ backgroundColor: '#0F0A06', borderRadius: 16, padding: 16, marginBottom: 20 }}>
+                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginBottom: 4 }}>
+                    Current Status
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons
+                      name={STATUS_CONFIG[statusModalOrder.status]?.icon || 'time-outline'}
+                      size={20}
+                      color={STATUS_CONFIG[statusModalOrder.status]?.color || '#F5A623'}
+                    />
+                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 16, color: '#FDF6EC' }}>
+                      {STATUS_CONFIG[statusModalOrder.status]?.label || statusModalOrder.status}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#9A8570', marginBottom: 12 }}>
+                  Select new status
+                </Text>
+
+                <View style={{ gap: 12 }}>
+                  {(() => {
+                    const transitions: Record<string, string[]> = {
+                      pending: ['confirmed', 'cancelled'],
+                      confirmed: ['preparing', 'cancelled'],
+                      preparing: ['ready', 'cancelled'],
+                      ready: [],
+                      delivered: [],
+                      cancelled: [],
+                    };
+                    const availableStatuses = transitions[statusModalOrder.status] || [];
+
+                    return availableStatuses.map((status) => (
+                      <TouchableOpacity
+                        key={status}
+                        onPress={() => {
+                          handleUpdateStatus(statusModalOrder.id, status);
+                          setStatusModalOrder(null);
+                        }}
+                        disabled={actionLoading === `${statusModalOrder.id}-${status}`}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                          backgroundColor: '#0F0A06',
+                          borderRadius: 16,
+                          padding: 16,
+                          borderWidth: 1,
+                          borderColor: '#2A1F14',
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 12,
+                            backgroundColor: `${STATUS_CONFIG[status]?.color || '#E8521A'}18`,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons
+                            name={STATUS_CONFIG[status]?.icon || 'arrow-forward'}
+                            size={20}
+                            color={STATUS_CONFIG[status]?.color || '#E8521A'}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }}>
+                            {STATUS_CONFIG[status]?.label || status}
+                          </Text>
+                          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>
+                            {status === 'confirmed' && 'Confirm the order and start processing'}
+                            {status === 'preparing' && 'Order is being prepared'}
+                            {status === 'ready' && 'Order is ready for pickup/delivery'}
+                            {status === 'cancelled' && 'Cancel this order'}
+                          </Text>
+                        </View>
+                        {actionLoading === `${statusModalOrder.id}-${status}` ? (
+                          <ActivityIndicator size="small" color="#E8521A" />
+                        ) : (
+                          <Ionicons name="chevron-forward" size={20} color="#6B5E50" />
+                        )}
+                      </TouchableOpacity>
+                    ));
+                  })()}
+                </View>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Dispute modal */}

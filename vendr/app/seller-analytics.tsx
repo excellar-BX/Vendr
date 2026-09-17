@@ -228,91 +228,92 @@ if (!isVendor) {
         contentContainerStyle={{ paddingBottom: 60 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E8521A" />}
       >
-        {/* Hero Revenue Card - only show if we have data */}
-        {!showEmptyState && summary && <HeroCard summary={summary} period={selectedPeriod} />}
+        {/* ── No Data State ────────────────────────────────────────────── */}
+        {showEmptyState ? (
+          <View style={{ marginTop: 120, marginHorizontal: 20 }}>
+            <EmptyState />
+          </View>
+        ) : (
+          <>
+            {/* Hero Revenue Card */}
+            <HeroCard summary={summary} period={selectedPeriod} />
 
-        {/* Period Selector */}
-        <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
-          {!showEmptyState && (
-            <View style={{ flexDirection: 'row', backgroundColor: '#1A1208', borderRadius: 14, padding: 4, gap: 4 }}>
-              {PERIODS.map((p) => (
+            {/* Period Selector */}
+            <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
+              <View style={{ flexDirection: 'row', backgroundColor: '#1A1208', borderRadius: 14, padding: 4, gap: 4 }}>
+                {PERIODS.map((p) => (
+                  <TouchableOpacity
+                    key={p.value}
+                    onPress={() => handlePeriodChange(p.value)}
+                    activeOpacity={0.75}
+                    style={{
+                      flex: 1, paddingVertical: 10, borderRadius: 10,
+                      backgroundColor: selectedPeriod === p.value ? '#E8521A' : 'transparent',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
+                      color: selectedPeriod === p.value ? 'white' : '#9A8570',
+                    }}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Tab Switcher */}
+            <View style={{ marginHorizontal: 20, marginBottom: 20, flexDirection: 'row', gap: 8 }}>
+              {(['overview', 'products', 'insights'] as const).map((tab) => (
                 <TouchableOpacity
-                  key={p.value}
-                  onPress={() => handlePeriodChange(p.value)}
-                  activeOpacity={0.75}
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
                   style={{
-                    flex: 1, paddingVertical: 10, borderRadius: 10,
-                    backgroundColor: selectedPeriod === p.value ? '#E8521A' : 'transparent',
-                    alignItems: 'center',
+                    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+                    borderWidth: 1,
+                    borderColor: activeTab === tab ? '#E8521A' : '#2A1F14',
+                    backgroundColor: activeTab === tab ? 'rgba(232,82,26,0.12)' : 'transparent',
                   }}
                 >
                   <Text style={{
                     fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
-                    color: selectedPeriod === p.value ? 'white' : '#9A8570',
+                    color: activeTab === tab ? '#E8521A' : '#6B5E50',
+                    textTransform: 'capitalize',
                   }}>
-                    {p.label}
+                    {tab}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-          )}
-        </View>
 
-        {/* Tab Switcher */}
-        <View style={{ marginHorizontal: 20, marginBottom: 20, flexDirection: 'row', gap: 8 }}>
-          {(['overview', 'products', 'insights'] as const).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              onPress={() => setActiveTab(tab)}
-              style={{
-                paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-                borderWidth: 1,
-                borderColor: activeTab === tab ? '#E8521A' : '#2A1F14',
-                backgroundColor: activeTab === tab ? 'rgba(232,82,26,0.12)' : 'transparent',
-              }}
-            >
-              <Text style={{
-                fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
-                color: activeTab === tab ? '#E8521A' : '#6B5E50',
-                textTransform: 'capitalize',
-              }}>
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+            {/* ── Overview Tab ──────────────────────────────────────────── */}
+            {activeTab === 'overview' && (
+              <>
+                <StatGrid summary={summary} />
+                <RevenueChart data={daily_data} />
+                <OrdersBarChart data={daily_data} />
+                <ConversionFunnel summary={summary} />
+              </>
+            )}
 
-        {/* ── Overview Tab ──────────────────────────────────────────── */}
-        {activeTab === 'overview' && (
-          showEmptyState ? <EmptyState /> : (
-            <>
-              <StatGrid summary={summary} />
-              <RevenueChart data={daily_data} />
-              <OrdersBarChart data={daily_data} />
-              <ConversionFunnel summary={summary} />
-            </>
-          )
-        )}
+            {/* ── Products Tab ──────────────────────────────────────────── */}
+            {activeTab === 'products' && (
+              <>
+                <TopProductsList products={top_products} />
+                <ProductPerformanceChart products={top_products} />
+              </>
+            )}
 
-        {/* ── Products Tab ──────────────────────────────────────────── */}
-        {activeTab === 'products' && (
-          showEmptyState ? <EmptyState /> : (
-            <>
-              <TopProductsList products={top_products} />
-              <ProductPerformanceChart products={top_products} />
-            </>
-          )
-        )}
-
-        {/* ── Insights Tab ──────────────────────────────────────────── */}
-        {activeTab === 'insights' && (
-          showEmptyState ? <EmptyState /> : (
-            <>
-              <PerformanceRing summary={summary} />
-              <InsightsCards summary={summary} />
-              <GoalsSection summary={summary} goals={goals} />
-            </>
-          )
+            {/* ── Insights Tab ──────────────────────────────────────────── */}
+            {activeTab === 'insights' && (
+              <>
+                <PerformanceRing summary={summary} />
+                <InsightsCards summary={summary} />
+                <GoalsSection summary={summary} goals={goals} />
+              </>
+            )}
+          </>
         )}
       </Animated.ScrollView>
     </View>

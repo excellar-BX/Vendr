@@ -30,7 +30,7 @@ function GoogleIcon() {
 export default function RegisterScreen() {
   const { setUser } = useAuthStore()
   const { showAlert, alertElement } = useVendrAlert()
-  const { signInWithGoogle } = useGoogleAuth()
+  const { signInWithGoogle, isAvailable: googleAvailable } = useGoogleAuth()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -115,21 +115,23 @@ export default function RegisterScreen() {
           <Text className="text-subtle text-base">Join thousands discovering local vendors.</Text>
         </View>
 
-        <TouchableOpacity
-          className="flex-row items-center justify-center gap-3 bg-dark-2 border border-faint rounded-2xl py-4 mb-6"
-          activeOpacity={0.85}
-          onPress={handleGoogleSignUp}
-          disabled={googleLoading}
-        >
-          {googleLoading
-            ? <ActivityIndicator color="#FDF6EC" size="small" />
-            : <><GoogleIcon /><Text className="text-cream text-base font-semibold ml-2">Continue with Google</Text></>
-          }
-        </TouchableOpacity>
+        {googleAvailable && (
+          <TouchableOpacity
+            className="flex-row items-center justify-center gap-3 bg-dark-2 border border-faint rounded-2xl py-4 mb-6"
+            activeOpacity={0.85}
+            onPress={handleGoogleSignUp}
+            disabled={googleLoading}
+          >
+            {googleLoading
+              ? <ActivityIndicator color="#FDF6EC" size="small" />
+              : <><GoogleIcon /><Text className="text-cream text-base font-semibold ml-2">Continue with Google</Text></>
+            }
+          </TouchableOpacity>
+        )}
 
         <View className="flex-row items-center gap-3 mb-7">
           <View className="flex-1 h-px bg-faint" />
-          <Text className="text-subtle text-xs font-medium">or sign up with email</Text>
+          <Text className="text-subtle text-xs font-medium">{googleAvailable ? 'or sign up with email' : 'Sign up with email'}</Text>
           <View className="flex-1 h-px bg-faint" />
         </View>
 

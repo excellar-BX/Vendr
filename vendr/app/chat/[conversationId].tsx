@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import {
   View, TextInput, TouchableOpacity, FlatList,
   KeyboardAvoidingView, Platform, Image, ActivityIndicator,
@@ -35,6 +35,7 @@ import Animated, {
   runOnJS,
   interpolate,
   Extrapolate,
+  Easing,
 } from 'react-native-reanimated';
 import {
   GestureDetector,
@@ -124,13 +125,13 @@ function getDateLabel(dateString: string) {
 }
 
 // ── Typing Indicator ───────────────────────────────────────────────────────
-function TypingDot({ delay }: { delay: number }) {
+const TypingDot = memo(function TypingDot({ delay }: { delay: number }) {
   const y = useSharedValue(0);
   useEffect(() => {
     y.value = withDelay(delay, withRepeat(
       withSequence(
-        withTiming(-4, { duration: 300 }),
-        withTiming(0, { duration: 300 })
+        withTiming(-4, { duration: 200 }),
+        withTiming(0, { duration: 200 })
       ), -1, false
     ));
   }, []);
@@ -141,13 +142,13 @@ function TypingDot({ delay }: { delay: number }) {
       backgroundColor: '#6B5E50', marginHorizontal: 2,
     }, style]} />
   );
-}
+});
 
-function TypingBubble() {
+const TypingBubble = memo(function TypingBubble() {
   return (
     <Animated.View
-      entering={FadeInDown.duration(200)}
-      exiting={FadeOut.duration(150)}
+      entering={FadeInDown.duration(150).easing(Easing.out)}
+      exiting={FadeOut.duration(100).easing(Easing.in)}
       style={{
         flexDirection: 'row', alignItems: 'flex-end',
         paddingHorizontal: 16, paddingBottom: 4,
@@ -173,10 +174,10 @@ function TypingBubble() {
       </View>
     </Animated.View>
   );
-}
+});
 
 // ── Date Separator ─────────────────────────────────────────────────────────
-function DateSeparator({ label }: { label: string }) {
+const DateSeparator = memo(function DateSeparator({ label }: { label: string }) {
   return (
     <View style={{
       flexDirection: 'row', alignItems: 'center',
@@ -197,10 +198,10 @@ function DateSeparator({ label }: { label: string }) {
       <View style={{ flex: 1, height: 1, backgroundColor: '#1E1610' }} />
     </View>
   );
-}
+});
 
 // ── Reply Quote inside bubble ──────────────────────────────────────────────
-function ReplyQuote({ replyTo, isMine, myId }: {
+const ReplyQuote = memo(function ReplyQuote({ replyTo, isMine, myId }: {
   replyTo: ReplyPreview; isMine: boolean; myId: string;
 }) {
   const isOwn = replyTo.sender_id === myId;
@@ -232,10 +233,10 @@ function ReplyQuote({ replyTo, isMine, myId }: {
       )}
     </View>
   );
-}
+});
 
 // ── Reaction Pill Row ──────────────────────────────────────────────────────
-function ReactionRow({ reactions, myId, onPress }: {
+const ReactionRow = memo(function ReactionRow({ reactions, myId, onPress }: {
   reactions: Reaction[]; myId: string;
   onPress: (emoji: string) => void;
 }) {
@@ -272,10 +273,10 @@ function ReactionRow({ reactions, myId, onPress }: {
       ))}
     </View>
   );
-}
+});
 
 // ── Swipe Reply Indicator ──────────────────────────────────────────────────
-function SwipeReplyIcon({ translateX, isMine }: {
+const SwipeReplyIcon = memo(function SwipeReplyIcon({ translateX, isMine }: {
   translateX: Animated.SharedValue<number>; isMine: boolean;
 }) {
   const style = useAnimatedStyle(() => {
@@ -299,10 +300,10 @@ function SwipeReplyIcon({ translateX, isMine }: {
       <Ionicons name="return-down-forward-outline" size={14} color="#E8521A" />
     </Animated.View>
   );
-}
+});
 
 // ── Message Bubble ─────────────────────────────────────────────────────────
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   msg, isMine, isFirstInGroup, isLastInGroup, myId,
   onLongPress, onImagePress, onSwipeReply, onReactionPress,
   isSelected, selectionMode, onSelect,
@@ -345,7 +346,7 @@ function MessageBubble({
         ? translateX.value <= -threshold
         : translateX.value >= threshold;
       if (shouldReply) runOnJS(onSwipeReply)(msg);
-      translateX.value = withSpring(0, { damping: 20, stiffness: 300 });
+      translateX.value = withSpring(0, { damping: 15, stiffness: 400 });
     });
 
   const animStyle = useAnimatedStyle(() => ({
@@ -396,7 +397,7 @@ function MessageBubble({
   return (
     <GestureDetector gesture={swipeGesture}>
       <Animated.View
-        entering={isMine ? SlideInRight.duration(200).springify() : SlideInLeft.duration(200).springify()}
+        entering={isMine ? SlideInRight.duration(150).easing(Easing.out) : SlideInLeft.duration(150).easing(Easing.out)}
         style={[
           {
             marginBottom,
@@ -576,10 +577,12 @@ function MessageBubble({
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
 // ── Payment Request Bubble ─────────────────────────────────────────────────
-function PaymentRequestBubble({ msg, isMine, paymentRequest, onPay, onCancel, paying }: {
+const PaymentRequestBubble = memo(function PaymentRequestBubble({
+  msg, isMine, paymentRequest, onPay, onCancel, paying,
+}: {
   msg: Message; isMine: boolean; paymentRequest: PaymentRequest | null;
   onPay: (pr: PaymentRequest) => void;
   onCancel: (pr: PaymentRequest) => void;
@@ -592,7 +595,7 @@ function PaymentRequestBubble({ msg, isMine, paymentRequest, onPay, onCancel, pa
 
   return (
     <Animated.View
-      entering={FadeInDown.duration(300).springify()}
+      entering={FadeInDown.duration(200).easing(Easing.out)}
       style={{
         marginBottom: 10, marginHorizontal: 10,
         alignSelf: isMine ? 'flex-end' : 'flex-start',
@@ -700,7 +703,7 @@ function PaymentRequestBubble({ msg, isMine, paymentRequest, onPay, onCancel, pa
       </View>
     </Animated.View>
   );
-}
+});
 
 // ── Floating Context Menu ──────────────────────────────────────────────────
 // Replaces the old bottom sheet actions with a WhatsApp-style floating menu
@@ -858,7 +861,7 @@ function FloatingReactionPicker({
 }
 
 // ── Reply Strip ────────────────────────────────────────────────────────────
-function ReplyStrip({ replyTo, myId, onCancel, senderName }: {
+const ReplyStrip = memo(function ReplyStrip({ replyTo, myId, onCancel, senderName }: {
   replyTo: Message; myId: string; onCancel: () => void; senderName: string | null;
 }) {
   const isOwn = replyTo.sender_id === myId;
@@ -897,7 +900,7 @@ function ReplyStrip({ replyTo, myId, onCancel, senderName }: {
       </TouchableOpacity>
     </Animated.View>
   );
-}
+});
 
 // ── Main Screen ────────────────────────────────────────────────────────────
 export default function ChatScreen() {
@@ -1204,7 +1207,7 @@ export default function ChatScreen() {
     try { await chatApi.addReaction(messageId, emoji); } catch (e) { console.error(e); }
   };
 
-  const handleReactionPress = async (messageId: string, emoji: string) => {
+  const handleReactionPress = useCallback(async (messageId: string, emoji: string) => {
     if (!user?.id) return;
     const msg = messages.find(m => m.id === messageId);
     if (!msg) return;
@@ -1216,7 +1219,7 @@ export default function ChatScreen() {
     } else {
       setReactionPicker({ visible: true, messageId });
     }
-  };
+  }, [user?.id, messages]);
 
   // ─── Context Menu ───────────────────────────────────────────────────────
   const handleLongPress = useCallback((msg: Message, pageY: number) => {
@@ -1283,13 +1286,13 @@ export default function ChatScreen() {
   };
 
   // ─── Selection ──────────────────────────────────────────────────────────
-  const handleSelect = (msg: Message) => {
+  const handleSelect = useCallback((msg: Message) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       next.has(msg.id) ? next.delete(msg.id) : next.add(msg.id);
       return next;
     });
-  };
+  }, []);
 
   const exitSelectionMode = () => { setSelectionMode(false); setSelectedIds(new Set()); };
 
@@ -1437,9 +1440,62 @@ export default function ChatScreen() {
     finally { setSendingPaymentRequest(false); }
   };
 
-  const handlePayNow = (pr: PaymentRequest) => {
+  const handlePayNow = useCallback((pr: PaymentRequest) => {
     setPendingPayPr(pr); setPayOrderType('pickup'); setPayDeliveryAddress(''); setShowPayOrderSheet(true);
-  };
+  }, []);
+
+  const handleImagePress = useCallback((url: string) => {
+    setViewingImage(url);
+  }, []);
+
+  const handleSwipeReply = useCallback((msg: Message) => {
+    setReplyingTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
+  const renderItem = useCallback(({ item, index }: { item: Message; index: number }) => {
+    const prevItem = messages[index - 1];
+    const nextItem = messages[index + 1];
+    const showDate = !prevItem || getDateLabel(item.created_at) !== getDateLabel(prevItem.created_at);
+    const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id || showDate;
+    const isLastInGroup = !nextItem || nextItem.sender_id !== item.sender_id ||
+      getDateLabel(item.created_at) !== getDateLabel(nextItem.created_at);
+    const isMine = item.sender_id === user?.id;
+
+    return (
+      <View>
+        {showDate && <DateSeparator label={getDateLabel(item.created_at)} />}
+        {/* Extra space between groups */}
+        {isFirstInGroup && !showDate && index > 0 && (
+          <View style={{ height: 6 }} />
+        )}
+        {item.type === 'payment_request' ? (
+          <PaymentRequestBubble
+            msg={item} isMine={isMine}
+            paymentRequest={item.payment_request ?? null}
+            onPay={handlePayNow}
+            onCancel={handleCancelRequest}
+            paying={paying}
+          />
+        ) : (
+          <MessageBubble
+            msg={item}
+            isMine={isMine}
+            isFirstInGroup={isFirstInGroup}
+            isLastInGroup={isLastInGroup}
+            myId={user?.id ?? ''}
+            onLongPress={handleLongPress}
+            onImagePress={handleImagePress}
+            onSwipeReply={handleSwipeReply}
+            onReactionPress={handleReactionPress}
+            isSelected={selectedIds.has(item.id)}
+            selectionMode={selectionMode}
+            onSelect={handleSelect}
+          />
+        )}
+      </View>
+    );
+  }, [messages, user?.id, handlePayNow, handleCancelRequest, paying, handleLongPress, handleImagePress, handleSwipeReply, handleReactionPress, selectedIds, selectionMode, handleSelect]);
 
   const confirmPayNow = async () => {
     const pr = pendingPayPr;
@@ -1462,7 +1518,7 @@ export default function ChatScreen() {
     finally { setPaying(null); }
   };
 
-  const handleCancelRequest = (pr: PaymentRequest) => {
+  const handleCancelRequest = useCallback((pr: PaymentRequest) => {
     vendrAlert({
       title: 'Cancel Request?', message: 'The buyer will no longer be able to pay.', type: 'question',
       buttons: [
@@ -1478,7 +1534,7 @@ export default function ChatScreen() {
         },
       ],
     });
-  };
+  }, []);
 
   const sendEnquiry = async () => {
     if (!convId || !user?.id || !productName) return;
@@ -1662,52 +1718,15 @@ export default function ChatScreen() {
             onEndReached={loadOlderMessages}
             onEndReachedThreshold={0.1}
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            windowSize={10}
+            initialNumToRender={20}
             ListHeaderComponent={loadingMore ? (
               <ActivityIndicator size="small" color="#E8521A" style={{ marginVertical: 8 }} />
             ) : null}
-            renderItem={({ item, index }) => {
-              const prevItem = messages[index - 1];
-              const nextItem = messages[index + 1];
-              const showDate = !prevItem || getDateLabel(item.created_at) !== getDateLabel(prevItem.created_at);
-              const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id || showDate;
-              const isLastInGroup = !nextItem || nextItem.sender_id !== item.sender_id ||
-                getDateLabel(item.created_at) !== getDateLabel(nextItem.created_at);
-              const isMine = item.sender_id === user?.id;
-
-              return (
-                <View>
-                  {showDate && <DateSeparator label={getDateLabel(item.created_at)} />}
-                  {/* Extra space between groups */}
-                  {isFirstInGroup && !showDate && index > 0 && (
-                    <View style={{ height: 6 }} />
-                  )}
-                  {item.type === 'payment_request' ? (
-                    <PaymentRequestBubble
-                      msg={item} isMine={isMine}
-                      paymentRequest={item.payment_request ?? null}
-                      onPay={handlePayNow}
-                      onCancel={handleCancelRequest}
-                      paying={paying}
-                    />
-                  ) : (
-                    <MessageBubble
-                      msg={item}
-                      isMine={isMine}
-                      isFirstInGroup={isFirstInGroup}
-                      isLastInGroup={isLastInGroup}
-                      myId={user?.id ?? ''}
-                      onLongPress={handleLongPress}
-                      onImagePress={setViewingImage}
-                      onSwipeReply={(m) => { setReplyingTo(m); setTimeout(() => inputRef.current?.focus(), 100); }}
-                      onReactionPress={handleReactionPress}
-                      isSelected={selectedIds.has(item.id)}
-                      selectionMode={selectionMode}
-                      onSelect={handleSelect}
-                    />
-                  )}
-                </View>
-              );
-            }}
+            renderItem={renderItem}
           />
         )}
 
@@ -2045,12 +2064,13 @@ export default function ChatScreen() {
         {/* ── Payment Request Sheet ── */}
         <Modal visible={showPaymentSheet} transparent animationType="slide">
           <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowPaymentSheet(false)} />
-          <View style={{
-            backgroundColor: '#141009',
-            borderTopLeftRadius: 26, borderTopRightRadius: 26,
-            borderTopWidth: 1, borderColor: '#1E1610',
-            paddingHorizontal: 20, paddingTop: 14, paddingBottom: 44,
-          }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+            <View style={{
+              backgroundColor: '#141009',
+              borderTopLeftRadius: 26, borderTopRightRadius: 26,
+              borderTopWidth: 1, borderColor: '#1E1610',
+              paddingHorizontal: 20, paddingTop: 14, paddingBottom: 44,
+            }}>
             <View style={{ width: 36, height: 4, backgroundColor: '#2A1F14', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 }}>
               <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(232,82,26,0.1)', alignItems: 'center', justifyContent: 'center' }}>
@@ -2104,7 +2124,8 @@ export default function ChatScreen() {
                     </Text>
                   </>}
             </TouchableOpacity>
-          </View>
+            </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         {alertElement}
