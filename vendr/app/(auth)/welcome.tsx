@@ -128,13 +128,13 @@ export default function WelcomeScreen() {
       <StatusBar style="light" />
 
       {/* Glows */}
-      <View className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-orange opacity-[0.07]" />
+      <View className="absolute -top-24 -right-20 w-80 h-80 rounded-full bg-orange opacity-[0.07]" />
       <View className="absolute -bottom-10 -left-20 w-72 h-72 rounded-full bg-gold opacity-[0.05]" />
 
       {/* Logo */}
-      <View className="pt-14 px-7 pb-4">
+      <View className="pt-14 pb-4">
         <Text className="text-cream text-2xl tracking-tight" >
-          vendr<Text className="text-orange">.</Text>
+          vendrr<Text className="text-orange">.</Text>
         </Text>
       </View>
 

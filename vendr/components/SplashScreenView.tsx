@@ -45,7 +45,7 @@ export default function SplashScreenView() {
 />
 
         {/* Wordmark */}
-        <Text style={{fontWeight: '400'}} className="text-cream text-4xl tracking-tight">
+        <Text style={{fontWeight: '400', fontFamily: 'SpaceGrotesk_600SemiBold',}} className="text-cream text-4xl">
           vendr<Text className="text-orange">.</Text>
         </Text>
       </Animated.View>

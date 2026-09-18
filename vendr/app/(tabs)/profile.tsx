@@ -55,10 +55,10 @@ function Divider() {
 }
 
 export default function ProfileScreen() {
-  const { user, setUser, setJustLoggedOut, clear } = useAuthStore();
+  const { user, setUser, setJustLoggedOut, clear, isRunnerMode, setRunnerMode } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [profile, setProfile] = useState<any>(null);
-  const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0 });
+  const [stats, setStats] = useState({ orders: 0, reviews: 0, saved: 0, runs: 0 });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [canAddPassword, setCanAddPassword] = useState(false);
   const [hasPassword, setHasPassword] = useState(false);
@@ -68,6 +68,16 @@ export default function ProfileScreen() {
   const name = profile?.name ?? user?.full_name ?? 'Vendr User';
   const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
   const isVendor = profile?.is_vendor === true;
+  const isRunner = profile?.is_runner === true;
+  const badgeLabel = isRunner ? 'Runner' : isVendor ? 'Vendor' : 'Buyer';
+  const badgeIcon: IoniconsName = isRunner 
+    ? 'bicycle-outline' 
+    : isVendor 
+    ? 'storefront-outline' 
+    : 'person-outline';
+  const badgeColor = isRunner ? '#2D8653' : isVendor ? '#F5A623' : '#9A8570';
+  const badgeBg = isRunner ? 'rgba(45,134,83,0.15)' : isVendor ? 'rgba(245,166,35,0.15)' : '#1A1208';
+  const badgeBorder = isRunner ? 'rgba(45,134,83,0.3)' : isVendor ? 'rgba(245,166,35,0.3)' : '#3D3026';
 
   useFocusEffect(useCallback(() => {
     if (!userId) return;
@@ -84,6 +94,7 @@ export default function ProfileScreen() {
           avatar_url: profileData.avatar_url,
           notifications_enabled: profileData.notifications_enabled,
           is_vendor: !!profileData.vendor,
+          is_runner: !!profileData.is_runner,
         });
         setNotificationsEnabled(profileData.notifications_enabled);
         setCanAddPassword(meData.can_add_password || false);
@@ -92,6 +103,7 @@ export default function ProfileScreen() {
           orders: profileData.stats?.orders ?? 0,
           reviews: profileData.stats?.reviews ?? 0,
           saved: profileData.stats?.saved ?? 0,
+          runs: profileData.stats?.runs ?? 0,
         });
       } catch (err) {
         console.error('Failed to fetch profile:', err);
@@ -214,12 +226,12 @@ export default function ProfileScreen() {
               alignSelf: 'flex-start', marginTop: 8,
               paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
               flexDirection: 'row', alignItems: 'center', gap: 4,
-              backgroundColor: isVendor ? 'rgba(245,166,35,0.15)' : '#1A1208',
-              borderWidth: 1, borderColor: isVendor ? 'rgba(245,166,35,0.3)' : '#3D3026',
+              backgroundColor: badgeBg,
+              borderWidth: 1, borderColor: badgeBorder,
             }}>
-              <Ionicons name={isVendor ? 'storefront-outline' : 'person-outline'} size={11} color={isVendor ? '#F5A623' : '#9A8570'} />
-              <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_600SemiBold', color: isVendor ? '#F5A623' : '#9A8570' }}>
-                {isVendor ? 'Vendor' : 'Buyer'}
+              <Ionicons name={badgeIcon} size={11} color={badgeColor} />
+              <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_600SemiBold', color: badgeColor }}>
+                {badgeLabel}
               </Text>
             </View>
           </View>
@@ -233,6 +245,7 @@ export default function ProfileScreen() {
             { label: 'Orders',  value: stats.orders,  icon: 'bag-outline'      as IoniconsName, route: '/orders'  },
             { label: 'Reviews', value: stats.reviews, icon: 'star-outline'     as IoniconsName, route: '/reviews' },
             { label: 'Saved',   value: stats.saved,   icon: 'bookmark-outline' as IoniconsName, route: '/saved'   },
+            ...(isRunner ? [{ label: 'Runs', value: stats.runs ?? 0, icon: 'bicycle-outline' as IoniconsName, route: '/runner-earnings' }] : []),
           ].map(stat => (
             <TouchableOpacity
               key={stat.label}
@@ -304,7 +317,7 @@ export default function ProfileScreen() {
           </>
         )}
 
-        {!isVendor && (
+        {!isVendor && !isRunner && (
           <>
             <SectionHeader title="Sell on Vendr" />
             <TouchableOpacity
@@ -322,6 +335,77 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </>
         )}
+
+        {/* Become a Runner - visible if not vendor and not runner */}
+        {!isVendor && !isRunner && (
+          <>
+            <SectionHeader title="Deliver on Vendr" />
+            <TouchableOpacity
+              activeOpacity={0.85} onPress={() => router.push('/become-runner')}
+              className="mx-5 bg-green-500/10 border border-green-500/30 rounded-3xl p-4 flex-row items-center gap-3"
+            >
+              <View className="w-10 h-10 bg-green-500/20 rounded-2xl items-center justify-center">
+                <Ionicons name="bicycle-outline" size={20} color="#2D8653" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Become a Runner</Text>
+                <Text className="text-muted text-xs mt-0.5">Earn money delivering orders</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color="#2D8653" />
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Runner - active */}
+        {isRunner && (
+          <>
+            <SectionHeader title="My Deliveries" />
+            <View className="mx-5 bg-dark-2 border border-faint rounded-3xl p-4 flex-row items-center justify-between mb-2">
+              <View className="flex-row items-center gap-3">
+                <View className="w-10 h-10 bg-green-500/20 rounded-2xl items-center justify-center">
+                  <Ionicons name={isRunnerMode ? 'flash' : 'flash-outline'} size={20} color="#2D8653" />
+                </View>
+                <View>
+                  <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Runner Mode</Text>
+                  <Text className="text-muted text-xs mt-0.5">{isRunnerMode ? 'Online - Accepting jobs' : 'Offline'}</Text>
+                </View>
+              </View>
+              <Switch
+                value={isRunnerMode}
+                onValueChange={setRunnerMode}
+                trackColor={{ false: '#3D3026', true: '#2D8653' }}
+                thumbColor="white"
+              />
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.85} onPress={() => router.push('/runner-dashboard')}
+              className="mx-5 bg-dark-2 border border-faint rounded-3xl p-4 flex-row items-center gap-3 mb-2"
+            >
+              <View className="w-10 h-10 bg-green-500/20 rounded-2xl items-center justify-center">
+                <Ionicons name="bicycle-outline" size={20} color="#2D8653" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Runner Dashboard</Text>
+                <Text className="text-muted text-xs mt-0.5">Available jobs and active runs</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color="#2D8653" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85} onPress={() => router.push('/runner-earnings')}
+              className="mx-5 bg-dark-2 border border-faint rounded-3xl p-4 flex-row items-center gap-3"
+            >
+              <View className="w-10 h-10 bg-orange/20 rounded-2xl items-center justify-center">
+                <Ionicons name="wallet-outline" size={20} color="#E8521A" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Runner Earnings</Text>
+                <Text className="text-muted text-xs mt-0.5">Track your delivery income</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color="#E8521A" />
+            </TouchableOpacity>
+          </>
+        )}
+
 
         {/* Preferences */}
         <SectionHeader title="Preferences" />
