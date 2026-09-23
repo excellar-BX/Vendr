@@ -20,6 +20,8 @@ import { disputeRoutes } from './services/dispute/dispute.routes'
 import { adminRoutes } from './services/admin/admin.routes'
 import { vendorReportRoutes } from './services/vendor-report/vendor-report.routes'
 import { vendorAnalyticsRoutes } from './services/vendor-analytics/vendor-analytics.routes'
+import { runnerRoutes } from './services/runner/runner.routes'
+import { qrRoutes } from './services/qr/qr.routes'
 import { initSocket } from './lib/socket'
 
 export async function buildServer() {
@@ -53,13 +55,15 @@ export async function buildServer() {
         /^https?:\/\/.*\.ngrok-free\.app$/,   // ngrok free tunnels
         /^https?:\/\/.*\.ngrok\.io$/,         // ngrok legacy
         /^https?:\/\/.*\.ngrok-free\.dev$/,   // ngrok free dev tunnels
+        /^https?:\/\/.*\.outray\.app$/,       // outray tunnels
         /^https?:\/\/.*\.vercel\.app$/,       // Vercel deployments
         /^https?:\/\/.*\.onrender\.com$/,     // Render deployments
       ]
 
       // Add production origins via env: ALLOWED_ORIGINS=https://admin.vendr.ng,https://app.vendr.ng
-      // Explicitly allow the current ngrok domain and web development origins
+      // Explicitly allow the current tunnel domain and web development origins
       const explicitOrigins = [
+        'https://excellar.outray.app',
         'https://vendr-production.up.railway.app',
         'http://localhost:8081',
         'http://localhost:19006',
@@ -81,7 +85,7 @@ export async function buildServer() {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+    allowedHeaders: ['Content-Type', 'Authorization',],
     credentials: true,
   })
   // ─── Routes ───────────────────────────────────────────────────────────────
@@ -105,6 +109,8 @@ export async function buildServer() {
   await app.register(adminRoutes, { prefix: '/api' })
   await app.register(vendorReportRoutes, { prefix: '/api' })
   await app.register(vendorAnalyticsRoutes, { prefix: '/api' })
+  await app.register(runnerRoutes, { prefix: '/api' })
+  await app.register(qrRoutes, { prefix: '/api' })
 
   // ─── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

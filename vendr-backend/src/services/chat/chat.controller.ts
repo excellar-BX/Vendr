@@ -291,10 +291,15 @@ export async function getPresenceController(request: FastifyRequest, reply: Fast
 export async function createPaymentRequestController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = request.user.id
-    const { conversation_id, amount, description } = request.body as {
+    const { conversation_id, amount, description, is_delivery, delivery_address, delivery_lat, delivery_lng, delivery_fee } = request.body as {
       conversation_id: string
       amount: number
       description?: string
+      is_delivery?: boolean
+      delivery_address?: string
+      delivery_lat?: number
+      delivery_lng?: number
+      delivery_fee?: number
     }
 
     if (!conversation_id || !amount) {
@@ -304,7 +309,24 @@ export async function createPaymentRequestController(request: FastifyRequest, re
       })
     }
 
-    const result = await ChatService.createPaymentRequest(conversation_id, userId, amount, description)
+    if (is_delivery && (!delivery_address || !delivery_lat || !delivery_lng)) {
+      return reply.status(400).send({
+        success: false,
+        message: 'delivery_address, delivery_lat, and delivery_lng are required for delivery orders',
+      })
+    }
+
+    const result = await ChatService.createPaymentRequest(
+      conversation_id,
+      userId,
+      amount,
+      description,
+      is_delivery,
+      delivery_address,
+      delivery_lat,
+      delivery_lng,
+      delivery_fee
+    )
 
     return reply.status(201).send({
       success: true,

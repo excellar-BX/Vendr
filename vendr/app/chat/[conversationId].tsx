@@ -1,19 +1,17 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
-  View, TextInput, TouchableOpacity, FlatList,
-  KeyboardAvoidingView, Platform, Image, ActivityIndicator,
-  Modal, Dimensions, TextInput as RNTextInput, Pressable,
-  ScrollView,
+  View, FlatList, TouchableOpacity, TextInput, Image, Keyboard, Platform,
+  ActivityIndicator, Alert as NativeAlert, ScrollView, Dimensions,
+  Modal, KeyboardAvoidingView, Pressable, StatusBar,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
-import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
-import { chatApi, storageApi, analyticsApi } from '../../lib/api';
-import * as FileSystem from 'expo-file-system/legacy';
+import { chatApi, analyticsApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+import { usePresenceStore } from '../../stores/presenceStore';
+import { connectSocket, disconnectSocket, joinConversation, leaveConversation } from '../../lib/socket';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
 import Animated, {
   useSharedValue,
@@ -42,13 +40,6 @@ import {
   Gesture,
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
-import {
-  connectSocket,
-  disconnectSocket,
-  joinConversation,
-  leaveConversation,
-} from '../../lib/socket';
-
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const REACTION_EMOJIS = ['❤️', '😂', '👍', '🔥', '😮', '😢'];
 
@@ -134,7 +125,7 @@ const TypingDot = memo(function TypingDot({ delay }: { delay: number }) {
         withTiming(0, { duration: 200 })
       ), -1, false
     ));
-  }, []);
+  }, [delay]);
   const style = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
   return (
     <Animated.View style={[{
@@ -904,14 +895,16 @@ const ReplyStrip = memo(function ReplyStrip({ replyTo, myId, onCancel, senderNam
 
 // ── Main Screen ────────────────────────────────────────────────────────────
 export default function ChatScreen() {
-  const { vendorId, conversationId, productId, productName, productPrice } = useLocalSearchParams<{
-    vendorId?: string; conversationId?: string;
-    productId?: string; productName?: string; productPrice?: string;
-  }>();
-
   const { user } = useAuthStore();
+  const { setActiveConversationId } = usePresenceStore();
+  const { conversationId, vendorId, productName, productPrice } = useLocalSearchParams<{
+    conversationId?: string;
+    vendorId?: string;
+    productName?: string;
+    productPrice?: string;
+  }>();
   const { showAlert: vendrAlert, alertElement } = useVendrAlert();
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlatList<Message>>(null);
   const inputRef = useRef<TextInput>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -978,9 +971,13 @@ export default function ChatScreen() {
   }));
   useEffect(() => { if (viewingImage) scale.value = 1; }, [viewingImage]);
 
-  useEffect(() => { if (!user?.id) return; initChat(); }, []);
+  const resolveSenderName = useCallback((senderId: string, currentVendorName?: string, currentBuyerName?: string, currentActingAsVendor?: boolean) => {
+    if (senderId === user?.id) return user?.full_name ?? null;
+    if (currentActingAsVendor) return currentBuyerName ?? currentVendorName ?? 'Unknown';
+    return currentVendorName ?? 'Vendor';
+  }, [user?.id, user?.full_name]);
 
-  const initChat = async () => {
+  const initChat = useCallback(async () => {
     const userId = user!.id;
     setError(null);
     try {
@@ -1009,9 +1006,8 @@ export default function ChatScreen() {
         ? buyer?.name ?? 'Unknown Buyer'
         : vendor?.business_name ?? 'Vendor';
 
-      const resolveSenderName = (senderId: string) => {
-        if (senderId === userId) return user?.name ?? null;
-        return actingAsVendor ? buyer?.name ?? resolvedVendorName : resolvedVendorName;
+      const localResolveSenderName = (senderId: string) => {
+        return resolveSenderName(senderId, resolvedVendorName, buyer?.name, actingAsVendor);
       };
 
       if (actingAsVendor) {
@@ -1028,13 +1024,13 @@ export default function ChatScreen() {
       const { data: msgs } = await chatApi.getMessages(cid, { limit: 30 });
       // Populate sender_name and reconstruct reply_to objects for messages that don't have them
       const messagesWithNames = await Promise.all((msgs ?? []).map(async msg => {
-        const senderName = msg.sender_name ?? resolveSenderName(msg.sender_id);
+        const senderName = msg.sender_name ?? localResolveSenderName(msg.sender_id);
 
         // Patch sender_name onto reply_to from backend since it doesn't send it
         let replyTo = msg.reply_to
           ? {
               ...msg.reply_to,
-              sender_name: msg.reply_to.sender_name ?? resolveSenderName(msg.reply_to.sender_id),
+              sender_name: msg.reply_to.sender_name ?? localResolveSenderName(msg.reply_to.sender_id),
             }
           : null;
 
@@ -1045,7 +1041,7 @@ export default function ChatScreen() {
             replyTo = {
               id: originalMsg.id,
               sender_id: originalMsg.sender_id,
-              sender_name: originalMsg.sender_name ?? resolveSenderName(originalMsg.sender_id),
+              sender_name: originalMsg.sender_name ?? localResolveSenderName(originalMsg.sender_id),
               content: originalMsg.content,
               image_url: originalMsg.image_url,
               type: originalMsg.type,
@@ -1058,7 +1054,7 @@ export default function ChatScreen() {
                 replyTo = {
                   id: fetchedMsg.id,
                   sender_id: fetchedMsg.sender_id,
-                  sender_name: fetchedMsg.sender_name ?? resolveSenderName(fetchedMsg.sender_id),
+                  sender_name: fetchedMsg.sender_name ?? localResolveSenderName(fetchedMsg.sender_id),
                   content: fetchedMsg.content,
                   image_url: fetchedMsg.image_url,
                   type: fetchedMsg.type,
@@ -1082,6 +1078,7 @@ export default function ChatScreen() {
       await chatApi.resetUnread(cid, actingAsVendor ? 'vendor_unread' : 'buyer_unread');
       await chatApi.markAsRead(cid);
       await chatApi.setPresence(true);
+      setActiveConversationId(cid);
 
       const socket = await connectSocket();
       if (socket && cid) {
@@ -1112,17 +1109,21 @@ export default function ChatScreen() {
         socket.on('new_message', (newMsg: Message) => {
           if (newMsg.conversation_id === cid) {
             setMessages(prev => {
-              if (prev.some(m => m.id === newMsg.id)) return prev;
+              // Don't add if message already exists (prevents duplicates from sender receiving their own message)
+              if (prev.some(m => m.id === newMsg.id)) {
+                // Update existing message with server data (delivered/read status, etc.)
+                return prev.map(m => m.id === newMsg.id ? { ...m, ...newMsg } : m);
+              }
               // Populate sender_name if not provided by server
               const msgWithName = {
                 ...newMsg,
-                sender_name: newMsg.sender_name ?? resolveSenderName(newMsg.sender_id),
+                sender_name: newMsg.sender_name ?? localResolveSenderName(newMsg.sender_id),
               };
               // Patch sender_name onto reply_to from backend since it doesn't send it
               let replyTo = msgWithName.reply_to
                 ? {
                     ...msgWithName.reply_to,
-                    sender_name: msgWithName.reply_to.sender_name ?? resolveSenderName(msgWithName.reply_to.sender_id),
+                    sender_name: msgWithName.reply_to.sender_name ?? localResolveSenderName(msgWithName.reply_to.sender_id),
                   }
                 : null;
               // If the new message has reply_to_id but no reply_to object, try to find the original message
@@ -1169,15 +1170,19 @@ export default function ChatScreen() {
       setError(e.message);
       setLoading(false);
     }
-  };
+  }, [user?.id, conversationId, vendorId, productName, resolveSenderName, setActiveConversationId]);
+
+  useEffect(() => { if (!user?.id) return; initChat(); }, [user?.id, conversationId, vendorId, productName, initChat]);
 
   useEffect(() => {
     return () => {
       if (convId) leaveConversation(convId);
-      disconnectSocket();
+      // Clear active conversation ID when leaving chat
+      setActiveConversationId(null);
+      // Don't disconnect socket - it's managed app-wide in _layout.tsx
       if (user?.id) chatApi.setPresence(false).catch(console.error);
     };
-  }, [convId, user]);
+  }, [convId, user, setActiveConversationId]);
 
   const loadOlderMessages = async () => {
     if (!convId || loadingMore || !hasMore || !messages.length) return;
@@ -1340,7 +1345,7 @@ export default function ChatScreen() {
     const tempId = `temp-img-${Date.now()}`;
     try {
       const tempMsg: Message = {
-        id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.name ?? null,
+        id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.full_name ?? null,
         content: null, image_url: uri, type: 'image',
         is_read: false, delivered: false, edited: false, deleted: false,
         reply_to_id: replyingTo?.id ?? null,
@@ -1402,7 +1407,7 @@ export default function ChatScreen() {
     const replySnapshot = replyingTo;
 
     setMessages(prev => [...prev, {
-      id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.name ?? null,
+      id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.full_name ?? null,
       content, image_url: null, type: 'text',
       is_read: false, delivered: false, edited: false, deleted: false,
       reply_to_id: replySnapshot?.id ?? null,
@@ -1451,6 +1456,24 @@ export default function ChatScreen() {
   const handleSwipeReply = useCallback((msg: Message) => {
     setReplyingTo(msg);
     setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
+  const handleCancelRequest = useCallback((pr: PaymentRequest) => {
+    vendrAlert({
+      title: 'Cancel Request?', message: 'The buyer will no longer be able to pay.', type: 'question',
+      buttons: [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel Request', style: 'destructive', onPress: async () => {
+            try {
+              await chatApi.cancelPaymentRequest(pr.id);
+              setMessages(prev => prev.map(msg => msg.type === 'payment_request' && msg.content === pr.id
+                ? { ...msg, payment_request: { ...msg.payment_request!, status: 'cancelled' } } : msg));
+            } catch (e: any) { vendrAlert({ title: 'Error', message: e.message, type: 'danger' }); }
+          }
+        },
+      ],
+    });
   }, []);
 
   const renderItem = useCallback(({ item, index }: { item: Message; index: number }) => {
@@ -1517,24 +1540,6 @@ export default function ChatScreen() {
     } catch (e: any) { vendrAlert({ title: 'Payment Failed', message: e.message, type: 'danger' }); }
     finally { setPaying(null); }
   };
-
-  const handleCancelRequest = useCallback((pr: PaymentRequest) => {
-    vendrAlert({
-      title: 'Cancel Request?', message: 'The buyer will no longer be able to pay.', type: 'question',
-      buttons: [
-        { text: 'Keep', style: 'cancel' },
-        {
-          text: 'Cancel Request', style: 'destructive', onPress: async () => {
-            try {
-              await chatApi.cancelPaymentRequest(pr.id);
-              setMessages(prev => prev.map(msg => msg.type === 'payment_request' && msg.content === pr.id
-                ? { ...msg, payment_request: { ...msg.payment_request!, status: 'cancelled' } } : msg));
-            } catch (e: any) { vendrAlert({ title: 'Error', message: e.message, type: 'danger' }); }
-          }
-        },
-      ],
-    });
-  }, []);
 
   const sendEnquiry = async () => {
     if (!convId || !user?.id || !productName) return;
@@ -1718,10 +1723,10 @@ export default function ChatScreen() {
             onEndReached={loadOlderMessages}
             onEndReachedThreshold={0.1}
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
-            updateCellsBatchingPeriod={50}
-            windowSize={10}
+            removeClippedSubviews={false}
+            maxToRenderPerBatch={20}
+            updateCellsBatchingPeriod={100}
+            windowSize={21}
             initialNumToRender={20}
             ListHeaderComponent={loadingMore ? (
               <ActivityIndicator size="small" color="#E8521A" style={{ marginVertical: 8 }} />
@@ -2035,7 +2040,7 @@ export default function ChatScreen() {
               <Animated.View entering={FadeInDown.duration(180)}>
                 <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#4A3D30', marginBottom: 8, letterSpacing: 0.5 }}>DELIVERY ADDRESS</Text>
                 <View style={{ backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 }}>
-                  <RNTextInput
+                  <TextInput
                     value={payDeliveryAddress} onChangeText={setPayDeliveryAddress}
                     placeholder="Street, area, city..."
                     placeholderTextColor="#3D3026" multiline
@@ -2088,7 +2093,7 @@ export default function ChatScreen() {
               flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 14,
             }}>
               <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#4A3D30' }}>₦</Text>
-              <RNTextInput
+              <TextInput
                 value={payAmount} onChangeText={setPayAmount}
                 placeholder="0.00" placeholderTextColor="#2A1F14"
                 keyboardType="numeric"
@@ -2097,7 +2102,7 @@ export default function ChatScreen() {
             </View>
             <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#4A3D30', marginBottom: 8, letterSpacing: 0.5 }}>DESCRIPTION (OPTIONAL)</Text>
             <View style={{ backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 24 }}>
-              <RNTextInput
+              <TextInput
                 value={payDescription} onChangeText={setPayDescription}
                 placeholder="e.g. 2 units of Red Sneakers"
                 placeholderTextColor="#3D3026" multiline

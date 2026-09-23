@@ -2,7 +2,7 @@ import { useAuthStore } from '../stores/authStore'
 import WebStorage from './secureStorage'
 
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.80.28.15:3000/api" //'https://vendr-production.up.railway.app/api'
+const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "https://excellar.outray.app/api"
 console.log(BASE_URL)
 // ─── Token storage ────────────────────────────────────────────────────────────
 
@@ -85,7 +85,6 @@ export async function apiFetch(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'ngrok-skip-browser-warning': 'true',
     ...(options.headers as Record<string, string>),
   }
 

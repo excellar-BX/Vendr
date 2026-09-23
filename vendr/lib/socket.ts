@@ -33,7 +33,7 @@ export async function connectSocket(): Promise<Socket | null> {
   }
 
   const tokenString = typeof token === 'string' ? token : (token as any)._j || token;
-  const apiUrl = /*process.env.EXPO_PUBLIC_API_URL ||*/ 'https://vendr-production.up.railway.app';
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://excellar.outray.app';
   const baseUrl = apiUrl.replace(/\/$/, '');
 
   isConnecting = true;

@@ -134,7 +134,7 @@ export default function WelcomeScreen() {
       {/* Logo */}
       <View className="pt-14 pb-4">
         <Text className="text-cream text-2xl tracking-tight" >
-          vendrr<Text className="text-orange">.</Text>
+          vendr<Text className="text-orange">.</Text>
         </Text>
       </View>
 

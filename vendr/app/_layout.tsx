@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Custom API & Stores
 import { apiFetch, getAccessToken, clearTokens } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { usePresenceStore } from '../stores/presenceStore';
 import SplashScreenView from '../components/SplashScreenView';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import {
@@ -60,6 +61,7 @@ Sentry.init({
 
 function RootLayout() {
   const { setUser, user, clear, justLoggedOut, setJustLoggedOut } = useAuthStore();
+  const { setUserPresence } = usePresenceStore();
   const [appReady, setAppReady] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -110,7 +112,14 @@ function RootLayout() {
               setUser(userData);
               Sentry.setUser({ id: userData.id, email: userData.email });
 
-              connectSocket().catch(console.error);
+              connectSocket().then(socket => {
+                if (socket) {
+                  // Set up global user_presence listener
+                  socket.on('user_presence', (data: { userId: string; isOnline: boolean; lastSeen?: string }) => {
+                    setUserPresence(data.userId, data.isOnline, data.lastSeen);
+                  });
+                }
+              }).catch(console.error);
 
               if (userData?.notifications_enabled !== false) {
                 registerPushToken(userData.id);

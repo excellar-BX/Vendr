@@ -11,12 +11,28 @@ import type {
   EnrichedConversation,
   AddReactionInput,
 } from './chat.schema'
+import crypto from 'crypto'
 
 // Socket.io import for real-time events
 const { getSocketIO } = require('../../lib/socket')
 
 // Notification service
 const { createNotification } = require('../notification/notification.service')
+
+// Haversine formula to calculate distance between two coordinates (in km)
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+    Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 /**
  * Check if user is trying to chat with themselves
@@ -691,10 +707,10 @@ export async function sendMessage(
     const io = getSocketIO()
 
     if (io) {
-      // Emit to the conversation room
+      // Emit to the conversation room (includes both parties)
       io.to(`conversation:${conversationId}`).emit('new_message', messageOutput)
 
-      // Also emit to the other party's personal room
+      // Also emit to the other party's personal room (ensures they receive it even if not in conversation room)
       const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
       io.to(`user:${otherUserId}`).emit('new_message', messageOutput)
     }
@@ -938,7 +954,12 @@ export async function createPaymentRequest(
   conversationId: string,
   senderId: string,
   amount: number,
-  description?: string
+  description?: string,
+  isDelivery?: boolean,
+  deliveryAddress?: string,
+  deliveryLat?: number,
+  deliveryLng?: number,
+  deliveryFee?: number
 ): Promise<{
   id: string;
   conversation_id: string;
@@ -956,6 +977,9 @@ export async function createPaymentRequest(
     buyer_id: string;
     conversation_id: string | null;
     amount: number;
+    delivery_fee: number;
+    is_delivery: boolean;
+    delivery_address: string | null;
     description: string | null;
     status: string;
     paid_at: string | null;
@@ -972,7 +996,7 @@ export async function createPaymentRequest(
     where: { id: conversationId },
     include: {
       vendor: {
-        select: { id: true, user_id: true, is_active: true }
+        select: { id: true, user_id: true, is_active: true, lat: true, lng: true }
       }
     }
   })
@@ -994,6 +1018,20 @@ export async function createPaymentRequest(
     throw { statusCode: 400, message: 'Conversation has no buyer' }
   }
 
+  // Calculate delivery fee if delivery is requested and not provided
+  let calculatedDeliveryFee = deliveryFee || 0;
+  if (isDelivery && !deliveryFee && deliveryLat && deliveryLng && conv.vendor.lat && conv.vendor.lng) {
+    // Simple distance calculation (Haversine formula)
+    const distanceKm = calculateDistance(
+      conv.vendor.lat,
+      conv.vendor.lng,
+      deliveryLat,
+      deliveryLng
+    );
+    // Base fee ₦200 + ₦100 per km
+    calculatedDeliveryFee = 200 + (distanceKm * 100);
+  }
+
   // Create payment request
   const paymentRequest = await prisma.paymentRequest.create({
     data: {
@@ -1001,6 +1039,11 @@ export async function createPaymentRequest(
       buyer_id: conv.buyer_id,
       conversation_id: conversationId,
       amount,
+      delivery_fee: calculatedDeliveryFee,
+      is_delivery: isDelivery || false,
+      delivery_address: deliveryAddress,
+      delivery_lat: deliveryLat,
+      delivery_lng: deliveryLng,
       description: description || '',
       status: 'pending',
       vendor_user_id: conv.vendor.user_id,
@@ -1084,12 +1127,12 @@ export async function payPaymentRequest(
   buyerId: string,
   options?: { order_type?: 'pickup' | 'delivery'; delivery_address?: string }
 ): Promise<{ success: boolean; message: string; orderId?: string | null }> {
-  // Get payment request
+  // Get payment request with vendor details
   const pr = await prisma.paymentRequest.findUnique({
     where: { id: paymentRequestId },
     include: {
       vendor: {
-        select: { user_id: true }
+        select: { user_id: true, id: true, lat: true, lng: true, address: true }
       }
     }
   })
@@ -1108,18 +1151,83 @@ export async function payPaymentRequest(
     throw { statusCode: 400, message: `Payment request is already ${pr.status}` }
   }
 
+  // Determine order type based on payment request or options
+  const isDelivery = pr.is_delivery || options?.order_type === 'delivery';
+  const orderType = isDelivery ? 'delivery' : 'pickup';
+  const deliveryAddress = pr.delivery_address || options?.delivery_address;
+  const deliveryFee = pr.delivery_fee || 0;
+
   // Process the payment via wallet service
   const payResult = await WalletService.processPayment(
     buyerId,
     pr.vendor.user_id,
-    pr.amount,
+    pr.amount + deliveryFee, // Total includes delivery fee
     pr.id,
     pr.description ?? undefined,
     {
-      order_type: options?.order_type ?? 'pickup',
-      delivery_address: options?.delivery_address,
+      order_type: orderType,
+      delivery_address: deliveryAddress,
+      delivery_fee: deliveryFee,
+      delivery_lat: pr.delivery_lat,
+      delivery_lng: pr.delivery_lng,
     }
   )
+
+  // If it's a delivery order, create DeliveryJob and generate QR codes
+  if (isDelivery && payResult.orderId) {
+    try {
+      // Get vendor location for pickup
+      const pickupLat = pr.vendor.lat || 0;
+      const pickupLng = pr.vendor.lng || 0;
+      const pickupAddress = pr.vendor.address || 'Vendor location';
+
+      // Calculate distance and estimated time
+      const distanceKm = pr.delivery_lat && pr.delivery_lng
+        ? calculateDistance(pickupLat, pickupLng, pr.delivery_lat, pr.delivery_lng)
+        : 0;
+      const estimatedTime = Math.ceil(distanceKm * 15) + ' min'; // Rough estimate: 15 min per km
+
+      // Create DeliveryJob
+      const deliveryJob = await prisma.deliveryJob.create({
+        data: {
+          order_id: payResult.orderId,
+          seller_id: pr.vendor.user_id,
+          pickup_address: pickupAddress,
+          pickup_lat: pickupLat,
+          pickup_lng: pickupLng,
+          dropoff_address: deliveryAddress || '',
+          dropoff_lat: pr.delivery_lat || 0,
+          dropoff_lng: pr.delivery_lng || 0,
+          distance_km: distanceKm,
+          estimated_time: estimatedTime,
+          delivery_fee: deliveryFee,
+          items: [{ name: pr.description || 'Items', quantity: 1 }],
+          status: 'pending',
+          expires_at: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+        },
+      });
+
+      // Generate QR codes for the order
+      const pickupToken = crypto.randomBytes(16).toString('hex');
+      const deliveryToken = crypto.randomBytes(16).toString('hex');
+      const qrExpiresAt = new Date();
+      qrExpiresAt.setHours(qrExpiresAt.getHours() + 24);
+
+      await prisma.order.update({
+        where: { id: payResult.orderId },
+        data: {
+          pickup_qr: pickupToken,
+          delivery_qr: deliveryToken,
+          qr_expires_at: qrExpiresAt,
+          delivery_lat: pr.delivery_lat,
+          delivery_lng: pr.delivery_lng,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to create delivery job:', error);
+      // Don't fail the payment if delivery job creation fails
+    }
+  }
 
   return {
     success: true,

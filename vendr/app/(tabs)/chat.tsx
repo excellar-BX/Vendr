@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
 import { chatApi } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+import { usePresenceStore } from '../../stores/presenceStore';
 import { connectSocket, disconnectSocket } from '../../lib/socket'; 
 
 interface Conversation {
@@ -41,11 +42,17 @@ function formatTime(iso: string) {
 }
 
 function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) {
+  const getUserPresence = usePresenceStore(state => state.getUserPresence);
   const otherName = conv.iAmVendor
     ? (conv.buyer?.name || 'Unknown Buyer')
     : (conv.vendor?.business_name || 'Unknown Vendor');
   const unread = conv.iAmVendor ? conv.vendor_unread : conv.buyer_unread;
   const initials = (otherName ?? 'U').slice(0, 2).toUpperCase();
+  
+  // Get online status from global presence store
+  const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
+  const presence = getUserPresence(otherUserId || '');
+  const otherOnline = presence?.isOnline || false;
 
   const fallbackAvatar = () => (
     <View className="w-12 h-12 rounded-full bg-dark-2 border border-faint items-center justify-center">
@@ -73,7 +80,7 @@ function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) 
             <Image source={{ uri: conv.vendor.avatar_url }} className="w-12 h-12 rounded-full border border-faint" />
           ) : fallbackAvatar()
         )}
-        <View className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dark ${conv.other_online ? 'bg-green-500' : 'bg-dark-3'}`} />
+        <View className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dark ${otherOnline ? 'bg-green-500' : 'bg-dark-3'}`} />
       </View>
 
       <View className="flex-1">
@@ -143,6 +150,7 @@ function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) 
 
 export default function ChatListScreen() {
   const { user } = useAuthStore();
+  const { getUserPresence, activeConversationId } = usePresenceStore();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -196,7 +204,8 @@ export default function ChatListScreen() {
           conv.last_message_at = new Date().toISOString();
           conv.last_message_mine = data.sender_id === user?.id;
 
-          if (data.sender_id !== user?.id) {
+          // Only increment unread count if message is from other user AND conversation is not currently active
+          if (data.sender_id !== user?.id && data.conversation_id !== activeConversationId) {
             if (conv.iAmVendor) conv.vendor_unread = (conv.vendor_unread ?? 0) + 1;
             else conv.buyer_unread = (conv.buyer_unread ?? 0) + 1;
           }
@@ -219,19 +228,8 @@ export default function ChatListScreen() {
         }));
       };
 
-      const onUserPresence = (data: { userId: string; isOnline: boolean }) => {
-        setConversations(prev => prev.map(conv => {
-          const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
-          if (otherUserId === data.userId) {
-            return { ...conv, other_online: data.isOnline };
-          }
-          return conv;
-        }));
-      };
-
       socket.on('new_message', onNewMessage);
       socket.on('messages_read', onMessagesRead);
-      socket.on('user_presence', onUserPresence);
       socket.on('message_deleted', (data: { conversationId: string }) => {
         setConversations(prev => prev.map(conv => {
           if (conv.id !== data.conversationId) return conv;
@@ -245,7 +243,6 @@ export default function ChatListScreen() {
       socketListenerCleanup = () => {
         socket.off('new_message', onNewMessage);
         socket.off('messages_read', onMessagesRead);
-        socket.off('user_presence', onUserPresence);
         socket.off('message_deleted', () => {});
       };
     };
@@ -255,6 +252,7 @@ export default function ChatListScreen() {
     return () => {
       mounted = false;
       socketListenerCleanup?.();
+      // Don't disconnect socket - it's managed app-wide in _layout.tsx
     };
   }, [user]);
 

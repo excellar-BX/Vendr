@@ -23,6 +23,7 @@ model User {
   is_vendor_verified         Boolean           @default(false) // Vendor identity verification (CAC, NIN, etc.)
   is_buyer                   Boolean           @default(true)
   is_vendor                  Boolean           @default(false)
+  is_runner                  Boolean           @default(false)
   is_deleted                 Boolean           @default(false)
   deleted_at                 DateTime?
   notifications_enabled      Boolean           @default(true)
@@ -61,6 +62,7 @@ model User {
   conversations              Conversation[] @relation("ConversationParticipants")
   vendorReports              VendorReport[]
   messageReactions           MessageReaction[]
+  runner                     Runner?
 
   @@map("users")
 }
@@ -193,16 +195,21 @@ model Order {
   payment_request_id String?
   conversation_id  String?
   amount           Float
+  delivery_fee     Float    @default(0) // Separate delivery fee for runner
   description      String?
   order_type       String   @default("pickup") // pickup, delivery
   delivery_address String?
-  otp_code         String?  // 4-digit; exposed to buyer only via API
-  otp_confirmed    Boolean  @default(false)
-  otp_confirmed_at DateTime?
-  buyer_confirmed_at DateTime? // pickup: buyer confirmed receipt
-  status           String   @default("pending") // pending, confirmed, preparing, ready, delivered, cancelled, refunded, disputed
+  delivery_lat     Float?
+  delivery_lng     Float?
+  // QR-based handoff (replaces OTP)
+  pickup_qr        String?  // QR code for seller→runner handoff
+  delivery_qr      String?  // QR code for runner→buyer handoff
+  qr_expires_at    DateTime?
+  pickup_confirmed_at DateTime? // Runner scanned seller's QR
+  delivery_confirmed_at DateTime? // Runner scanned buyer's QR
+  buyer_confirmed_at DateTime? // Legacy: buyer confirmed receipt (for pickup orders)
+  status           String   @default("pending") // pending, confirmed, preparing, ready, in_transit, delivered, cancelled, refunded, disputed
   escrow_status    String   @default("held") // held, disputed, released, refunded
-  delivery_confirmed_at DateTime?
   auto_release_at  DateTime?
   created_at       DateTime @default(now())
 
@@ -211,6 +218,7 @@ model Order {
   conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
   paymentRequest PaymentRequest? @relation(fields: [payment_request_id], references: [id], onDelete: SetNull)
   disputes Dispute[]
+  deliveryJob DeliveryJob?
 
   @@map("orders")
 }
@@ -280,6 +288,11 @@ model PaymentRequest {
   buyer_id         String
   conversation_id  String?
   amount           Float
+  delivery_fee     Float    @default(0)
+  is_delivery      Boolean  @default(false)
+  delivery_address String?
+  delivery_lat     Float?
+  delivery_lng     Float?
   description      String?
   status           String   @default("pending") // pending, paid, cancelled, expired
   paid_at          DateTime?
@@ -621,4 +634,93 @@ model ProductAnalytics {
   @@unique([product_id, date])
   @@map("product_analytics")
 }
- 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RUNNER & DELIVERY
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Runner {
+  id                   String   @id @default(uuid())
+  user_id              String   @unique
+  full_name            String
+  phone                String
+  email                String
+  vehicle_type         String   // bicycle, motorcycle, car, scooter
+  plate_number         String?
+  vehicle_color        String?
+  operating_lat        Float
+  operating_lng        Float
+  operating_address    String
+  operating_radius_km  Int      @default(5)
+  profile_photo_url    String?
+  vehicle_photo_url    String?
+  available_days       String[] @default(["Mon", "Tue", "Wed", "Thu", "Fri"])
+  start_time           String   @default("08:00")
+  end_time             String   @default("18:00")
+  is_online            Boolean  @default(false)
+  rating               Float    @default(0)
+  total_deliveries     Int      @default(0)
+  status               String   @default("pending") // pending, active, suspended
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  user           User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  deliveryRuns   DeliveryRun[]
+
+  @@map("runners")
+}
+
+model DeliveryJob {
+  id                   String   @id @default(uuid())
+  order_id             String?  @unique // FK to orders (optional - can be standalone delivery)
+  seller_id            String?  // Vendor user_id
+  pickup_address       String
+  pickup_lat           Float
+  pickup_lng           Float
+  dropoff_address      String
+  dropoff_lat          Float
+  dropoff_lng          Float
+  distance_km          Float
+  estimated_time       String
+  delivery_fee         Float
+  items                Json     @default("[]") // Array of {name, quantity, image?}
+  special_instructions String?
+  status               String   @default("pending") // pending, assigned, cancelled, expired
+  expires_at           DateTime
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  deliveryRuns DeliveryRun[]
+  order          Order?    @relation(fields: [order_id], references: [id], onDelete: SetNull)
+
+  @@map("delivery_jobs")
+}
+
+model DeliveryRun {
+  id                String   @id @default(uuid())
+  job_id            String
+  runner_id         String
+  status            String   @default("assigned") // assigned, picked_up, in_transit, delivered
+  assigned_at       DateTime @default(now())
+  picked_up_at      DateTime?
+  delivered_at      DateTime?
+  pickup_photo_url  String?
+  delivery_photo_url String?
+
+  job    DeliveryJob @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  runner Runner      @relation(fields: [runner_id], references: [id], onDelete: Cascade)
+
+  @@map("delivery_runs")
+}
+
+model RunnerEarning {
+  id           String   @id @default(uuid())
+  runner_id    String
+  run_id       String
+  amount       Float
+  status       String   @default("pending") // pending, available, paid
+  completed_at DateTime @default(now())
+  paid_at      DateTime?
+
+  @@map("runner_earnings")
+}
