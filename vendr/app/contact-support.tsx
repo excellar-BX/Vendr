@@ -4,11 +4,13 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { useAuthStore } from '../stores/authStore';
+import { T, useTheme } from '../constants/theme';
 
 const WHATSAPP_NUMBER = '2348000000000'; // replace with real number
 const SUPPORT_EMAIL = 'support@vendr.ng';
 
 export default function ContactSupportScreen() {
+  useTheme();
   const { session, profile } = useAuthStore();
   const name = profile?.name ?? 'User';
   const email = session?.user?.email ?? '';
@@ -31,17 +33,17 @@ export default function ContactSupportScreen() {
   };
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-xl flex-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Contact Support</Text>
+        <Text className="text-ink text-xl flex-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>Contact Support</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }} showsVerticalScrollIndicator={false}>
-        <Text className="text-muted text-sm" style={{ fontFamily: 'SpaceGrotesk_400Regular', lineHeight: 22 }}>
+        <Text className="text-ink-2 text-sm" style={{ fontFamily: 'PlusJakartaSans_400Regular', lineHeight: 22 }}>
           Our support team is available Monday – Saturday, 8am to 8pm WAT. We typically respond within 2 hours.
         </Text>
 
@@ -49,14 +51,14 @@ export default function ContactSupportScreen() {
         <TouchableOpacity
           onPress={openWhatsApp}
           activeOpacity={0.85}
-          className="bg-dark-2 border border-faint rounded-2xl p-5 flex-row items-center gap-4"
+          className="bg-surface border border-line rounded-2xl p-5 flex-row items-center gap-4"
         >
           <View className="w-12 h-12 rounded-2xl items-center justify-center" style={{ backgroundColor: '#25D36620' }}>
             <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
           </View>
           <View className="flex-1">
-            <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>WhatsApp</Text>
-            <Text className="text-muted text-xs mt-0.5">Fastest response — usually under 30 mins</Text>
+            <Text className="text-ink text-base" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>WhatsApp</Text>
+            <Text className="text-ink-2 text-xs mt-0.5">Fastest response — usually under 30 mins</Text>
           </View>
           <Ionicons name="arrow-forward" size={18} color="#E8521A" />
         </TouchableOpacity>
@@ -65,29 +67,29 @@ export default function ContactSupportScreen() {
         <TouchableOpacity
           onPress={openEmail}
           activeOpacity={0.85}
-          className="bg-dark-2 border border-faint rounded-2xl p-5 flex-row items-center gap-4"
+          className="bg-surface border border-line rounded-2xl p-5 flex-row items-center gap-4"
         >
           <View className="w-12 h-12 rounded-2xl items-center justify-center" style={{ backgroundColor: '#5599E820' }}>
-            <Ionicons name="mail-outline" size={24} color="#5599E8" />
+            <Ionicons name="mail-outline" size={24} color="#2563EB" />
           </View>
           <View className="flex-1">
-            <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Email</Text>
-            <Text className="text-muted text-xs mt-0.5">{SUPPORT_EMAIL}</Text>
+            <Text className="text-ink text-base" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>Email</Text>
+            <Text className="text-ink-2 text-xs mt-0.5">{SUPPORT_EMAIL}</Text>
           </View>
           <Ionicons name="arrow-forward" size={18} color="#E8521A" />
         </TouchableOpacity>
 
         {/* Response hours */}
-        <View className="bg-dark-2 border border-faint rounded-2xl px-4 py-4 gap-3">
-          <Text className="text-muted text-xs tracking-widest uppercase" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Support Hours</Text>
+        <View className="bg-surface border border-line rounded-2xl px-4 py-4 gap-3">
+          <Text className="text-ink-2 text-xs tracking-widest uppercase" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Support Hours</Text>
           {[
             { day: 'Monday – Friday', hours: '8:00 AM – 8:00 PM' },
             { day: 'Saturday', hours: '9:00 AM – 5:00 PM' },
             { day: 'Sunday', hours: 'Closed' },
           ].map(({ day, hours }) => (
             <View key={day} className="flex-row justify-between">
-              <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>{day}</Text>
-              <Text className="text-muted text-sm" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>{hours}</Text>
+              <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_500Medium' }}>{day}</Text>
+              <Text className="text-ink-2 text-sm" style={{ fontFamily: 'PlusJakartaSans_400Regular' }}>{hours}</Text>
             </View>
           ))}
         </View>

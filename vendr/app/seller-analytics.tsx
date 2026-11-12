@@ -12,6 +12,7 @@ import { apiFetch } from '../lib/api';
 import { RevenueChart } from '../components/analytics/RevenueChart';
 import { ConversionFunnel } from '../components/analytics/ConversionFunnel';
 import { PerformanceRing } from '../components/analytics/PerformanceRing';
+import { T, useTheme } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -99,6 +100,7 @@ const MEDAL = ['#FFD700', '#C0C0C0', '#CD7F32'];
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function SellerAnalyticsScreen() {
+  useTheme();
   const { user } = useAuthStore();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,9 +166,9 @@ export default function SellerAnalyticsScreen() {
 
   if (isVendor === null || loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#E8521A" />
-        <Text style={{ color: '#6B5E50', marginTop: 12, fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13 }}>
+        <Text style={{ color: T.ink3, marginTop: 12, fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13 }}>
           Loading analytics…
         </Text>
       </View>
@@ -188,13 +190,13 @@ if (!isVendor) {
   // ── Animated header opacity ────────────────────────────────────────────────
   const headerBg = scrollY.interpolate({
     inputRange: [0, 80],
-    outputRange: ['rgba(15,10,6,0)', 'rgba(15,10,6,1)'],
+    outputRange: ['rgba(247,247,245,0)', 'rgba(247,247,245,1)'],
     extrapolate: 'clamp',
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       {/* Sticky animated header */}
       <Animated.View style={{
@@ -206,18 +208,18 @@ if (!isVendor) {
         <TouchableOpacity
           onPress={() => router.back()}
           style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10 }}
+            backgroundColor: T.surface2, borderRadius: 10 }}
         >
-          <Ionicons name="arrow-back" size={20} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={20} color={T.ink} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC', flex: 1 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink, flex: 1 }}>
           Seller Analytics
         </Text>
         <TouchableOpacity
           style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10 }}
+            backgroundColor: T.surface2, borderRadius: 10 }}
         >
-          <Ionicons name="share-outline" size={18} color="#FDF6EC" />
+          <Ionicons name="share-outline" size={18} color={T.ink} />
         </TouchableOpacity>
       </Animated.View>
 
@@ -240,7 +242,7 @@ if (!isVendor) {
 
             {/* Period Selector */}
             <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
-              <View style={{ flexDirection: 'row', backgroundColor: '#1A1208', borderRadius: 14, padding: 4, gap: 4 }}>
+              <View style={{ flexDirection: 'row', backgroundColor: T.surface, borderRadius: 14, padding: 4, gap: 4 }}>
                 {PERIODS.map((p) => (
                   <TouchableOpacity
                     key={p.value}
@@ -253,8 +255,8 @@ if (!isVendor) {
                     }}
                   >
                     <Text style={{
-                      fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
-                      color: selectedPeriod === p.value ? 'white' : '#9A8570',
+                      fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13,
+                      color: selectedPeriod === p.value ? 'white' : T.ink2,
                     }}>
                       {p.label}
                     </Text>
@@ -272,13 +274,13 @@ if (!isVendor) {
                   style={{
                     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
                     borderWidth: 1,
-                    borderColor: activeTab === tab ? '#E8521A' : '#2A1F14',
+                    borderColor: activeTab === tab ? '#E8521A' : T.line,
                     backgroundColor: activeTab === tab ? 'rgba(232,82,26,0.12)' : 'transparent',
                   }}
                 >
                   <Text style={{
-                    fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
-                    color: activeTab === tab ? '#E8521A' : '#6B5E50',
+                    fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13,
+                    color: activeTab === tab ? T.primaryInk : T.ink3,
                     textTransform: 'capitalize',
                   }}>
                     {tab}
@@ -322,16 +324,17 @@ if (!isVendor) {
 
 // ─── Not Vendor State ─────────────────────────────────────────────────────────
 function NotVendorState() {
+  useTheme();
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
       <View
         style={{
           flex: 1,
           alignItems: 'center',
           justifyContent: 'center',
           padding: 32,
-          backgroundColor: '#0F0A06',
+          backgroundColor: T.canvas,
         }}
       >
         {/* decorative background circles */}
@@ -363,22 +366,22 @@ function NotVendorState() {
             width: 80,
             height: 80,
             borderRadius: 24,
-            backgroundColor: '#1A1208',
+            backgroundColor: T.surface,
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: 24,
             borderWidth: 1,
-            borderColor: '#2A1F14',
+            borderColor: T.line,
           }}
         >
-          <Ionicons name="bar-chart-outline" size={36} color="#3D3026" />
+          <Ionicons name="bar-chart-outline" size={36} color={T.ink4} />
         </View>
 
         <Text
           style={{
-            fontFamily: 'SpaceGrotesk_700Bold',
+            fontFamily: 'PlusJakartaSans_700Bold',
             fontSize: 20,
-            color: '#FDF6EC',
+            color: T.ink,
             textAlign: 'center',
             marginBottom: 10,
           }}
@@ -388,9 +391,9 @@ function NotVendorState() {
 
         <Text
           style={{
-            fontFamily: 'SpaceGrotesk_400Regular',
+            fontFamily: 'PlusJakartaSans_400Regular',
             fontSize: 14,
-            color: '#6B5E50',
+            color: T.ink3,
             textAlign: 'center',
             lineHeight: 22,
             marginBottom: 32,
@@ -408,7 +411,7 @@ function NotVendorState() {
             paddingVertical: 14,
           }}
         >
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: 'white' }}>
             Become a Vendor
           </Text>
         </TouchableOpacity>
@@ -419,6 +422,7 @@ function NotVendorState() {
 // ─── Hero Card ────────────────────────────────────────────────────────────────
 
 function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; period: string }) {
+  useTheme();
   if (!summary) return null;
   const growth = summary.revenue_growth ?? 0;
   const isPositive = growth >= 0;
@@ -430,9 +434,9 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; 
           borderRadius: 24,
           padding: 24,
           borderWidth: 1,
-          borderColor: '#3D2010',
+          borderColor: T.primaryBorder,
           overflow: 'hidden',
-          backgroundColor: '#1A1208',
+          backgroundColor: T.surface,
         }}
       >
         {/* fake gradient effect with layered shapes */}
@@ -459,10 +463,10 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; 
           }}
         />
        
-        <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570', marginBottom: 6 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink2, marginBottom: 6 }}>
           Total Revenue
         </Text>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 34, color: '#FDF6EC', marginBottom: 8 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 34, color: T.ink, marginBottom: 8 }}>
           {formatCompact(summary.revenue)}
         </Text>
 
@@ -481,13 +485,13 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; 
             <Ionicons
               name={isPositive ? 'trending-up' : 'trending-down'}
               size={14}
-              color={isPositive ? '#2D8653' : '#DC3545'}
+              color={isPositive ? '#2D8653' : '#DC2626'}
             />
             <Text
               style={{
-                fontFamily: 'SpaceGrotesk_600SemiBold',
+                fontFamily: 'PlusJakartaSans_600SemiBold',
                 fontSize: 12,
-                color: isPositive ? '#2D8653' : '#DC3545',
+                color: isPositive ? T.successInk : T.dangerInk,
               }}
             >
               {isPositive ? '+' : ''}
@@ -495,7 +499,7 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; 
             </Text>
           </View>
 
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3 }}>
             vs previous {period}
           </Text>
         </View>
@@ -512,22 +516,22 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; 
                 flex: 1,
                 paddingLeft: i > 0 ? 16 : 0,
                 borderLeftWidth: i > 0 ? 1 : 0,
-                borderColor: '#2A1F14',
+                borderColor: T.line,
                 marginLeft: i > 0 ? 16 : 0,
               }}
             >
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>
                 {item.value}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>
                   {item.label}
                 </Text>
                 {item.growth !== null && (
                   <Ionicons
                     name={(item.growth ?? 0) >= 0 ? 'arrow-up' : 'arrow-down'}
                     size={10}
-                    color={(item.growth ?? 0) >= 0 ? '#2D8653' : '#DC3545'}
+                    color={(item.growth ?? 0) >= 0 ? '#2D8653' : '#DC2626'}
                   />
                 )}
               </View>
@@ -542,11 +546,12 @@ function HeroCard({ summary, period }: { summary: AnalyticsSummary | undefined; 
 // ─── Stat Grid ────────────────────────────────────────────────────────────────
 
 function StatGrid({ summary }: { summary: AnalyticsSummary }) {
+  useTheme();
   const stats = [
-    { label: 'Profile Views', value: formatNumber(summary.profile_views), icon: 'eye-outline', color: '#5599E8', sub: 'people saw your store' },
-    { label: 'Product Views', value: formatNumber(summary.product_views), icon: 'grid-outline', color: '#F5A623', sub: 'product impressions' },
-    { label: 'Inquiries', value: formatNumber(summary.inquiries), icon: 'chatbubble-outline', color: '#9B59B6', sub: 'messages received' },
-    { label: 'Conversion', value: `${summary.conversion_rate?.toFixed(1) ?? 0}%`, icon: 'checkmark-circle-outline', color: '#2D8653', sub: 'visit → order rate' },
+    { label: 'Profile Views', value: formatNumber(summary.profile_views), icon: 'eye-outline', color: T.infoInk, sub: 'people saw your store' },
+    { label: 'Product Views', value: formatNumber(summary.product_views), icon: 'grid-outline', color: T.goldInk, sub: 'product impressions' },
+    { label: 'Inquiries', value: formatNumber(summary.inquiries), icon: 'chatbubble-outline', color: '#7C3AED', sub: 'messages received' },
+    { label: 'Conversion', value: `${summary.conversion_rate?.toFixed(1) ?? 0}%`, icon: 'checkmark-circle-outline', color: T.successInk, sub: 'visit → order rate' },
     { label: 'Repeat Buyers', value: formatNumber(summary.repeat_customers), icon: 'refresh-circle-outline', color: '#E8521A', sub: 'returning customers' },
     { label: 'Unique Visitors', value: formatNumber(summary.unique_visitors), icon: 'people-outline', color: '#E67E22', sub: 'distinct users' },
   ];
@@ -560,7 +565,7 @@ function StatGrid({ summary }: { summary: AnalyticsSummary }) {
             key={stat.label}
             style={{
               width: (width - 52) / 2,
-              backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+              backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
               borderRadius: 16, padding: 16,
             }}
           >
@@ -568,10 +573,10 @@ function StatGrid({ summary }: { summary: AnalyticsSummary }) {
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: `${stat.color}18`, alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name={stat.icon as any} size={16} color={stat.color} />
               </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#9A8570', flex: 1 }}>{stat.label}</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 11, color: T.ink2, flex: 1 }}>{stat.label}</Text>
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC' }}>{stat.value}</Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#3D3026', marginTop: 4 }}>{stat.sub}</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink }}>{stat.value}</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 10, color: T.ink3, marginTop: 4 }}>{stat.sub}</Text>
           </View>
         ))}
       </View>
@@ -582,12 +587,13 @@ function StatGrid({ summary }: { summary: AnalyticsSummary }) {
 // ─── Orders Bar Chart ─────────────────────────────────────────────────────────
 
 function OrdersBarChart({ data }: { data: DailyData[] }) {
+  useTheme();
   const maxOrders = Math.max(...data.map((d) => d.orders_count), 1);
 
   return (
     <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
       <SectionHeader title="Daily Orders" subtitle="This period" />
-      <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 20 }}>
+      <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 20 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 100, marginBottom: 8 }}>
           {data.map((d, i) => {
             const heightPct = (d.orders_count / maxOrders) * 100;
@@ -595,14 +601,14 @@ function OrdersBarChart({ data }: { data: DailyData[] }) {
             return (
               <View key={i} style={{ alignItems: 'center', flex: 1 }}>
                 {isMax && (
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 10, color: '#E8521A', marginBottom: 2 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 10, color: T.primaryInk, marginBottom: 2 }}>
                     {d.orders_count}
                   </Text>
                 )}
                 <View style={{
                   width: 28, borderRadius: 6,
                   height: `${Math.max(heightPct, 8)}%` as any,
-                  backgroundColor: isMax ? '#E8521A' : '#2A1F14',
+                  backgroundColor: isMax ? '#E8521A' : T.line,
                 }} />
               </View>
             );
@@ -610,19 +616,19 @@ function OrdersBarChart({ data }: { data: DailyData[] }) {
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           {data.map((d, i) => (
-            <Text key={i} style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#6B5E50', flex: 1, textAlign: 'center' }}>
+            <Text key={i} style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 10, color: T.ink3, flex: 1, textAlign: 'center' }}>
               {d.date}
             </Text>
           ))}
         </View>
         <View style={{ marginTop: 16, flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50' }}>
-            Total: <Text style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3 }}>
+            Total: <Text style={{ color: T.ink, fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               {data.reduce((s, d) => s + d.orders_count, 0)} orders
             </Text>
           </Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50' }}>
-            Peak: <Text style={{ color: '#E8521A', fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3 }}>
+            Peak: <Text style={{ color: T.primaryInk, fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               {maxOrders}
             </Text>
           </Text>
@@ -635,12 +641,13 @@ function OrdersBarChart({ data }: { data: DailyData[] }) {
 // ─── Top Products List ────────────────────────────────────────────────────────
 
 function TopProductsList({ products }: { products: TopProduct[] }) {
+  useTheme();
   return (
     <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <SectionHeader title="Top Performing Products" />
         <TouchableOpacity onPress={() => router.push('/my-stores')}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Manage</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.primaryInk }}>Manage</Text>
         </TouchableOpacity>
       </View>
 
@@ -652,8 +659,8 @@ function TopProductsList({ products }: { products: TopProduct[] }) {
             <View
               key={product.product_id}
               style={{
-                backgroundColor: '#1A1208', borderWidth: 1,
-                borderColor: index === 0 ? 'rgba(255,215,0,0.2)' : '#2A1F14',
+                backgroundColor: T.surface, borderWidth: 1,
+                borderColor: index === 0 ? 'rgba(255,215,0,0.2)' : T.line,
                 borderRadius: 16, padding: 16,
               }}
             >
@@ -661,46 +668,46 @@ function TopProductsList({ products }: { products: TopProduct[] }) {
                 {/* Rank badge */}
                 <View style={{
                   width: 40, height: 40, borderRadius: 12,
-                  backgroundColor: index < 3 ? `${MEDAL[index]}18` : '#0F0A06',
+                  backgroundColor: index < 3 ? `${MEDAL[index]}18` : T.canvas,
                   alignItems: 'center', justifyContent: 'center',
                   borderWidth: 1,
-                  borderColor: index < 3 ? `${MEDAL[index]}40` : '#2A1F14',
+                  borderColor: index < 3 ? `${MEDAL[index]}40` : T.line,
                 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: index < 3 ? MEDAL[index] : '#3D3026' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: index < 3 ? MEDAL[index] : T.ink4 }}>
                     {index + 1}
                   </Text>
                 </View>
 
                 {/* Info */}
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }} numberOfLines={1}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }} numberOfLines={1}>
                     {product.product_name}
                   </Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 2 }}>
                     {formatAmount(product.product_price)} · {product.views} views
                   </Text>
                 </View>
 
                 {/* Revenue */}
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#2D8653' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: T.successInk }}>
                     {formatCompact(product.revenue)}
                   </Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50', marginTop: 2 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3, marginTop: 2 }}>
                     {product.orders_count} orders
                   </Text>
                 </View>
               </View>
 
               {/* Progress bar */}
-              <View style={{ marginTop: 12, height: 4, backgroundColor: '#0F0A06', borderRadius: 2 }}>
+              <View style={{ marginTop: 12, height: 4, backgroundColor: T.canvas, borderRadius: 2 }}>
                 <View style={{
                   height: 4, borderRadius: 2,
                   backgroundColor: index < 3 ? MEDAL[index] : '#E8521A',
                   width: `${Math.min((product.revenue / (products[0]?.revenue || 1)) * 100, 100)}%`,
                 }} />
               </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#3D3026', marginTop: 4 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 10, color: T.ink3, marginTop: 4 }}>
                 {((product.revenue / (products[0]?.revenue || 1)) * 100).toFixed(0)}% of top product revenue
                 {product.conversion_rate ? ` · ${product.conversion_rate}% conversion` : ''}
               </Text>
@@ -715,32 +722,33 @@ function TopProductsList({ products }: { products: TopProduct[] }) {
 // ─── Product Performance Chart ────────────────────────────────────────────────
 
 function ProductPerformanceChart({ products }: { products: TopProduct[] }) {
+  useTheme();
   if (products.length === 0) return null;
   const maxViews = Math.max(...products.map((p) => p.views), 1);
 
   return (
     <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
       <SectionHeader title="Views vs Orders" subtitle="Product comparison" />
-      <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 20, gap: 14 }}>
+      <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 20, gap: 14 }}>
         {products.map((p) => (
           <View key={p.product_id}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#9A8570' }} numberOfLines={1}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: T.ink2 }} numberOfLines={1}>
                 {p.product_name}
               </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#5599E8' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.infoInk }}>
                 {p.views} views
               </Text>
             </View>
             {/* Views bar */}
-            <View style={{ height: 8, backgroundColor: '#0F0A06', borderRadius: 4, marginBottom: 4 }}>
+            <View style={{ height: 8, backgroundColor: T.canvas, borderRadius: 4, marginBottom: 4 }}>
               <View style={{
-                height: 8, borderRadius: 4, backgroundColor: '#5599E8',
+                height: 8, borderRadius: 4, backgroundColor: '#2563EB',
                 width: `${(p.views / maxViews) * 100}%`,
               }} />
             </View>
             {/* Orders bar */}
-            <View style={{ height: 5, backgroundColor: '#0F0A06', borderRadius: 4 }}>
+            <View style={{ height: 5, backgroundColor: T.canvas, borderRadius: 4 }}>
               <View style={{
                 height: 5, borderRadius: 4, backgroundColor: '#E8521A',
                 width: `${Math.min((p.orders_count / p.views) * 100 * 8, 100)}%`,
@@ -750,12 +758,12 @@ function ProductPerformanceChart({ products }: { products: TopProduct[] }) {
         ))}
         <View style={{ flexDirection: 'row', gap: 16, marginTop: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ width: 12, height: 8, borderRadius: 2, backgroundColor: '#5599E8' }} />
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>Views</Text>
+            <View style={{ width: 12, height: 8, borderRadius: 2, backgroundColor: '#2563EB' }} />
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>Views</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <View style={{ width: 12, height: 5, borderRadius: 2, backgroundColor: '#E8521A' }} />
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>Conversion</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>Conversion</Text>
           </View>
         </View>
       </View>
@@ -766,10 +774,11 @@ function ProductPerformanceChart({ products }: { products: TopProduct[] }) {
 // ─── Insights Cards ───────────────────────────────────────────────────────────
 
 function InsightsCards({ summary }: { summary: AnalyticsSummary }) {
+  useTheme();
   const insights = [
     {
       icon: 'trending-up' as const,
-      color: '#2D8653',
+      color: T.successInk,
       bg: 'rgba(45,134,83,0.08)',
       border: 'rgba(45,134,83,0.2)',
       title: 'Revenue Growing',
@@ -777,7 +786,7 @@ function InsightsCards({ summary }: { summary: AnalyticsSummary }) {
     },
     {
       icon: 'people-outline' as const,
-      color: '#5599E8',
+      color: T.infoInk,
       bg: 'rgba(85,153,232,0.08)',
       border: 'rgba(85,153,232,0.2)',
       title: 'Visitor Engagement',
@@ -793,7 +802,7 @@ function InsightsCards({ summary }: { summary: AnalyticsSummary }) {
     },
     {
       icon: 'flash-outline' as const,
-      color: '#F5A623',
+      color: T.goldInk,
       bg: 'rgba(245,166,35,0.08)',
       border: 'rgba(245,166,35,0.2)',
       title: 'Conversion Tip',
@@ -817,10 +826,10 @@ function InsightsCards({ summary }: { summary: AnalyticsSummary }) {
               <Ionicons name={insight.icon} size={18} color={insight.color} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC', marginBottom: 4 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink, marginBottom: 4 }}>
                 {insight.title}
               </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 20 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, lineHeight: 20 }}>
                 {insight.body}
               </Text>
             </View>
@@ -834,6 +843,7 @@ function InsightsCards({ summary }: { summary: AnalyticsSummary }) {
 // ─── Goals Section ────────────────────────────────────────────────────────────
 
 function GoalsSection({ summary, goals }: { summary: AnalyticsSummary; goals?: Goals }) {
+  useTheme();
   const goalTargets = goals || {
     monthly_revenue_goal: 2_000_000,
     monthly_orders_goal: 150,
@@ -841,29 +851,29 @@ function GoalsSection({ summary, goals }: { summary: AnalyticsSummary; goals?: G
   };
 
   const goalItems = [
-    { label: 'Revenue Goal', current: summary.revenue, target: goalTargets.monthly_revenue_goal, color: '#2D8653', format: formatCompact },
+    { label: 'Revenue Goal', current: summary.revenue, target: goalTargets.monthly_revenue_goal, color: T.successInk, format: formatCompact },
     { label: 'Orders Goal', current: summary.orders_count, target: goalTargets.monthly_orders_goal, color: '#E8521A', format: formatNumber },
-    { label: 'Visitor Goal', current: summary.unique_visitors, target: goalTargets.monthly_visitors_goal, color: '#5599E8', format: formatNumber },
+    { label: 'Visitor Goal', current: summary.unique_visitors, target: goalTargets.monthly_visitors_goal, color: T.infoInk, format: formatNumber },
   ];
 
   return (
     <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
       <SectionHeader title="Monthly Goals" subtitle="Set in store settings" />
-      <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 20, gap: 18 }}>
+      <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 20, gap: 18 }}>
         {goalItems.map((g) => {
           const pct = Math.min((g.current / g.target) * 100, 100);
           return (
             <View key={g.label}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570' }}>{g.label}</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink2 }}>{g.label}</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink }}>
                   {g.format(g.current)} / {g.format(g.target)}
                 </Text>
               </View>
-              <View style={{ height: 8, backgroundColor: '#0F0A06', borderRadius: 4 }}>
+              <View style={{ height: 8, backgroundColor: T.canvas, borderRadius: 4 }}>
                 <View style={{ height: 8, borderRadius: 4, backgroundColor: g.color, width: `${pct}%` }} />
               </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#3D3026', marginTop: 4 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3, marginTop: 4 }}>
                 {pct.toFixed(0)}% complete
               </Text>
             </View>
@@ -877,40 +887,43 @@ function GoalsSection({ summary, goals }: { summary: AnalyticsSummary; goals?: G
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  useTheme();
   return (
     <View style={{ marginBottom: 12 }}>
-      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>{title}</Text>
+      <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>{title}</Text>
       {subtitle && (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>{subtitle}</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 2 }}>{subtitle}</Text>
       )}
     </View>
   );
 }
 
 function EmptyProducts() {
+  useTheme();
   return (
-    <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
-      <Ionicons name="cube-outline" size={32} color="#3D3026" />
-      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', textAlign: 'center', fontSize: 14, color: '#6B5E50' }}>No product data yet, Check back later</Text>
-      {/* <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
+    <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
+      <Ionicons name="cube-outline" size={32} color={T.ink4} />
+      <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', textAlign: 'center', fontSize: 14, color: T.ink3 }}>No product data yet, Check back later</Text>
+      {/* <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
         Add products to start tracking performance
       </Text>
       <TouchableOpacity
         onPress={() => router.push('/my-stores')}
         style={{ backgroundColor: 'rgba(232,82,26,0.15)', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 }}
       >
-        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Add Products</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: '#E8521A' }}>Add Products</Text>
       </TouchableOpacity> */}
     </View>
   );
 }
 
 function EmptyState() {
+  useTheme();
   return (
-    <View style={{ marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
-      <Ionicons name="analytics-outline" size={32} color="#3D3026" />
-      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No analytics data yet</Text>
-      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
+    <View style={{ marginHorizontal: 20, marginBottom: 24, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
+      <Ionicons name="analytics-outline" size={32} color={T.ink4} />
+      <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink3 }}>No analytics data yet</Text>
+      <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, textAlign: 'center' }}>
         Check back later once you have activity
       </Text>
     </View>

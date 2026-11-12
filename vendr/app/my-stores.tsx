@@ -7,6 +7,7 @@ import { Text } from '../components/ui/StyledText';
 import { VerificationStatusBanner } from '../components/ui/VerificationStatusBanner';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { T, useTheme } from '../constants/theme';
 
 interface Store {
   id: string;
@@ -24,6 +25,7 @@ interface VerificationStatus {
 }
 
 export default function MyStoresScreen() {
+  useTheme();
   const { user } = useAuthStore();
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,21 +104,21 @@ export default function MyStoresScreen() {
   );
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-xl flex-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>My Stores</Text>
+        <Text className="text-ink text-xl flex-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>My Stores</Text>
         <TouchableOpacity
           onPress={() => router.push('/become-vendor')}
           className="flex-row items-center gap-1.5 bg-orange rounded-xl px-3 py-2"
         >
           <Ionicons name="add" size={16} color="white" />
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: 'white', fontSize: 13 }}>New Store</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', color: 'white', fontSize: 13 }}>New Store</Text>
         </TouchableOpacity>
       </View>
 
@@ -136,13 +138,13 @@ export default function MyStoresScreen() {
         </View>
       ) : stores.length === 0 ? (
         <View className="flex-1 items-center justify-center gap-4 px-8">
-          <View className="w-20 h-20 rounded-3xl bg-dark-2 border border-faint items-center justify-center">
-            <Ionicons name="storefront-outline" size={36} color="#3D3026" />
+          <View className="w-20 h-20 rounded-3xl bg-surface border border-line items-center justify-center">
+            <Ionicons name="storefront-outline" size={36} color={T.ink4} />
           </View>
-          <Text className="text-cream text-xl text-center" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>No stores yet</Text>
-          <Text className="text-muted text-sm text-center">Create your first store to start selling on Vendr</Text>
+          <Text className="text-ink text-xl text-center" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>No stores yet</Text>
+          <Text className="text-ink-2 text-sm text-center">Create your first store to start selling on Vendr</Text>
           <TouchableOpacity onPress={() => router.push('/become-vendor')} className="bg-orange rounded-2xl px-6 py-3 mt-2">
-            <Text className="text-white text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Create a Store</Text>
+            <Text className="text-white text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Create a Store</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -154,7 +156,7 @@ export default function MyStoresScreen() {
             <TouchableOpacity
               onPress={() => router.push({ pathname: '/store/[storeId]', params: { storeId: item.id } })}
               activeOpacity={0.85}
-              className="bg-dark-2 border border-faint rounded-2xl p-4 gap-3"
+              className="bg-surface border border-line rounded-2xl p-4 gap-3"
             >
               {/* Store header */}
               <View className="flex-row items-center gap-3">
@@ -163,29 +165,29 @@ export default function MyStoresScreen() {
                 </View>
                 <View className="flex-1">
                   <View className="flex-row items-center gap-2">
-                    <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{item.business_name}</Text>
+                    <Text className="text-ink text-base" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>{item.business_name}</Text>
                     {item.is_verified && <Ionicons name="shield-checkmark" size={14} color="#2D8653" />}
                   </View>
-                  <Text className="text-muted text-xs mt-0.5">{item.category}</Text>
+                  <Text className="text-ink-2 text-xs mt-0.5">{item.category}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#3D3026" />
+                <Ionicons name="chevron-forward" size={18} color={T.ink4} />
               </View>
 
               {/* Status + stats */}
-              <View className="flex-row items-center gap-3 pt-3 border-t border-faint">
-                <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${item.is_active ? 'bg-green-500/15' : 'bg-dark-3'}`}>
-                  <View className={`w-1.5 h-1.5 rounded-full ${item.is_active ? 'bg-green-500' : 'bg-dark-3 border border-faint'}`} />
-                  <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_600SemiBold', color: item.is_active ? '#4CAF50' : '#6B5E50' }}>
+              <View className="flex-row items-center gap-3 pt-3 border-t border-line">
+                <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${item.is_active ? 'bg-success/15' : 'bg-surface-2'}`}>
+                  <View className={`w-1.5 h-1.5 rounded-full ${item.is_active ? 'bg-success' : 'bg-surface-2 border border-line'}`} />
+                  <Text style={{ fontSize: 11, fontFamily: 'PlusJakartaSans_600SemiBold', color: item.is_active ? T.successInk : T.ink3 }}>
                     {item.is_active ? 'Active' : 'Inactive'}
                   </Text>
                 </View>
                 {item.review_count > 0 && (
                   <View className="flex-row items-center gap-1">
                     <Ionicons name="star" size={12} color="#F5A623" />
-                    <Text style={{ fontSize: 12, fontFamily: 'SpaceGrotesk_600SemiBold', color: '#F5A623' }}>
+                    <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.goldInk }}>
                       {item.rating?.toFixed(1)}
                     </Text>
-                    <Text style={{ fontSize: 11, color: '#6B5E50', fontFamily: 'SpaceGrotesk_400Regular' }}>
+                    <Text style={{ fontSize: 11, color: T.ink3, fontFamily: 'PlusJakartaSans_400Regular' }}>
                       ({item.review_count})
                     </Text>
                   </View>

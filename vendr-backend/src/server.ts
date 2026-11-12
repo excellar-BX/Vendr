@@ -119,6 +119,11 @@ export async function buildServer() {
   app.ready((err) => {
     if (err) throw err
     initSocket(app.server)
+    // Give posts created before hashtags existed their tags (idempotent, non-blocking)
+    import('./services/reel/hashtag.service')
+      .then(({ backfillReelHashtags }) => backfillReelHashtags())
+      .then((n) => { if (n) console.log(`[Hashtag] backfilled ${n} reels`) })
+      .catch((err) => console.error('[Hashtag] backfill skipped:', err?.message ?? err))
   })
 
   return app

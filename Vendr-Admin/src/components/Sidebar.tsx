@@ -12,6 +12,7 @@ import {
   Flame,
   ListOrdered,
   Flag,
+  Bike,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { initials } from '../lib/utils'
@@ -22,6 +23,7 @@ const NAV = [
   { to: '/vendors', icon: Store, label: 'Vendors' },
   { to: '/vendor-reports', icon: Flag, label: 'Vendor Reports' },
   { to: '/verifications', icon: ShieldCheck, label: 'Verifications' },
+  { to: '/runners', icon: Bike, label: 'Runners' },
   { to: '/orders', icon: ShoppingBag, label: 'Orders' },
   { to: '/transactions', icon: CreditCard, label: 'Transactions' },
   { to: '/disputes', icon: AlertTriangle, label: 'Disputes' },

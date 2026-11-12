@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { useAuthStore } from '../stores/authStore';
 import { walletApi } from '../lib/api';
+import { T, useTheme } from '../constants/theme';
 
 interface Bank { name: string; code: string; }
 
@@ -21,6 +22,7 @@ interface SavedAccount {
 }
 
 export default function AddBankAccountScreen() {
+  useTheme();
   const { user } = useAuthStore();
   const params = useLocalSearchParams();
   const isSelectionMode = params.mode === 'select';
@@ -141,26 +143,26 @@ export default function AddBankAccountScreen() {
   const canSave = accountNumber.length === 10 && selectedBank && resolvedName && !resolving;
 
   const inputStyle = {
-    fontFamily: 'SpaceGrotesk_400Regular' as const,
-    color: '#FDF6EC' as const,
+    fontFamily: 'PlusJakartaSans_400Regular' as const,
+    color: T.ink,
     fontSize: 15,
-    backgroundColor: '#1A1208' as const,
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: '#3D3026' as const,
+    borderColor: T.line,
     borderRadius: 16,
     paddingHorizontal: 16,
     height: 56,
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, gap: 12 }}>
         <TouchableOpacity onPress={() => router.back()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', flex: 1 }}>Add Bank Account</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink, flex: 1 }}>Add Bank Account</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} showsVerticalScrollIndicator={false}>
@@ -168,31 +170,31 @@ export default function AddBankAccountScreen() {
         {/* Saved accounts - only show when NOT in selection mode */}
         {!isSelectionMode && savedAccounts.length > 0 && (
           <View style={{ gap: 10 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Saved Accounts</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>Saved Accounts</Text>
             {savedAccounts.map(acc => (
               <TouchableOpacity
                 key={acc.id}
                 activeOpacity={1}
-                style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}
               >
                 <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(232,82,26,0.1)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="card-outline" size={20} color="#E8521A" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{acc.bank_name}</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>{acc.bank_name}</Text>
                     {acc.is_default && (
                       <View style={{ backgroundColor: 'rgba(232,82,26,0.15)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: '#E8521A' }}>DEFAULT</Text>
+                        <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 10, color: T.primaryInk }}>DEFAULT</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570', marginTop: 2 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink2, marginTop: 2 }}>
                     {acc.account_name} • ••••{acc.account_number.slice(-4)}
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => handleDelete(acc.id)} style={{ padding: 8 }}>
-                  <Ionicons name="trash-outline" size={18} color="#E85555" />
+                  <Ionicons name="trash-outline" size={18} color="#DC2626" />
                 </TouchableOpacity>
               </TouchableOpacity>
             ))}
@@ -201,17 +203,17 @@ export default function AddBankAccountScreen() {
 
         {/* Add new account form */}
         <View style={{ gap: 14 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Add New Account</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>Add New Account</Text>
 
           {/* Bank picker trigger */}
           <TouchableOpacity
             onPress={() => setShowBankPicker(true)}
             style={[inputStyle, { justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center' }]}
           >
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 15, color: selectedBank ? '#FDF6EC' : '#6B5E50' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 15, color: selectedBank ? T.ink : T.ink3 }}>
               {selectedBank ? selectedBank.name : 'Select bank'}
             </Text>
-            <Ionicons name="chevron-down" size={18} color="#6B5E50" />
+            <Ionicons name="chevron-down" size={18} color={T.ink3} />
           </TouchableOpacity>
 
           {/* Account number */}
@@ -219,7 +221,7 @@ export default function AddBankAccountScreen() {
             value={accountNumber}
             onChangeText={t => { setAccountNumber(t.replace(/\D/g, '').slice(0, 10)); setError(''); }}
             placeholder="Account number (10 digits)"
-            placeholderTextColor="#6B5E50"
+            placeholderTextColor={T.ink3}
             keyboardType="numeric"
             maxLength={10}
             style={inputStyle}
@@ -229,23 +231,23 @@ export default function AddBankAccountScreen() {
           {resolving && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <ActivityIndicator size="small" color="#E8521A" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Verifying account...</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>Verifying account...</Text>
             </View>
           )}
           {resolvedName ? (
             <View style={{ backgroundColor: 'rgba(45,134,83,0.1)', borderWidth: 1, borderColor: 'rgba(45,134,83,0.25)', borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Ionicons name="checkmark-circle" size={20} color="#2D8653" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#2D8653' }}>{resolvedName}</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.successInk }}>{resolvedName}</Text>
             </View>
           ) : null}
 
-          {error ? <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#E85555' }}>{error}</Text> : null}
+          {error ? <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.dangerInk }}>{error}</Text> : null}
 
           {/* Set as default */}
           {!isSelectionMode && (
-            <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>Set as default</Text>
-              <Switch value={isDefault} onValueChange={setIsDefault} trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white" />
+            <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14, color: T.ink }}>Set as default</Text>
+              <Switch value={isDefault} onValueChange={setIsDefault} trackColor={{ false: T.ink4, true: '#E8521A' }} thumbColor="white" />
             </View>
           )}
 
@@ -253,12 +255,12 @@ export default function AddBankAccountScreen() {
             onPress={handleSave}
             disabled={!canSave || saving}
             style={{
-              backgroundColor: canSave ? '#E8521A' : '#2A1F14', borderRadius: 16, height: 56,
+              backgroundColor: canSave ? '#E8521A' : T.line, borderRadius: 16, height: 56,
               alignItems: 'center', justifyContent: 'center',
             }}
           >
             {saving ? <ActivityIndicator size="small" color="white" /> : (
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: canSave ? 'white' : '#6B5E50' }}>Save Account</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: canSave ? 'white' : T.ink3 }}>Save Account</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -275,50 +277,50 @@ export default function AddBankAccountScreen() {
           <View
             onStartShouldSetResponder={() => true}
             style={{
-              backgroundColor: '#1A1208',
+              backgroundColor: T.surface,
               borderTopLeftRadius: 28,
               borderTopRightRadius: 28,
               borderTopWidth: 1,
-              borderColor: '#2A1F14',
+              borderColor: T.line,
               paddingTop: 16,
               paddingBottom: 36,
               maxHeight: '80%',
             }}
           >
-            <View style={{ width: 40, height: 4, backgroundColor: '#3D3026', borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 16 }}>Select Bank</Text>
+            <View style={{ width: 40, height: 4, backgroundColor: T.line, borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginBottom: 16 }}>Select Bank</Text>
 
             {/* Search input */}
-            <View style={{ marginHorizontal: 20, marginBottom: 12, backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, height: 48, gap: 8 }}>
-              <Ionicons name="search-outline" size={16} color="#6B5E50" />
+            <View style={{ marginHorizontal: 20, marginBottom: 12, backgroundColor: T.canvas, borderWidth: 1, borderColor: T.line, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, height: 48, gap: 8 }}>
+              <Ionicons name="search-outline" size={16} color={T.ink3} />
               <RNTextInput
                 value={bankSearch}
                 onChangeText={setBankSearch}
                 placeholder="Search banks..."
-                placeholderTextColor="#6B5E50"
-                style={{ flex: 1, fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC', backgroundColor: 'transparent' }}
+                placeholderTextColor={T.ink3}
+                style={{ flex: 1, fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink, backgroundColor: 'transparent' }}
               />
             </View>
 
             {loadingBanks ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 12 }}>
                 <ActivityIndicator size="large" color="#E8521A" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Loading banks...</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>Loading banks...</Text>
               </View>
             ) : (
               <ScrollView contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 20 }}>
                 {filteredBanks.length === 0 ? (
                   <View style={{ padding: 24, alignItems: 'center' }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50' }}>No banks found</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3 }}>No banks found</Text>
                   </View>
                 ) : filteredBanks.map((bank, index) => (
                   <TouchableOpacity
                     key={`${bank.code}-${index}`}
                     onPress={() => { setSelectedBank(bank); setShowBankPicker(false); setBankSearch(''); }}
                     style={{
-                      backgroundColor: selectedBank?.code === bank.code ? 'rgba(232,82,26,0.1)' : '#0F0A06',
+                      backgroundColor: selectedBank?.code === bank.code ? 'rgba(232,82,26,0.1)' : T.canvas,
                       borderWidth: 1,
-                      borderColor: selectedBank?.code === bank.code ? '#E8521A' : '#2A1F14',
+                      borderColor: selectedBank?.code === bank.code ? '#E8521A' : T.line,
                       borderRadius: 14,
                       paddingHorizontal: 16,
                       paddingVertical: 14,
@@ -327,7 +329,7 @@ export default function AddBankAccountScreen() {
                       justifyContent: 'space-between',
                     }}
                   >
-                    <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>{bank.name}</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14, color: T.ink }}>{bank.name}</Text>
                     {selectedBank?.code === bank.code && <Ionicons name="checkmark-circle" size={18} color="#E8521A" />}
                   </TouchableOpacity>
                 ))}

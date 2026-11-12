@@ -15,8 +15,10 @@ import { apiFetch, saveTokens } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useVendrAlert } from '../../components/ui/VendrAlert'
 import { useGoogleAuth } from '../../hooks/useGoogleAuth'
+import { T, useTheme } from '../../constants/theme';
 
 function GoogleIcon() {
+  useTheme();
   return (
     <Svg width={20} height={20} viewBox="0 0 48 48">
       <Path fill="#FFC107" d="M43.6 20H24v8h11.3C33.7 32.8 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.1 8 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z" />
@@ -28,6 +30,7 @@ function GoogleIcon() {
 }
 
 export default function LoginScreen() {
+  useTheme();
   const { setUser } = useAuthStore()
   const { showAlert, alertElement } = useVendrAlert()
   const { signInWithGoogle, isAvailable: googleAvailable } = useGoogleAuth()
@@ -98,10 +101,10 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-dark"
+      className="flex-1 bg-canvas"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="light" />
+      <StatusBar style={T.statusBar} />
       <View className="absolute -top-20 -right-16 w-72 h-72 rounded-full bg-orange opacity-[0.08]" />
       <View className="absolute bottom-24 -left-20 w-64 h-64 rounded-full bg-gold opacity-[0.05]" />
 
@@ -112,49 +115,49 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TouchableOpacity
-          className="mt-14 w-10 h-10 rounded-xl bg-dark-2 border border-faint items-center justify-center"
+          className="mt-14 w-10 h-10 rounded-xl bg-surface border border-line items-center justify-center"
           onPress={() => router.back()}
         >
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
 
         <View className="mt-7 mb-8">
-          <Text className="text-muted text-sm font-medium mb-2">Welcome back</Text>
-          <Text style={{ fontWeight: '600' }} className="text-cream text-4xl tracking-tight leading-tight mb-2">
+          <Text className="text-ink-2 text-sm font-medium mb-2">Welcome back</Text>
+          <Text style={{ fontWeight: '600' }} className="text-ink text-4xl tracking-tight leading-tight mb-2">
             Sign in to{'\n'}Vendr
           </Text>
-          <Text className="text-subtle text-base">Your local market is waiting.</Text>
+          <Text className="text-ink-3 text-base">Your local market is waiting.</Text>
         </View>
 
         {googleAvailable && (
           <TouchableOpacity
-            className="flex-row items-center justify-center gap-3 bg-dark-2 border border-faint rounded-2xl py-4 mb-6"
+            className="flex-row items-center justify-center gap-3 bg-surface border border-line rounded-2xl py-4 mb-6"
             activeOpacity={0.85}
             onPress={handleGoogleLogin}
             disabled={googleLoading}
           >
             {googleLoading
-              ? <ActivityIndicator color="#FDF6EC" size="small" />
-              : <><GoogleIcon /><Text className="text-cream text-base font-semibold ml-2">Continue with Google</Text></>
+              ? <ActivityIndicator color={T.ink} size="small" />
+              : <><GoogleIcon /><Text className="text-ink text-base font-semibold ml-2">Continue with Google</Text></>
             }
           </TouchableOpacity>
         )}
 
         <View className="flex-row items-center gap-3 mb-7">
-          <View className="flex-1 h-px bg-faint" />
-          <Text className="text-subtle text-xs font-medium">{googleAvailable ? 'or sign in with email' : 'Sign in with email'}</Text>
-          <View className="flex-1 h-px bg-faint" />
+          <View className="flex-1 h-px bg-line" />
+          <Text className="text-ink-3 text-xs font-medium">{googleAvailable ? 'or sign in with email' : 'Sign in with email'}</Text>
+          <View className="flex-1 h-px bg-line" />
         </View>
 
         <View className="gap-5 mb-3">
           <View className="gap-2">
-            <Text className="text-muted text-xs font-semibold tracking-widest uppercase">Email</Text>
-            <View className={`flex-row items-center bg-dark-2 rounded-2xl border px-4 h-14 ${errors.email ? 'border-brand-red' : 'border-faint'}`}>
-              <Ionicons name="mail-outline" size={18} color="#6B5E50" style={{ marginRight: 10 }} />
+            <Text className="text-ink-2 text-xs font-semibold tracking-widest uppercase">Email</Text>
+            <View className={`flex-row items-center bg-surface rounded-2xl border px-4 h-14 ${errors.email ? 'border-brand-red' : 'border-line'}`}>
+              <Ionicons name="mail-outline" size={18} color={T.ink3} style={{ marginRight: 10 }} />
               <RNTextInput
-                className="flex-1 text-cream text-base"
+                className="flex-1 text-ink text-base"
                 placeholder="you@example.com"
-                placeholderTextColor="#6B5E50"
+                placeholderTextColor={T.ink3}
                 value={email}
                 onChangeText={(t: string) => { setEmail(t); setErrors(e => ({ ...e, email: undefined })) }}
                 keyboardType="email-address"
@@ -162,31 +165,31 @@ export default function LoginScreen() {
                 autoCorrect={false}
               />
             </View>
-            {errors.email && <Text className="text-brand-red text-xs font-medium">{errors.email}</Text>}
+            {errors.email && <Text className="text-danger text-xs font-medium">{errors.email}</Text>}
           </View>
 
           <View className="gap-2">
-            <Text className="text-muted text-xs font-semibold tracking-widest uppercase">Password</Text>
-            <View className={`flex-row items-center bg-dark-2 rounded-2xl border px-4 h-14 ${errors.password ? 'border-brand-red' : 'border-faint'}`}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B5E50" style={{ marginRight: 10 }} />
+            <Text className="text-ink-2 text-xs font-semibold tracking-widest uppercase">Password</Text>
+            <View className={`flex-row items-center bg-surface rounded-2xl border px-4 h-14 ${errors.password ? 'border-brand-red' : 'border-line'}`}>
+              <Ionicons name="lock-closed-outline" size={18} color={T.ink3} style={{ marginRight: 10 }} />
               <RNTextInput
-                className="flex-1 text-cream text-base"
+                className="flex-1 text-ink text-base"
                 placeholder="Enter your password"
-                placeholderTextColor="#6B5E50"
+                placeholderTextColor={T.ink3}
                 value={password}
                 onChangeText={(t: string) => { setPassword(t); setErrors(e => ({ ...e, password: undefined })) }}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
               />
               <TouchableOpacity className="p-1" onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6B5E50" />
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={T.ink3} />
               </TouchableOpacity>
             </View>
-            {errors.password && <Text className="text-brand-red text-xs font-medium">{errors.password}</Text>}
+            {errors.password && <Text className="text-danger text-xs font-medium">{errors.password}</Text>}
           </View>
 
           <TouchableOpacity className="self-end py-1" onPress={() => router.push('/(auth)/forgot-password')}>
-            <Text className="text-orange text-sm font-semibold">Forgot password?</Text>
+            <Text className="text-orange-ink text-sm font-semibold">Forgot password?</Text>
           </TouchableOpacity>
         </View>
 
@@ -195,9 +198,9 @@ export default function LoginScreen() {
         </View>
 
         <TouchableOpacity className="items-center py-5" onPress={() => router.replace('/(auth)/register')}>
-          <Text className="text-subtle text-sm">
+          <Text className="text-ink-3 text-sm">
             Don't have an account?{' '}
-            <Text className="text-orange font-semibold">Create one</Text>
+            <Text className="text-orange-ink font-semibold">Create one</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>

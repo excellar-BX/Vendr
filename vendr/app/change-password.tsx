@@ -11,8 +11,10 @@ import { Button } from '../components/ui/Button';
 import { useVendrAlert } from '../components/ui/VendrAlert';
 import { apiFetch, clearTokens } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { T, useTheme } from '../constants/theme';
 
 export default function ChangePasswordScreen() {
+  useTheme();
   const { setJustLoggedOut } = useAuthStore();
   const { alert, alertElement } = useVendrAlert();
 
@@ -74,16 +76,16 @@ export default function ChangePasswordScreen() {
   };
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
       {alertElement}
 
       {/* Header */}
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-xl flex-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Change Password</Text>
+        <Text className="text-ink text-xl flex-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>Change Password</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 24 }} showsVerticalScrollIndicator={false}>
@@ -92,10 +94,10 @@ export default function ChangePasswordScreen() {
           <View className="flex-row items-start gap-3">
             <Ionicons name="information-circle" size={20} color="#E8521A" />
             <View className="flex-1">
-              <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+              <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
                 Security notice
               </Text>
-              <Text className="text-muted text-xs mt-1">
+              <Text className="text-ink-2 text-xs mt-1">
                 You will be logged out of all devices after changing your password for security.
               </Text>
             </View>
@@ -105,62 +107,62 @@ export default function ChangePasswordScreen() {
         {/* Fields */}
         <View className="gap-4">
           <View>
-            <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Current Password</Text>
+            <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Current Password</Text>
             <View className="relative">
               <TextInput
                 value={currentPassword}
                 onChangeText={setCurrentPassword}
-                placeholder="Enter current password" placeholderTextColor="#6B5E50"
+                placeholder="Enter current password" placeholderTextColor={T.ink3}
                 secureTextEntry={!showCurrent}
                 autoCapitalize="none"
-                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#3D3026', borderRadius: 16, paddingHorizontal: 16, height: 56, paddingRight: 50 }}
+                style={{ fontFamily: 'PlusJakartaSans_400Regular', color: T.ink, fontSize: 15, backgroundColor: T.surface, borderWidth: 1, borderColor: T.lineStrong, borderRadius: 16, paddingHorizontal: 16, height: 56, paddingRight: 50 }}
               />
               <TouchableOpacity
                 onPress={() => setShowCurrent(!showCurrent)}
                 className="absolute right-4 top-1/2 -mt-3"
               >
-                <Ionicons name={showCurrent ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9A8570" />
+                <Ionicons name={showCurrent ? 'eye-off-outline' : 'eye-outline'} size={20} color={T.ink2} />
               </TouchableOpacity>
             </View>
           </View>
 
           <View>
-            <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>New Password</Text>
+            <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>New Password</Text>
             <View className="relative">
               <TextInput
                 value={newPassword}
                 onChangeText={setNewPassword}
-                placeholder="Create a new password" placeholderTextColor="#6B5E50"
+                placeholder="Create a new password" placeholderTextColor={T.ink3}
                 secureTextEntry={!showNew}
                 autoCapitalize="none"
-                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#3D3026', borderRadius: 16, paddingHorizontal: 16, height: 56, paddingRight: 50 }}
+                style={{ fontFamily: 'PlusJakartaSans_400Regular', color: T.ink, fontSize: 15, backgroundColor: T.surface, borderWidth: 1, borderColor: T.lineStrong, borderRadius: 16, paddingHorizontal: 16, height: 56, paddingRight: 50 }}
               />
               <TouchableOpacity
                 onPress={() => setShowNew(!showNew)}
                 className="absolute right-4 top-1/2 -mt-3"
               >
-                <Ionicons name={showNew ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9A8570" />
+                <Ionicons name={showNew ? 'eye-off-outline' : 'eye-outline'} size={20} color={T.ink2} />
               </TouchableOpacity>
             </View>
-            <Text className="text-muted text-xs mt-1.5 px-1">Minimum 8 characters</Text>
+            <Text className="text-ink-2 text-xs mt-1.5 px-1">Minimum 8 characters</Text>
           </View>
 
           <View>
-            <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Confirm New Password</Text>
+            <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Confirm New Password</Text>
             <View className="relative">
               <TextInput
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
-                placeholder="Confirm new password" placeholderTextColor="#6B5E50"
+                placeholder="Confirm new password" placeholderTextColor={T.ink3}
                 secureTextEntry={!showConfirm}
                 autoCapitalize="none"
-                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#3D3026', borderRadius: 16, paddingHorizontal: 16, height: 56, paddingRight: 50 }}
+                style={{ fontFamily: 'PlusJakartaSans_400Regular', color: T.ink, fontSize: 15, backgroundColor: T.surface, borderWidth: 1, borderColor: T.lineStrong, borderRadius: 16, paddingHorizontal: 16, height: 56, paddingRight: 50 }}
               />
               <TouchableOpacity
                 onPress={() => setShowConfirm(!showConfirm)}
                 className="absolute right-4 top-1/2 -mt-3"
               >
-                <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9A8570" />
+                <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={T.ink2} />
               </TouchableOpacity>
             </View>
           </View>

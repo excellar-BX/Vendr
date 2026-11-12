@@ -4,7 +4,11 @@ export const registerRunnerSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   phone: z.string().min(10, 'Phone number is required'),
   email: z.string().email('Invalid email'),
-  vehicle_type: z.enum(['bicycle', 'motorcycle', 'car', 'scooter']),
+  // Accept "Bicycle" / "bicycle" alike (older app builds send the display label)
+  vehicle_type: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toLowerCase() : v),
+    z.enum(['bicycle', 'motorcycle', 'car', 'scooter'], { message: 'Choose bicycle, motorcycle, car or scooter' }),
+  ),
   plate_number: z.string().optional(),
   vehicle_color: z.string().optional(),
   address: z.string().min(5, 'Address is required'),
@@ -22,12 +26,13 @@ export const updateRunnerStatusSchema = z.object({
   is_online: z.boolean(),
 });
 
+// Query strings arrive as text — coerce, or "?lat=6.4" is always rejected
 export const listJobsSchema = z.object({
   filter: z.enum(['all', 'nearest', 'highest_pay', 'fastest']).default('all'),
-  lat: z.number().optional(),
-  lng: z.number().optional(),
-  limit: z.number().min(1).max(50).default(20),
-  offset: z.number().min(0).default(0),
+  lat: z.coerce.number().optional(),
+  lng: z.coerce.number().optional(),
+  limit: z.coerce.number().min(1).max(50).default(20),
+  offset: z.coerce.number().min(0).default(0),
 });
 
 export const acceptJobSchema = z.object({
@@ -42,10 +47,11 @@ export const updateRunStatusSchema = z.object({
 
 export const listEarningsSchema = z.object({
   filter: z.enum(['today', 'week', 'month', 'all']).default('all'),
-  limit: z.number().min(1).max(50).default(20),
-  offset: z.number().min(0).default(0),
+  limit: z.coerce.number().min(1).max(50).default(20),
+  offset: z.coerce.number().min(0).default(0),
 });
 
+// Withdrawals move everything that's available; amount is accepted for older clients
 export const withdrawEarningsSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number().positive().optional(),
 });

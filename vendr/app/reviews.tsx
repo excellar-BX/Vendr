@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { reviewApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { T, useTheme } from '../constants/theme';
 
 interface ReviewLeft {
   id: string;
@@ -29,6 +30,7 @@ interface ReviewReceived {
 }
 
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
+  useTheme();
   return (  
     <View style={{ flexDirection: 'row', gap: 3 }}>
       {[1, 2, 3, 4, 5].map(i => (
@@ -45,17 +47,18 @@ function EmptyState({ icon, title, subtitle, actionLabel, onAction }: {
   actionLabel?: string;
   onAction?: () => void;
 }) {
+  useTheme();
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 40 }}>
       <View style={{
         width: 72, height: 72, borderRadius: 22,
-        backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+        backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
         alignItems: 'center', justifyContent: 'center',
       }}>
-        <Ionicons name={icon} size={30} color="#3D3026" />
+        <Ionicons name={icon} size={30} color={T.ink4} />
       </View>
-      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>{title}</Text>
-      <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', lineHeight: 22 }}>
+      <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink }}>{title}</Text>
+      <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink2, textAlign: 'center', lineHeight: 22 }}>
         {subtitle}
       </Text>
       {actionLabel && onAction && (
@@ -63,7 +66,7 @@ function EmptyState({ icon, title, subtitle, actionLabel, onAction }: {
           onPress={onAction}
           style={{ backgroundColor: '#E8521A', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 12, marginTop: 4 }}
         >
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: 'white' }}>{actionLabel}</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: 'white' }}>{actionLabel}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -72,33 +75,34 @@ function EmptyState({ icon, title, subtitle, actionLabel, onAction }: {
 
 // ─── Card: review I left for a store ──────────────────────────────────────────
 function ReviewLeftCard({ item }: { item: ReviewLeft }) {
+  useTheme();
   return (
     <TouchableOpacity
       onPress={() => router.push({ pathname: '/vendor/[id]', params: { id: item.vendor_id } })}
       activeOpacity={0.85}
       style={{
-        backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+        backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
         borderRadius: 20, padding: 16, gap: 10,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#FDF6EC' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: T.ink }}>
             {item.vendor_name}
           </Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>
             {new Date(item.created_at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color="#3D3026" style={{ marginTop: 2 }} />
+        <Ionicons name="chevron-forward" size={16} color={T.ink4} style={{ marginTop: 2 }} />
       </View>
       <Stars rating={item.rating} />
       {item.comment ? (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 20 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, lineHeight: 20 }}>
           {item.comment}
         </Text>
       ) : (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#3D3026', fontStyle: 'italic' }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, fontStyle: 'italic' }}>
           No comment
         </Text>
       )}
@@ -108,9 +112,10 @@ function ReviewLeftCard({ item }: { item: ReviewLeft }) {
 
 // ─── Card: review someone left for my store ───────────────────────────────────
 function ReviewReceivedCard({ item }: { item: ReviewReceived }) {
+  useTheme();
   return (
     <View style={{
-      backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+      backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
       borderRadius: 20, padding: 16, gap: 10,
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -122,15 +127,15 @@ function ReviewReceivedCard({ item }: { item: ReviewReceived }) {
             borderWidth: 1, borderColor: 'rgba(232,82,26,0.2)',
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#E8521A' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: T.primaryInk }}>
               {item.reviewer_name.charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#FDF6EC' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: T.ink }}>
               {item.reviewer_name}
             </Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>
               {new Date(item.created_at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
             </Text>
           </View>
@@ -143,18 +148,18 @@ function ReviewReceivedCard({ item }: { item: ReviewReceived }) {
           borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4,
         }}>
           <Ionicons name="star" size={11} color="#F5A623" />
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: '#F5A623' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 12, color: T.goldInk }}>
             {item.rating}.0
           </Text>
         </View>
       </View>
       <Stars rating={item.rating} />
       {item.comment ? (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 20 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, lineHeight: 20 }}>
           {item.comment}
         </Text>
       ) : (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#3D3026', fontStyle: 'italic' }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, fontStyle: 'italic' }}>
           No comment left
         </Text>
       )}
@@ -164,6 +169,7 @@ function ReviewReceivedCard({ item }: { item: ReviewReceived }) {
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
 export default function MyReviewsScreen() {
+  useTheme();
   const { user, isVendor } = useAuthStore();
 
   const [tab, setTab] = useState<'left' | 'received'>('left');
@@ -220,27 +226,27 @@ export default function MyReviewsScreen() {
   const totalReceived = reviewsReceived.length;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16,
-        borderBottomWidth: 1, borderBottomColor: '#1A1208', gap: 12,
+        borderBottomWidth: 1, borderBottomColor: T.line, gap: 12,
       }}>
         <TouchableOpacity
           onPress={() => router.back()}
           style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC' }}>Reviews</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink }}>Reviews</Text>
           {isVendor && avgRating > 0 && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
               <Ionicons name="star" size={12} color="#F5A623" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#F5A623' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.goldInk }}>
                 {avgRating} avg · {totalReceived} store review{totalReceived !== 1 ? 's' : ''}
               </Text>
             </View>
@@ -266,12 +272,12 @@ export default function MyReviewsScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 6,
                   paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-                  backgroundColor: tab === 'received' ? '#E8521A' : '#1A1208',
-                  borderWidth: 1, borderColor: tab === 'received' ? '#E8521A' : '#2A1F14',
+                  backgroundColor: tab === 'received' ? '#E8521A' : T.surface,
+                  borderWidth: 1, borderColor: tab === 'received' ? '#E8521A' : T.line,
                 }}
               >
-                <Ionicons name="storefront-outline" size={14} color={tab === 'received' ? 'white' : '#9A8570'} />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: tab === 'received' ? 'white' : '#9A8570' }}>
+                <Ionicons name="storefront-outline" size={14} color={tab === 'received' ? 'white' : T.ink2} />
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: tab === 'received' ? 'white' : T.ink2 }}>
                   My Store
                 </Text>
                 {totalReceived > 0 && (
@@ -279,7 +285,7 @@ export default function MyReviewsScreen() {
                     paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8,
                     backgroundColor: tab === 'received' ? 'rgba(255,255,255,0.25)' : 'rgba(232,82,26,0.15)',
                   }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 10, color: tab === 'received' ? 'white' : '#E8521A' }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 10, color: tab === 'received' ? 'white' : T.primaryInk }}>
                       {totalReceived}
                     </Text>
                   </View>
@@ -292,12 +298,12 @@ export default function MyReviewsScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 6,
                   paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-                  backgroundColor: tab === 'left' ? '#E8521A' : '#1A1208',
-                  borderWidth: 1, borderColor: tab === 'left' ? '#E8521A' : '#2A1F14',
+                  backgroundColor: tab === 'left' ? '#E8521A' : T.surface,
+                  borderWidth: 1, borderColor: tab === 'left' ? '#E8521A' : T.line,
                 }}
               >
-                <Ionicons name="pencil-outline" size={14} color={tab === 'left' ? 'white' : '#9A8570'} />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: tab === 'left' ? 'white' : '#9A8570' }}>
+                <Ionicons name="pencil-outline" size={14} color={tab === 'left' ? 'white' : T.ink2} />
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: tab === 'left' ? 'white' : T.ink2 }}>
                   Left by Me
                 </Text>
                 {totalLeft > 0 && (
@@ -305,7 +311,7 @@ export default function MyReviewsScreen() {
                     paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8,
                     backgroundColor: tab === 'left' ? 'rgba(255,255,255,0.25)' : 'rgba(232,82,26,0.15)',
                   }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 10, color: tab === 'left' ? 'white' : '#E8521A' }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 10, color: tab === 'left' ? 'white' : T.primaryInk }}>
                       {totalLeft}
                     </Text>
                   </View>

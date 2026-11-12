@@ -156,17 +156,17 @@ export function useCreateVirtualAccount() {
 // ─── Search ───────────────────────────────────────────────────────────────────
 
 export function useSearchSuggestions(query: string) {
+  const q = query.trim();
   return useQuery({
-    queryKey: ['search-suggestions', query],
+    queryKey: ['search-suggestions', q.toLowerCase()],
     queryFn: async () => {
-      const response = await apiFetch('/search/suggestions', {
-        method: 'POST',
-        body: JSON.stringify({ q: query, limit: 5 }),
-      });
+      // GET — the backend has no POST route for suggestions
+      const response = await apiFetch('/search/suggestions', { query: { q, limit: 8 } });
       return response.data;
     },
     staleTime: 1000 * 60 * 5,
-    enabled: query.length >= 1,
+    placeholderData: (prev) => prev, // keep previous rows while the next ones load (no flicker)
+    enabled: q.length >= 1,
   });
 }
 
@@ -203,10 +203,9 @@ export function useClearSearchHistory() {
   return useMutation({
     mutationFn: async (query?: string) => {
       if (query) {
-        await apiFetch(`/search/history`, {
-          method: 'DELETE',
-          body: JSON.stringify({ query }),
-        });
+        // Must be a query param: apiFetch strips bodies from DELETE requests,
+        // which previously made "remove one" wipe the whole history.
+        await apiFetch('/search/history', { method: 'DELETE', query: { query } });
       } else {
         await apiFetch('/search/history', { method: 'DELETE' });
       }

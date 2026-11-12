@@ -20,7 +20,8 @@ export async function generateOrderQrCodes(orderId: string) {
   }
 
   // Generate unique tokens
-  const pickupToken = crypto.randomBytes(16).toString('hex');
+  // 6 digits so the seller can read it out and the runner can type it
+  const pickupToken = String(crypto.randomInt(100000, 1000000));
   const deliveryToken = crypto.randomBytes(16).toString('hex');
 
   // QR codes expire in 24 hours
@@ -83,12 +84,11 @@ export async function getOrderQrCodes(orderId: string, userId: string, role: 'se
     throw new Error('Order not found');
   }
 
-  // Check if QR expired
-  if (order.qr_expires_at && order.qr_expires_at < new Date()) {
-    throw new Error('QR codes have expired');
-  }
+  // Only the order's own seller/buyer may read its code (it was readable by anyone with the id)
+  if (role === 'seller' && order.vendor_user_id !== userId) throw { statusCode: 403, message: 'Not your order' };
+  if (role === 'buyer' && order.buyer_id !== userId) throw { statusCode: 403, message: 'Not your order' };
 
-  // Return only the relevant QR code based on role
+  // Return only the relevant code based on role (paid orders' codes don't expire before delivery)
   if (role === 'seller') {
     return {
       qr_code: order.pickup_qr,

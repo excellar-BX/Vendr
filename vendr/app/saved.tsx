@@ -8,8 +8,10 @@ import { VendorCard } from '../components/vendor/VendorCard';
 import { savedVendorApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import { Vendor } from '../types';
+import { T, useTheme } from '../constants/theme';
 
 export default function SavedVendorsScreen() {
+  useTheme();
   const { user } = useAuthStore();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,23 +50,23 @@ export default function SavedVendorsScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16,
-        borderBottomWidth: 1, borderBottomColor: '#1A1208', gap: 12,
+        borderBottomWidth: 1, borderBottomColor: T.line, gap: 12,
       }}>
         <TouchableOpacity onPress={() => router.back()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC', flex: 1 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink, flex: 1 }}>
           Saved Vendors
         </Text>
         {vendors.length > 0 && (
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3 }}>
             {vendors.length} saved
           </Text>
         )}
@@ -78,20 +80,20 @@ export default function SavedVendorsScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 40 }}>
           <View style={{
             width: 72, height: 72, borderRadius: 22,
-            backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+            backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Ionicons name="bookmark-outline" size={32} color="#3D3026" />
+            <Ionicons name="bookmark-outline" size={32} color={T.ink4} />
           </View>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>No saved vendors</Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', lineHeight: 22 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink }}>No saved vendors</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink2, textAlign: 'center', lineHeight: 22 }}>
             Tap the bookmark on any vendor profile to save them here for quick access.
           </Text>
           <TouchableOpacity
             onPress={() => router.push('/(tabs)')}
             style={{ backgroundColor: '#E8521A', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 12, marginTop: 8 }}
           >
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: 'white' }}>Browse Vendors</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: 'white' }}>Browse Vendors</Text>
           </TouchableOpacity>
         </View>
       ) : (

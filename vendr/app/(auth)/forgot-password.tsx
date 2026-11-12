@@ -10,8 +10,10 @@ import { Text } from '../../components/ui/StyledText'
 import { StyledInput as RNTextInput } from '../../components/ui/StyledInput'
 import { Button } from '../../components/ui/Button'
 import { apiFetch } from '../../lib/api'
+import { T, useTheme } from '../../constants/theme';
 
 export default function ForgotPasswordScreen() {
+  useTheme();
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
@@ -39,18 +41,18 @@ export default function ForgotPasswordScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-dark"
+      className="flex-1 bg-canvas"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="light" />
+      <StatusBar style={T.statusBar} />
       <View className="absolute -top-16 -right-20 w-72 h-72 rounded-full bg-orange opacity-[0.07]" />
 
       <View className="flex-1 px-7">
         <TouchableOpacity
-          className="mt-14 w-10 h-10 rounded-xl bg-dark-2 border border-faint items-center justify-center"
+          className="mt-14 w-10 h-10 rounded-xl bg-surface border border-line items-center justify-center"
           onPress={() => router.back()}
         >
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
 
         <View className="flex-1 justify-center pb-16">
@@ -60,10 +62,10 @@ export default function ForgotPasswordScreen() {
             </View>
           </View>
 
-          <Text style={{ fontWeight: '600' }} className="text-cream text-4xl tracking-tight leading-tight text-center mb-4">
+          <Text style={{ fontWeight: '600' }} className="text-ink text-4xl tracking-tight leading-tight text-center mb-4">
             {sent ? 'Check your\nemail' : 'Reset your\npassword'}
           </Text>
-          <Text className="text-subtle text-base text-center leading-relaxed mb-10 px-4">
+          <Text className="text-ink-3 text-base text-center leading-relaxed mb-10 px-4">
             {sent
               ? `We sent a reset link to ${email}. Open the link to set a new password.`
               : "Enter your email and we'll send you a reset link."}
@@ -72,19 +74,19 @@ export default function ForgotPasswordScreen() {
           {!sent && (
             <>
               <View className="gap-2 mb-6">
-                <Text className="text-muted text-xs font-semibold tracking-widest uppercase">Email address</Text>
-                <View className={`bg-dark-2 rounded-2xl border px-4 h-14 justify-center ${error ? 'border-brand-red' : 'border-faint'}`}>
+                <Text className="text-ink-2 text-xs font-semibold tracking-widest uppercase">Email address</Text>
+                <View className={`bg-surface rounded-2xl border px-4 h-14 justify-center ${error ? 'border-brand-red' : 'border-line'}`}>
                   <RNTextInput
-                    className="text-cream text-base"
+                    className="text-ink text-base"
                     placeholder="you@example.com"
-                    placeholderTextColor="#6B5E50"
+                    placeholderTextColor={T.ink3}
                     value={email}
                     onChangeText={(t) => { setEmail(t); setError('') }}
                     keyboardType="email-address"
                     autoCapitalize="none"
                   />
                 </View>
-                {error ? <Text className="text-brand-red text-xs font-medium">{error}</Text> : null}
+                {error ? <Text className="text-danger text-xs font-medium">{error}</Text> : null}
               </View>
 
               <View className="mt-2">
@@ -98,7 +100,7 @@ export default function ForgotPasswordScreen() {
           )}
 
           <TouchableOpacity className="items-center mt-5 py-2" onPress={() => router.back()}>
-            <Text className="text-subtle text-sm">Back to login</Text>
+            <Text className="text-ink-3 text-sm">Back to login</Text>
           </TouchableOpacity>
         </View>
       </View>

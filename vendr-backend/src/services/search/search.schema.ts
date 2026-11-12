@@ -3,8 +3,8 @@ import { z } from 'zod'
 
 // Search input
 export const searchSchema = z.object({
-  q: z.string().min(1).max(100),
-  category: z.string().optional(),
+  q: z.string().trim().min(1).max(100),
+  category: z.string().trim().max(50).optional(),
   verified_only: z
     .preprocess((val) => {
       if (typeof val === 'string') return val === 'true'
@@ -12,20 +12,19 @@ export const searchSchema = z.object({
     }, z.boolean().optional())
     .default(false),
   min_rating: z.coerce.number().min(0).max(5).optional().default(0),
-  lat: z.coerce.number().optional(),
-  lng: z.coerce.number().optional(),
-  max_distance: z.coerce.number().min(0).max(100).optional(), // max distance in km
-  limit: z.coerce.number().optional().default(20),
-  offset: z.coerce.number().optional().default(0),
-  did_you_mean: z.string().optional(),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  max_distance: z.coerce.number().positive().max(100).optional(), // km; requires lat/lng
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  offset: z.coerce.number().int().min(0).max(500).optional().default(0),
 })
 
 export type SearchInput = z.infer<typeof searchSchema>
 
-// Suggestion search — includes optional userId for personalised history
+// Suggestion search — userId (for personalised history) comes from optional auth
 export const suggestionSchema = z.object({
-  q: z.string().min(1).max(100),
-  limit: z.coerce.number().optional().default(8),
+  q: z.string().trim().min(1).max(100),
+  limit: z.coerce.number().int().min(1).max(20).optional().default(8),
 })
 
 export type SuggestionInput = z.infer<typeof suggestionSchema>
@@ -61,6 +60,8 @@ export const unifiedSearchResultSchema = z.object({
   image_url: z.string().nullable(),
   video_url: z.string().nullable(),
   thumbnail_url: z.string().nullable(),
+  media_type: z.enum(['video', 'photo']).optional(),
+  image_count: z.number().optional(),
   product_id: z.string().nullable(),
   score: z.number(),
   distance: z.number().nullable().optional(),
@@ -91,7 +92,7 @@ export type VendorSuggestion = z.infer<typeof vendorSuggestionSchema>
 
 // Search history
 export const searchHistorySchema = z.object({
-  query: z.string().min(1).max(100),
+  query: z.string().trim().min(1).max(100),
 })
 
 export type SearchHistoryInput = z.infer<typeof searchHistorySchema>

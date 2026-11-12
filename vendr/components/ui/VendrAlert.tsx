@@ -30,14 +30,15 @@ interface VendrAlertProps {
 }
 
 const TYPE_CONFIG = {
-  info:     { icon: 'information-circle-outline' as IoniconsName, color: '#5599E8' },
+  info:     { icon: 'information-circle-outline' as IoniconsName, color: '#2563EB' },
   success:  { icon: 'checkmark-circle-outline' as IoniconsName,   color: '#2D8653' },
-  warning:  { icon: 'warning-outline' as IoniconsName,            color: '#F5A623' },
-  danger:   { icon: 'alert-circle-outline' as IoniconsName,       color: '#E85555' },
+  warning:  { icon: 'warning-outline' as IoniconsName,            color: '#D97706' },
+  danger:   { icon: 'alert-circle-outline' as IoniconsName,       color: '#DC2626' },
   question: { icon: 'help-circle-outline' as IoniconsName,        color: '#E8521A' },
 };
 
 export function VendrAlert({ visible, config, onDismiss }: VendrAlertProps) {
+  useTheme();
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -75,15 +76,15 @@ export function VendrAlert({ visible, config, onDismiss }: VendrAlertProps) {
         <Animated.View
           style={{
             width: '100%',
-            backgroundColor: '#1A1208',
+            backgroundColor: T.surface,
             borderRadius: 24,
             borderWidth: 1,
-            borderColor: '#2A1F14',
+            borderColor: T.line,
             overflow: 'hidden',
             transform: [{ scale: scaleAnim }],
-            shadowColor: '#000',
+            shadowColor: '#1C1917',
             shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: 0.4,
+            shadowOpacity: 0.16,
             shadowRadius: 24,
             elevation: 16,
           }}
@@ -104,20 +105,20 @@ export function VendrAlert({ visible, config, onDismiss }: VendrAlertProps) {
             )}
 
             {/* Title */}
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: '#FDF6EC', textAlign: 'center' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 17, color: T.ink, textAlign: 'center' }}>
               {config.title}
             </Text>
 
             {/* Message */}
             {config.message && (
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', lineHeight: 22 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink2, textAlign: 'center', lineHeight: 22 }}>
                 {config.message}
               </Text>
             )}
           </View>
 
           {/* Divider */}
-          <View style={{ height: 1, backgroundColor: '#2A1F14' }} />
+          <View style={{ height: 1, backgroundColor: T.line }} />
 
           {/* Buttons */}
           <View style={{ flexDirection: buttons.length === 2 ? 'row' : 'column' }}>
@@ -139,15 +140,15 @@ export function VendrAlert({ visible, config, onDismiss }: VendrAlertProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderRightWidth: showRightBorder ? 1 : 0,
-                    borderRightColor: '#2A1F14',
+                    borderRightColor: T.line,
                     borderBottomWidth: !isLast && buttons.length > 2 ? 1 : 0,
-                    borderBottomColor: '#2A1F14',
+                    borderBottomColor: T.line,
                   }}
                 >
                   <Text style={{
-                    fontFamily: isCancel ? 'SpaceGrotesk_400Regular' : 'SpaceGrotesk_600SemiBold',
+                    fontFamily: isCancel ? 'PlusJakartaSans_400Regular' : 'PlusJakartaSans_600SemiBold',
                     fontSize: 15,
-                    color: isDestructive ? '#E85555' : isCancel ? '#6B5E50' : '#E8521A',
+                    color: isDestructive ? T.dangerInk : isCancel ? T.ink3 : T.primaryInk,
                   }}>
                     {btn.text}
                   </Text>
@@ -163,6 +164,7 @@ export function VendrAlert({ visible, config, onDismiss }: VendrAlertProps) {
 
 // ── Hook for easy usage anywhere ──────────────────────────────────────────────
 import { useState } from 'react';
+import { T, useTheme } from '../../constants/theme';
 
 export function useVendrAlert() {
   const [visible, setVisible] = useState(false);

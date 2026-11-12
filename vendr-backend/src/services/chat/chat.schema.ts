@@ -1,3 +1,5 @@
+//vendr-backend/src/services/chat/chat.schema.ts
+
 import { z } from 'zod'
 
 // Conversation
@@ -39,6 +41,9 @@ export const sendMessageSchema = z.object({
   image_url: z.string().url().optional().nullable(),
   payment_request_id: z.string().uuid().optional(),
   reply_to_id: z.string().uuid().optional().nullable(),
+  // Client-generated id for the optimistic bubble; echoed back so the
+  // sender can reconcile the REST response with the socket event.
+  client_id: z.string().max(64).optional().nullable(),
 })
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>
@@ -75,11 +80,15 @@ export const messageOutputSchema = z.object({
     buyer_id: z.string(),
     conversation_id: z.string().nullable(),
     amount: z.number(),
+    delivery_fee: z.number().optional(),
+    is_delivery: z.boolean().optional(),
+    delivery_address: z.string().nullable().optional(),
     description: z.string().nullable(),
     status: z.string(),
     paid_at: z.string().nullable(),
     created_at: z.string(),
   }).nullable().optional(),
+  client_id: z.string().nullable().optional(),
 })
 
 export type MessageOutput = z.infer<typeof messageOutputSchema>

@@ -4,7 +4,6 @@ import {
   registerRunnerSchema,
   updateRunnerStatusSchema,
   listJobsSchema,
-  acceptJobSchema,
   updateRunStatusSchema,
   listEarningsSchema,
   withdrawEarningsSchema,
@@ -18,7 +17,7 @@ export async function registerRunnerController(request: FastifyRequest, reply: F
 
   try {
     const userId = (request as any).user.id;
-    const result = await RunnerService.registerRunner(userId, parsed.data);
+    const result = await RunnerService.registerRunner(userId, parsed.data as RunnerService.RegisterRunnerInput);
     return reply.status(201).send({ success: true, data: result });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });
@@ -75,7 +74,7 @@ export async function listJobsController(request: FastifyRequest, reply: Fastify
 export async function getJobDetailController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string };
-    const job = await RunnerService.getJobDetail(id);
+    const job = await RunnerService.getJobDetail((request as any).user.id, id);
     return reply.status(200).send({ success: true, data: job });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });
@@ -83,14 +82,11 @@ export async function getJobDetailController(request: FastifyRequest, reply: Fas
 }
 
 export async function acceptJobController(request: FastifyRequest, reply: FastifyReply) {
-  const parsed = acceptJobSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return reply.status(400).send({ success: false, errors: parsed.error.flatten().fieldErrors });
-  }
-
   try {
     const userId = (request as any).user.id;
-    const result = await RunnerService.acceptJob(userId, parsed.data.job_id);
+    // The job id is in the URL (/runner/jobs/:id/accept); requiring it in the body rejected every accept
+    const { id } = request.params as { id: string };
+    const result = await RunnerService.acceptJob(userId, id);
     return reply.status(200).send({ success: true, data: result });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });
@@ -111,7 +107,8 @@ export async function declineJobController(request: FastifyRequest, reply: Fasti
 export async function listActiveRunsController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).user.id;
-    const result = await RunnerService.listActiveRuns(userId);
+    const { scope } = (request.query ?? {}) as { scope?: string };
+    const result = await RunnerService.listActiveRuns(userId, scope === 'completed' ? 'completed' : 'active');
     return reply.status(200).send({ success: true, data: result });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });
@@ -138,13 +135,7 @@ export async function updateRunStatusController(request: FastifyRequest, reply: 
   try {
     const { id } = request.params as { id: string };
     const userId = (request as any).user.id;
-    const result = await RunnerService.updateRunStatus(
-      userId,
-      id,
-      parsed.data.status,
-      parsed.data.pickup_photo_url,
-      parsed.data.delivery_photo_url,
-    );
+    const result = await RunnerService.updateRunStatus(userId, id, parsed.data.status);
     return reply.status(200).send({ success: true, data: result });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });
@@ -209,9 +200,10 @@ export async function getDashboardStatsController(request: FastifyRequest, reply
 export async function scanPickupQrController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string };
-    const { qr_token } = request.body as { qr_token: string };
+    // "code" = typed 6-digit pickup code; "qr_token" kept for QR scanners
+    const { qr_token, code } = (request.body ?? {}) as { qr_token?: string; code?: string };
     const userId = (request as any).user.id;
-    const result = await RunnerService.scanPickupQr(userId, id, qr_token);
+    const result = await RunnerService.scanPickupQr(userId, id, code ?? qr_token ?? '');
     return reply.status(200).send({ success: true, data: result });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });
@@ -221,9 +213,10 @@ export async function scanPickupQrController(request: FastifyRequest, reply: Fas
 export async function scanDeliveryQrController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string };
-    const { qr_token } = request.body as { qr_token: string };
+    // "code" = the buyer's delivery code; "qr_token" kept for QR scanners
+    const { qr_token, code } = (request.body ?? {}) as { qr_token?: string; code?: string };
     const userId = (request as any).user.id;
-    const result = await RunnerService.scanDeliveryQr(userId, id, qr_token);
+    const result = await RunnerService.scanDeliveryQr(userId, id, code ?? qr_token ?? '');
     return reply.status(200).send({ success: true, data: result });
   } catch (err: any) {
     return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message });

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
+import { T, useTheme } from '../constants/theme';
 
 const FAQS = [
   {
@@ -41,20 +42,21 @@ const FAQS = [
 ];
 
 export default function HelpCenterScreen() {
+  useTheme();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-xl flex-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Help Center</Text>
+        <Text className="text-ink text-xl flex-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>Help Center</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 8 }} showsVerticalScrollIndicator={false}>
-        <Text className="text-muted text-sm mb-2" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+        <Text className="text-ink-2 text-sm mb-2" style={{ fontFamily: 'PlusJakartaSans_400Regular' }}>
           Frequently asked questions
         </Text>
 
@@ -63,16 +65,16 @@ export default function HelpCenterScreen() {
             key={i}
             onPress={() => setOpenIndex(openIndex === i ? null : i)}
             activeOpacity={0.8}
-            className="bg-dark-2 border border-faint rounded-2xl overflow-hidden"
+            className="bg-surface border border-line rounded-2xl overflow-hidden"
             style={{ marginBottom: 8 }}
           >
             <View className="flex-row items-center px-4 py-4 gap-3">
-              <Text className="text-cream text-sm flex-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>{faq.q}</Text>
-              <Ionicons name={openIndex === i ? 'chevron-up' : 'chevron-down'} size={16} color="#6B5E50" />
+              <Text className="text-ink text-sm flex-1" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>{faq.q}</Text>
+              <Ionicons name={openIndex === i ? 'chevron-up' : 'chevron-down'} size={16} color={T.ink3} />
             </View>
             {openIndex === i && (
-              <View className="px-4 pb-4 border-t border-faint">
-                <Text className="text-muted text-sm mt-3" style={{ fontFamily: 'SpaceGrotesk_400Regular', lineHeight: 22 }}>
+              <View className="px-4 pb-4 border-t border-line">
+                <Text className="text-ink-2 text-sm mt-3" style={{ fontFamily: 'PlusJakartaSans_400Regular', lineHeight: 22 }}>
                   {faq.a}
                 </Text>
               </View>
@@ -83,11 +85,11 @@ export default function HelpCenterScreen() {
         <View className="bg-orange/10 border border-orange/30 rounded-2xl px-4 py-4 mt-4 flex-row items-center gap-3">
           <Ionicons name="chatbubble-ellipses-outline" size={22} color="#E8521A" />
           <View className="flex-1">
-            <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Still need help?</Text>
-            <Text className="text-muted text-xs mt-0.5">Contact our support team directly</Text>
+            <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Still need help?</Text>
+            <Text className="text-ink-2 text-xs mt-0.5">Contact our support team directly</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/contact-support')} className="bg-orange rounded-xl px-3 py-2">
-            <Text className="text-white text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Contact</Text>
+            <Text className="text-white text-xs" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Contact</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

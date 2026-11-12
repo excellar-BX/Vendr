@@ -17,6 +17,7 @@ import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
 import { useLocation } from '../hooks/useLocation';
 import { Category } from '../types';
+import { T, useTheme } from '../constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -57,8 +58,9 @@ interface FormData {
 }
 
 function SectionLabel({ label }: { label: string }) {
+  useTheme();
   return (
-    <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+    <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
       {label}
     </Text>
   );
@@ -72,15 +74,16 @@ function InputField({
   placeholder: string; multiline?: boolean; keyboardType?: any;
   icon?: IoniconsName; maxLength?: number;
 }) {
+  useTheme();
   return (
     <View className="mb-4">
       <SectionLabel label={label} />
-      <View className={`flex-row items-${multiline ? 'start' : 'center'} bg-dark-2 border border-faint rounded-2xl px-4 ${multiline ? 'py-3' : 'h-14'} gap-3`}>
-        {icon && <Ionicons name={icon} size={18} color="#6B5E50" style={{ marginTop: multiline ? 2 : 0 }} />}
+      <View className={`flex-row items-${multiline ? 'start' : 'center'} bg-surface border border-line rounded-2xl px-4 ${multiline ? 'py-3' : 'h-14'} gap-3`}>
+        {icon && <Ionicons name={icon} size={18} color={T.ink3} style={{ marginTop: multiline ? 2 : 0 }} />}
         <StyledInput
-          className="flex-1 text-cream text-base"
+          className="flex-1 text-ink text-base"
           placeholder={placeholder}
-          placeholderTextColor="#6B5E50"
+          placeholderTextColor={T.ink3}
           value={value}
           onChangeText={onChangeText}
           multiline={multiline}
@@ -91,7 +94,7 @@ function InputField({
         />
       </View>
       {maxLength && (
-        <Text className="text-muted text-xs text-right mt-1">{value.length}/{maxLength}</Text>
+        <Text className="text-ink-2 text-xs text-right mt-1">{value.length}/{maxLength}</Text>
       )}
     </View>
   );
@@ -101,6 +104,7 @@ function InputField({
 function TimeInput({ label, value, onChange, icon }: {
   label: string; value: string; onChange: (v: string) => void; icon: IoniconsName;
 }) {
+  useTheme();
   const [show, setShow] = useState(false);
   // Temp holds the spinning value on iOS before confirming
   const [tempDate, setTempDate] = useState<Date | null>(null);
@@ -145,13 +149,13 @@ function TimeInput({ label, value, onChange, icon }: {
       <TouchableOpacity
         onPress={() => { setTempDate(toDate(value)); setShow(true); }}
         activeOpacity={0.8}
-        className="flex-row items-center bg-dark-2 border border-faint rounded-2xl px-4 h-14 gap-3"
+        className="flex-row items-center bg-surface border border-line rounded-2xl px-4 h-14 gap-3"
       >
-        <Ionicons name={icon} size={18} color="#6B5E50" />
-        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#FDF6EC', fontSize: 16, flex: 1 }}>
+        <Ionicons name={icon} size={18} color={T.ink3} />
+        <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', color: T.ink, fontSize: 16, flex: 1 }}>
           {value || '--:--'}
         </Text>
-        <Ionicons name="chevron-down" size={16} color="#6B5E50" />
+        <Ionicons name="chevron-down" size={16} color={T.ink3} />
       </TouchableOpacity>
 
       {/* Android: renders inline below the button */}
@@ -173,15 +177,15 @@ function TimeInput({ label, value, onChange, icon }: {
             activeOpacity={1}
             onPress={cancelIOS}
           />
-          <View style={{ backgroundColor: '#1A1208', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40 }}>
+          <View style={{ backgroundColor: T.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40 }}>
             {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#2A1F14' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: T.line }}>
               <TouchableOpacity onPress={cancelIOS} style={{ padding: 4 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', color: '#9A8570', fontSize: 15 }}>Cancel</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', color: T.ink2, fontSize: 15 }}>Cancel</Text>
               </TouchableOpacity>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#FDF6EC', fontSize: 15 }}>{label}</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', color: T.ink, fontSize: 15 }}>{label}</Text>
               <TouchableOpacity onPress={confirmIOS} style={{ padding: 4 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#E8521A', fontSize: 15 }}>Done</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', color: T.primaryInk, fontSize: 15 }}>Done</Text>
               </TouchableOpacity>
             </View>
             <DateTimePicker
@@ -204,6 +208,7 @@ function TimeInput({ label, value, onChange, icon }: {
 function LeafletMap({ lat, lng, onPin }: {
   lat: number; lng: number; onPin: (lat: number, lng: number) => void;
 }) {
+  useTheme();
   const webviewRef = useRef<any>(null);
 
   const html = `
@@ -215,8 +220,7 @@ function LeafletMap({ lat, lng, onPin }: {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body, #map { width:100%; height:100%; background:#0F0A06; }
-    .leaflet-tile { filter: brightness(0.85) saturate(0.9); }
+    html, body, #map { width:100%; height:100%; background:#F7F7F5; }
   </style>
 </head>
 <body>
@@ -254,7 +258,7 @@ function LeafletMap({ lat, lng, onPin }: {
     <WebView
       ref={webviewRef}
       source={{ html }}
-      style={{ flex: 1, backgroundColor: '#0F0A06' }}
+      style={{ flex: 1, backgroundColor: T.canvas }}
       scrollEnabled={false}
       onMessage={(e) => {
         try {
@@ -267,6 +271,7 @@ function LeafletMap({ lat, lng, onPin }: {
 }
 
 export default function BecomeVendorScreen() {
+  useTheme();
   const { user, setUser } = useAuthStore();
   const location = useLocation();
   const [step, setStep] = useState(0);
@@ -436,25 +441,25 @@ export default function BecomeVendorScreen() {
   const locationReady = !location.loading && !location.error && !!location.address;
 
   return (
-    <KeyboardAvoidingView className="flex-1 bg-dark" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <StatusBar style="light" />
+    <KeyboardAvoidingView className="flex-1 bg-canvas" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
       <View className="px-5 pt-14 pb-4">
         <View className="flex-row items-center justify-between mb-5">
           <TouchableOpacity
-            className="w-10 h-10 rounded-xl bg-dark-2 border border-faint items-center justify-center"
+            className="w-10 h-10 rounded-xl bg-surface border border-line items-center justify-center"
             onPress={() => step === 0 ? router.back() : goToStep(step - 1)}
           >
-            <Ionicons name="arrow-back" size={20} color="#FDF6EC" />
+            <Ionicons name="arrow-back" size={20} color={T.ink} />
           </TouchableOpacity>
-          <Text className="text-muted text-sm">
-            Step <Text className="text-cream" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{step + 1}</Text> of {STEPS.length}
+          <Text className="text-ink-2 text-sm">
+            Step <Text className="text-ink" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>{step + 1}</Text> of {STEPS.length}
           </Text>
           <View className="w-10" />
         </View>
 
-        <View className="h-1.5 bg-dark-3 rounded-full overflow-hidden mb-5">
+        <View className="h-1.5 bg-surface-2 rounded-full overflow-hidden mb-5">
           <Animated.View className="h-full bg-orange rounded-full" style={{ width: progressWidth }} />
         </View>
 
@@ -463,8 +468,8 @@ export default function BecomeVendorScreen() {
             <Ionicons name={STEPS[step].icon} size={20} color="#E8521A" />
           </View>
           <View>
-            <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{STEPS[step].title}</Text>
-            <Text className="text-muted text-sm">{STEPS[step].subtitle}</Text>
+            <Text className="text-ink text-xl" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>{STEPS[step].title}</Text>
+            <Text className="text-ink-2 text-sm">{STEPS[step].subtitle}</Text>
           </View>
         </View>
       </View>
@@ -480,14 +485,14 @@ export default function BecomeVendorScreen() {
               <TouchableOpacity
                 onPress={() => pickImage('banner')}
                 activeOpacity={0.8}
-                className="w-full h-32 bg-dark-2 border border-faint rounded-2xl overflow-hidden items-center justify-center mb-3"
+                className="w-full h-32 bg-surface border border-line rounded-2xl overflow-hidden items-center justify-center mb-3"
               >
                 {form.banner_uri ? (
                   <Image source={{ uri: form.banner_uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                 ) : (
                   <View className="items-center gap-2">
-                    <Ionicons name="image-outline" size={28} color="#3D3026" />
-                    <Text className="text-muted text-xs">Tap to upload banner (16:9)</Text>
+                    <Ionicons name="image-outline" size={28} color={T.ink4} />
+                    <Text className="text-ink-2 text-xs">Tap to upload banner (16:9)</Text>
                   </View>
                 )}
                 <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 }}>
@@ -500,20 +505,20 @@ export default function BecomeVendorScreen() {
                 <TouchableOpacity
                   onPress={() => pickImage('logo')}
                   activeOpacity={0.8}
-                  className="w-20 h-20 bg-dark-2 border border-faint rounded-2xl overflow-hidden items-center justify-center"
+                  className="w-20 h-20 bg-surface border border-line rounded-2xl overflow-hidden items-center justify-center"
                 >
                   {form.logo_uri ? (
                     <Image source={{ uri: form.logo_uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                   ) : (
                     <View className="items-center gap-1">
-                      <Ionicons name="storefront-outline" size={24} color="#3D3026" />
-                      <Text style={{ fontSize: 9, color: '#6B5E50', fontFamily: 'SpaceGrotesk_400Regular' }}>Logo</Text>
+                      <Ionicons name="storefront-outline" size={24} color={T.ink4} />
+                      <Text style={{ fontSize: 9, color: T.ink3, fontFamily: 'PlusJakartaSans_400Regular' }}>Logo</Text>
                     </View>
                   )}
                 </TouchableOpacity>
                 <View className="flex-1">
-                  <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Store Logo</Text>
-                  <Text className="text-muted text-xs mt-1">Square image, shown on your store card and profile. Tap to upload.</Text>
+                  <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Store Logo</Text>
+                  <Text className="text-ink-2 text-xs mt-1">Square image, shown on your store card and profile. Tap to upload.</Text>
                 </View>
               </View>
             </View>
@@ -527,10 +532,10 @@ export default function BecomeVendorScreen() {
                   const active = form.category === cat.label;
                   return (
                     <TouchableOpacity key={cat.label} onPress={() => update('category', cat.label)}
-                      className={`flex-row items-center gap-2 px-3 py-2.5 rounded-2xl border ${active ? 'bg-orange border-orange' : 'bg-dark-2 border-faint'}`}
+                      className={`flex-row items-center gap-2 px-3 py-2.5 rounded-2xl border ${active ? 'bg-orange border-orange' : 'bg-surface border-line'}`}
                     >
-                      <Ionicons name={cat.icon} size={15} color={active ? 'white' : '#9A8570'} />
-                      <Text className={active ? 'text-white text-sm' : 'text-muted text-sm'} style={{ fontFamily: active ? 'SpaceGrotesk_600SemiBold' : 'SpaceGrotesk_400Regular' }}>
+                      <Ionicons name={cat.icon} size={15} color={active ? 'white' : T.ink2} />
+                      <Text className={active ? 'text-white text-sm' : 'text-ink-2 text-sm'} style={{ fontFamily: active ? 'PlusJakartaSans_600SemiBold' : 'PlusJakartaSans_400Regular' }}>
                         {cat.label}
                       </Text>
                     </TouchableOpacity>
@@ -551,24 +556,24 @@ export default function BecomeVendorScreen() {
               onPress={handleUseCurrentLocation}
               activeOpacity={0.8}
               className={`flex-row items-center gap-3 p-4 rounded-2xl border mb-5 ${
-                form.use_current_location && locationReady ? 'bg-brand-green/10 border-brand-green/30' : 'bg-dark-2 border-faint'
+                form.use_current_location && locationReady ? 'bg-brand-green/10 border-brand-green/30' : 'bg-surface border-line'
               }`}
             >
-              <View className={`w-10 h-10 rounded-xl items-center justify-center ${form.use_current_location && locationReady ? 'bg-brand-green/20' : 'bg-dark-3'}`}>
+              <View className={`w-10 h-10 rounded-xl items-center justify-center ${form.use_current_location && locationReady ? 'bg-brand-green/20' : 'bg-surface-2'}`}>
                 {location.loading ? (
-                  <ActivityIndicator size="small" color="#9A8570" />
+                  <ActivityIndicator size="small" color={T.ink2} />
                 ) : (
-                  <Ionicons name="navigate-outline" size={20} color={form.use_current_location && locationReady ? '#2D8653' : '#9A8570'} />
+                  <Ionicons name="navigate-outline" size={20} color={form.use_current_location && locationReady ? '#2D8653' : T.ink2} />
                 )}
               </View>
               <View className="flex-1">
                 <Text
                   className="text-sm"
-                  style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: form.use_current_location && locationReady ? '#2D8653' : '#FDF6EC' }}
+                  style={{ fontFamily: 'PlusJakartaSans_600SemiBold', color: form.use_current_location && locationReady ? T.successInk : T.ink }}
                 >
                   {location.loading ? 'Fetching your location...' : 'Use Current Location'}
                 </Text>
-                <Text className="text-muted text-xs mt-0.5">
+                <Text className="text-ink-2 text-xs mt-0.5">
                   {location.loading
                     ? 'Please wait'
                     : form.use_current_location && location.address
@@ -584,14 +589,14 @@ export default function BecomeVendorScreen() {
               )}
               {/* Show spinner in tick position while loading */}
               {location.loading && (
-                <ActivityIndicator size="small" color="#6B5E50" />
+                <ActivityIndicator size="small" color={T.ink3} />
               )}
             </TouchableOpacity>
 
             <View className="flex-row items-center gap-3 mb-5">
-              <View className="flex-1 h-px bg-faint" />
-              <Text className="text-subtle text-xs">or enter manually</Text>
-              <View className="flex-1 h-px bg-faint" />
+              <View className="flex-1 h-px bg-line" />
+              <Text className="text-ink-3 text-xs">or enter manually</Text>
+              <View className="flex-1 h-px bg-line" />
             </View>
 
             <InputField label="Street Address" value={form.address} onChangeText={t => { update('address', t); update('use_current_location', false); }} placeholder="e.g. 14 Allen Avenue, Ikeja, Lagos" icon="location-outline" />
@@ -605,23 +610,23 @@ export default function BecomeVendorScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 12,
                   padding: 16, borderRadius: 16,
-                  backgroundColor: pinCoords ? 'rgba(232,82,26,0.08)' : '#1A1208',
+                  backgroundColor: pinCoords ? 'rgba(232,82,26,0.08)' : T.surface,
                   borderWidth: 1,
-                  borderColor: pinCoords ? 'rgba(232,82,26,0.35)' : '#2A1F14',
+                  borderColor: pinCoords ? 'rgba(232,82,26,0.35)' : T.line,
                 }}
               >
                 <View style={{
                   width: 44, height: 44, borderRadius: 14,
-                  backgroundColor: pinCoords ? 'rgba(232,82,26,0.15)' : '#2E2214',
+                  backgroundColor: pinCoords ? 'rgba(232,82,26,0.15)' : T.surface2,
                   alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Ionicons name="map-outline" size={22} color={pinCoords ? '#E8521A' : '#9A8570'} />
+                  <Ionicons name="map-outline" size={22} color={pinCoords ? '#E8521A' : T.ink2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: pinCoords ? '#E8521A' : '#FDF6EC' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: pinCoords ? T.primaryInk : T.ink }}>
                     {pinCoords ? 'Location pinned' : 'Pick on Map'}
                   </Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 2 }}>
                     {pinCoords
                       ? `${pinCoords.lat.toFixed(5)}, ${pinCoords.lng.toFixed(5)}`
                       : 'Open map and drop a pin at your exact location'}
@@ -632,12 +637,12 @@ export default function BecomeVendorScreen() {
                     <Ionicons name="checkmark" size={14} color="white" />
                   </View>
                 ) : (
-                  <Ionicons name="chevron-forward" size={18} color="#3D3026" />
+                  <Ionicons name="chevron-forward" size={18} color={T.ink4} />
                 )}
               </TouchableOpacity>
               {pinCoords && (
                 <TouchableOpacity onPress={() => setShowMapPicker(true)} style={{ marginTop: 8, alignSelf: 'flex-end' }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#9A8570' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: T.ink2 }}>
                     Change pin
                   </Text>
                 </TouchableOpacity>
@@ -670,9 +675,9 @@ export default function BecomeVendorScreen() {
                         const days = active ? form.open_days.filter(d => d !== day) : [...form.open_days, day];
                         update('open_days', days);
                       }}
-                      className={`w-12 h-12 rounded-xl items-center justify-center border ${active ? 'bg-orange border-orange' : 'bg-dark-2 border-faint'}`}
+                      className={`w-12 h-12 rounded-xl items-center justify-center border ${active ? 'bg-orange border-orange' : 'bg-surface border-line'}`}
                     >
-                      <Text className={active ? 'text-white text-xs' : 'text-muted text-xs'} style={{ fontFamily: active ? 'SpaceGrotesk_700Bold' : 'SpaceGrotesk_400Regular' }}>
+                      <Text className={active ? 'text-white text-xs' : 'text-ink-2 text-xs'} style={{ fontFamily: active ? 'PlusJakartaSans_700Bold' : 'PlusJakartaSans_400Regular' }}>
                         {day}
                       </Text>
                     </TouchableOpacity>
@@ -686,15 +691,15 @@ export default function BecomeVendorScreen() {
               <TimeInput label="Closing Time" value={form.close_time} onChange={v => update('close_time', v)} icon="moon-outline" />
             </View>
 
-            <View className="bg-dark-2 border border-faint rounded-2xl p-4 mt-2">
-              <Text className="text-muted text-xs mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>PREVIEW</Text>
+            <View className="bg-surface border border-line rounded-2xl p-4 mt-2">
+              <Text className="text-ink-2 text-xs mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>PREVIEW</Text>
               <View className="flex-row items-center gap-2 mb-1">
-                <Ionicons name="time-outline" size={14} color="#9A8570" />
-                <Text className="text-cream text-sm">{form.open_time} – {form.close_time}</Text>
+                <Ionicons name="time-outline" size={14} color={T.ink2} />
+                <Text className="text-ink text-sm">{form.open_time} – {form.close_time}</Text>
               </View>
               <View className="flex-row items-center gap-2">
-                <Ionicons name="calendar-outline" size={14} color="#9A8570" />
-                <Text className="text-cream text-sm">{form.open_days.join(', ') || 'No days selected'}</Text>
+                <Ionicons name="calendar-outline" size={14} color={T.ink2} />
+                <Text className="text-ink text-sm">{form.open_days.join(', ') || 'No days selected'}</Text>
               </View>
             </View>
           </View>
@@ -711,28 +716,28 @@ export default function BecomeVendorScreen() {
               { label: 'Phone', value: form.phone, icon: 'call-outline' as IoniconsName },
               { label: 'Hours', value: `${form.open_time} – ${form.close_time} (${form.open_days.join(', ')})`, icon: 'time-outline' as IoniconsName },
             ].map(row => (
-              <View key={row.label} className="bg-dark-2 border border-faint rounded-2xl p-4 flex-row items-start gap-3">
-                <View className="w-8 h-8 rounded-xl bg-dark-3 items-center justify-center mt-0.5">
-                  <Ionicons name={row.icon} size={15} color="#9A8570" />
+              <View key={row.label} className="bg-surface border border-line rounded-2xl p-4 flex-row items-start gap-3">
+                <View className="w-8 h-8 rounded-xl bg-surface-2 items-center justify-center mt-0.5">
+                  <Ionicons name={row.icon} size={15} color={T.ink2} />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-muted text-xs mb-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>{row.label.toUpperCase()}</Text>
-                  <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>{row.value || '—'}</Text>
+                  <Text className="text-ink-2 text-xs mb-1" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>{row.label.toUpperCase()}</Text>
+                  <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_500Medium' }}>{row.value || '—'}</Text>
                 </View>
                 <TouchableOpacity onPress={() => goToStep(
                   row.label === 'Business Name' || row.label === 'Category' || row.label === 'Description' ? 0
                   : row.label === 'Address' ? 1
                   : row.label === 'Phone' ? 2 : 3
                 )}>
-                  <Ionicons name="pencil-outline" size={16} color="#6B5E50" />
+                  <Ionicons name="pencil-outline" size={16} color={T.ink3} />
                 </TouchableOpacity>
               </View>
             ))}
 
             {/* Image preview */}
             {(form.logo_uri || form.banner_uri) && (
-              <View className="bg-dark-2 border border-faint rounded-2xl p-4 gap-3">
-                <Text className="text-muted text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>STORE IMAGES</Text>
+              <View className="bg-surface border border-line rounded-2xl p-4 gap-3">
+                <Text className="text-ink-2 text-xs" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>STORE IMAGES</Text>
                 <View className="flex-row gap-3">
                   {form.banner_uri && (
                     <Image source={{ uri: form.banner_uri }} style={{ flex: 1, height: 60, borderRadius: 12 }} resizeMode="cover" />
@@ -746,9 +751,9 @@ export default function BecomeVendorScreen() {
 
             <View className="bg-gold/10 border border-gold/30 rounded-2xl p-4 flex-row items-start gap-3 mt-2">
               <Ionicons name="information-circle-outline" size={20} color="#F5A623" />
-              <Text className="text-muted text-sm flex-1 leading-relaxed">
+              <Text className="text-ink-2 text-sm flex-1 leading-relaxed">
                 Your business will be reviewed by our team within{' '}
-                <Text className="text-gold" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>24 hours</Text>
+                <Text className="text-gold-ink" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>24 hours</Text>
                 {' '}before going live to customers.
               </Text>
             </View>
@@ -758,7 +763,7 @@ export default function BecomeVendorScreen() {
       </ScrollView>
 
       {/* Bottom CTA */}
-      <View className="px-5 pb-10 pt-4 border-t border-faint bg-dark">
+      <View className="px-5 pb-10 pt-4 border-t border-line bg-canvas">
         {step < STEPS.length - 1 ? (
           <Button label="Continue" onPress={handleNext} iconRight="arrow-forward" />
         ) : (
@@ -767,24 +772,24 @@ export default function BecomeVendorScreen() {
       </View>
       {/* Fullscreen Map Picker Modal */}
       <Modal visible={showMapPicker} animationType="slide" statusBarTranslucent onRequestClose={() => setShowMapPicker(false)}>
-        <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-          <StatusBar style="light" />
+        <View style={{ flex: 1, backgroundColor: T.canvas }}>
+          <StatusBar style={T.statusBar} />
 
           {/* Header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
             paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16,
-            backgroundColor: '#0F0A06', borderBottomWidth: 1, borderBottomColor: '#2A1F14',
+            backgroundColor: T.canvas, borderBottomWidth: 1, borderBottomColor: T.line,
           }}>
             <TouchableOpacity
               onPress={() => setShowMapPicker(false)}
-              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Ionicons name="close" size={20} color="#FDF6EC" />
+              <Ionicons name="close" size={20} color={T.ink} />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Pin Your Location</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>Tap anywhere on the map to drop a pin</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>Pin Your Location</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 2 }}>Tap anywhere on the map to drop a pin</Text>
             </View>
             <View style={{ width: 38 }} />
           </View>
@@ -812,17 +817,17 @@ export default function BecomeVendorScreen() {
           {/* Bottom action bar */}
           <View style={{
             padding: 20, paddingBottom: 36,
-            backgroundColor: '#0F0A06', borderTopWidth: 1, borderTopColor: '#2A1F14',
+            backgroundColor: T.canvas, borderTopWidth: 1, borderTopColor: T.line,
           }}>
             {pinCoords ? (
               <View style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="location" size={14} color="#E8521A" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570', flex: 1 }} numberOfLines={1}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink2, flex: 1 }} numberOfLines={1}>
                   {form.address || `${pinCoords.lat.toFixed(5)}, ${pinCoords.lng.toFixed(5)}`}
                 </Text>
               </View>
             ) : (
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', textAlign: 'center', marginBottom: 12 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, textAlign: 'center', marginBottom: 12 }}>
                 No pin dropped yet — tap on the map above
               </Text>
             )}
@@ -831,12 +836,12 @@ export default function BecomeVendorScreen() {
               disabled={!pinCoords}
               style={{
                 height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: pinCoords ? '#E8521A' : '#2A1F14',
+                backgroundColor: pinCoords ? '#E8521A' : T.line,
                 shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: pinCoords ? 0.3 : 0, shadowRadius: 10, elevation: pinCoords ? 6 : 0,
               }}
             >
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: pinCoords ? 'white' : '#6B5E50' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: pinCoords ? 'white' : T.ink3 }}>
                 {pinCoords ? 'Confirm Location' : 'Drop a pin first'}
               </Text>
             </TouchableOpacity>

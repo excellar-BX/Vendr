@@ -15,6 +15,7 @@ import {
   useCreateVirtualAccount,
 } from '../hooks/useQueries';
 import { useVendrAlert } from '../components/ui/VendrAlert';
+import { T, useTheme } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -45,11 +46,11 @@ interface VirtualAccount {
 
 const TX_CONFIG: Record<TxType, { icon: string; color: string; label: string; sign: string }> = {
   credit:           { icon: 'arrow-down-circle',    color: '#2D8653', label: 'Wallet Funded',     sign: '+' },
-  debit:            { icon: 'arrow-up-circle',      color: '#E85555', label: 'Debit',             sign: '-' },
-  withdrawal:       { icon: 'arrow-up-circle',      color: '#E85555', label: 'Withdrawal',        sign: '-' },
-  payment_sent:     { icon: 'send',                 color: '#E85555', label: 'Payment Sent',      sign: '-' },
+  debit:            { icon: 'arrow-up-circle',      color: '#DC2626', label: 'Debit',             sign: '-' },
+  withdrawal:       { icon: 'arrow-up-circle',      color: '#DC2626', label: 'Withdrawal',        sign: '-' },
+  payment_sent:     { icon: 'send',                 color: '#DC2626', label: 'Payment Sent',      sign: '-' },
   payment_received: { icon: 'cash',                 color: '#2D8653', label: 'Payment Received',  sign: '+' },
-  refund:           { icon: 'refresh-circle',       color: '#F5A623', label: 'Refund',            sign: '+' },
+  refund:           { icon: 'refresh-circle',       color: '#D97706', label: 'Refund',            sign: '+' },
 };
 
 function formatAmount(n: number) {
@@ -77,6 +78,7 @@ function groupByDate(txs: Transaction[]) {
 }
 
 export default function WalletScreen() {
+  useTheme();
   const { user, isVendor } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [refreshing, setRefreshing] = useState(false);
@@ -119,7 +121,7 @@ export default function WalletScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#E8521A" />
       </View>
     );
@@ -129,20 +131,20 @@ export default function WalletScreen() {
   const grouped = groupByDate(txList);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, gap: 12 }}>
         <TouchableOpacity onPress={() => router.back()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', flex: 1 }}>My Wallet</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink, flex: 1 }}>My Wallet</Text>
         <TouchableOpacity
           onPress={() => router.push('/wallet-transactions')}
-          style={{ width: 36, height: 36, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 36, height: 36, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Ionicons name="list-outline" size={18} color="#9A8570" />
+          <Ionicons name="list-outline" size={18} color={T.ink2} />
         </TouchableOpacity>
       </View>
 
@@ -154,38 +156,44 @@ export default function WalletScreen() {
         {/* ── Balance Card ── */}
         <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
           <View style={{
-            borderRadius: 28, overflow: 'hidden',
-            backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+            borderRadius: 24, overflow: 'hidden',
+            backgroundColor: T.heroBg,
+            shadowColor: '#1C1917', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 6,
           }}>
-            {/* Top gradient stripe */}
-            <View style={{ height: 4, backgroundColor: '#E8521A' }} />
+            {/* Brand glow */}
+            <View style={{ position: 'absolute', width: 220, height: 220, borderRadius: 110, backgroundColor: '#E8521A', opacity: 0.35, top: -110, right: -70 }} />
+            <View style={{ position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: '#F5A623', opacity: 0.18, top: -40, right: 60 }} />
 
             <View style={{ padding: 24 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570' }}>Available Balance</Text>
-                <TouchableOpacity onPress={() => setShowBalance(!showBalance)} style={{ padding: 4 }}>
-                  <Ionicons name={showBalance ? 'eye-outline' : 'eye-off-outline'} size={18} color="#9A8570" />
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: 'rgba(255,255,255,0.75)' }}>Available Balance</Text>
+                <TouchableOpacity
+                  onPress={() => setShowBalance(!showBalance)}
+                  style={{ padding: 6 }}
+                  accessibilityLabel={showBalance ? 'Hide balance' : 'Show balance'}
+                >
+                  <Ionicons name={showBalance ? 'eye-outline' : 'eye-off-outline'} size={18} color="rgba(255,255,255,0.8)" />
                 </TouchableOpacity>
               </View>
 
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 36, color: '#FDF6EC', marginBottom: 4 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 36, color: '#FFFFFF', letterSpacing: -1, marginBottom: 4 }}>
                 {showBalance ? formatAmount(wallet?.available_balance ?? 0) : '₦ ••••••'}
               </Text>
 
               {(wallet?.frozen_balance ?? 0) > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <Ionicons name="lock-closed-outline" size={12} color="#F5A623" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#F5A623' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: '#FCD34D' }}>
                     {formatAmount(wallet!.frozen_balance)} frozen
                   </Text>
                 </View>
               )}
 
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 4 }}>NGN • Vendr Wallet</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>NGN • Vendr Wallet</Text>
             </View>
 
             {/* Actions row */}
-            <View style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: '#2A1F14' }}>
+            <View style={{ flexDirection: 'row', backgroundColor: T.surface, borderTopWidth: 0 }}>
               {[
                 { label: 'Fund', icon: 'add-circle-outline', onPress: () => router.push('/fund-wallet') },
                 ...(isVendor ? [{ label: 'Withdraw', icon: 'arrow-up-circle-outline', onPress: () => router.push('/withdraw') }] : []),
@@ -197,11 +205,11 @@ export default function WalletScreen() {
                   activeOpacity={0.75}
                   style={{
                     flex: 1, alignItems: 'center', paddingVertical: 16, gap: 6,
-                    borderRightWidth: i < (isVendor ? 2 : 1) ? 1 : 0, borderColor: '#2A1F14',
+                    borderRightWidth: i < (isVendor ? 2 : 1) ? 1 : 0, borderColor: T.line,
                   }}
                 >
                   <Ionicons name={action.icon as any} size={22} color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#FDF6EC' }}>{action.label}</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.ink }}>{action.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -210,28 +218,28 @@ export default function WalletScreen() {
 
         {/* ── Virtual Account / Fund Wallet ── */}
         <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC', marginBottom: 12 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink, marginBottom: 12 }}>
             Fund Your Wallet
           </Text>
 
           {virtualAccount ? (
-            <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 20, gap: 16 }}>
+            <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 20, gap: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(232,82,26,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="business-outline" size={20} color="#E8521A" />
                 </View>
                 <View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{virtualAccount.bank_name}</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570' }}>Transfer to this account to fund wallet</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>{virtualAccount.bank_name}</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink2 }}>Transfer to this account to fund wallet</Text>
                 </View>
               </View>
 
               {/* Account details */}
-              <View style={{ backgroundColor: '#0F0A06', borderRadius: 14, borderWidth: 1, borderColor: '#2A1F14', padding: 16, gap: 12 }}>
+              <View style={{ backgroundColor: T.canvas, borderRadius: 14, borderWidth: 1, borderColor: T.line, padding: 16, gap: 12 }}>
                 <View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50', marginBottom: 4 }}>ACCOUNT NUMBER</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3, marginBottom: 4 }}>ACCOUNT NUMBER</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', letterSpacing: 2 }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink, letterSpacing: 2 }}>
                       {virtualAccount.account_number}
                     </Text>
                     <TouchableOpacity
@@ -244,21 +252,21 @@ export default function WalletScreen() {
                       }}
                     >
                       <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={13} color={copied ? '#2D8653' : '#E8521A'} />
-                      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: copied ? '#2D8653' : '#E8521A' }}>
+                      <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11, color: copied ? T.successInk : T.primaryInk }}>
                         {copied ? 'Copied!' : 'Copy'}
                       </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-                <View style={{ height: 1, backgroundColor: '#1A1208' }} />
+                <View style={{ height: 1, backgroundColor: T.surface }} />
                 <View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50', marginBottom: 4 }}>ACCOUNT NAME</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{virtualAccount.account_name}</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3, marginBottom: 4 }}>ACCOUNT NAME</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>{virtualAccount.account_name}</Text>
                 </View>
-                <View style={{ height: 1, backgroundColor: '#1A1208' }} />
+                <View style={{ height: 1, backgroundColor: T.surface }} />
                 <View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50', marginBottom: 4 }}>BANK</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{virtualAccount.bank_name}</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3, marginBottom: 4 }}>BANK</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>{virtualAccount.bank_name}</Text>
                 </View>
               </View>
 
@@ -275,14 +283,14 @@ export default function WalletScreen() {
                 }}
               >
                 <Ionicons name={copied ? 'checkmark-circle' : 'copy-outline'} size={16} color={copied ? '#2D8653' : 'white'} />
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: copied ? '#2D8653' : 'white' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: copied ? T.successInk : 'white' }}>
                   {copied ? 'Account Number Copied!' : 'Copy Account Number'}
                 </Text>
               </TouchableOpacity>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(245,166,35,0.08)', borderRadius: 12, padding: 12 }}>
                 <Ionicons name="information-circle-outline" size={16} color="#F5A623" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#F5A623', flex: 1, lineHeight: 18 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.goldInk, flex: 1, lineHeight: 18 }}>
                   Transfer any amount to this account from any Nigerian bank. Your wallet updates automatically.
                 </Text>
               </View>
@@ -293,7 +301,7 @@ export default function WalletScreen() {
               disabled={createVaMutation.isPending}
               activeOpacity={0.85}
               style={{
-                backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                 borderRadius: 20, padding: 24, alignItems: 'center', gap: 12,
                 borderStyle: 'dashed',
               }}
@@ -301,19 +309,19 @@ export default function WalletScreen() {
               {createVaMutation.isPending ? (
                 <>
                   <ActivityIndicator size="large" color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#9A8570' }}>Setting up your account...</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14, color: T.ink2 }}>Setting up your account...</Text>
                 </>
               ) : (
                 <>
                   <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(232,82,26,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="wallet-outline" size={28} color="#E8521A" />
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#FDF6EC' }}>Get Your Account Number</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', lineHeight: 20 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: T.ink }}>Get Your Account Number</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center', lineHeight: 20 }}>
                     Get a dedicated bank account number to fund your Vendr wallet instantly
                   </Text>
                   <View style={{ backgroundColor: '#E8521A', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12 }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: 'white' }}>Set Up Now — Free</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: 'white' }}>Set Up Now — Free</Text>
                   </View>
                 </>
               )}
@@ -324,30 +332,30 @@ export default function WalletScreen() {
         {/* ── Quick Actions (Vendor Only) ── */}
         {user?.is_vendor && (
           <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC', marginBottom: 12 }}>Quick Actions</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink, marginBottom: 12 }}>Quick Actions</Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity
                 onPress={() => router.push('/withdraw')}
                 activeOpacity={0.85}
-                style={{ flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
+                style={{ flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
               >
                 <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(232,85,85,0.12)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="arrow-up-circle-outline" size={22} color="#E85555" />
+                  <Ionicons name="arrow-up-circle-outline" size={22} color="#DC2626" />
                 </View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Withdraw</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570', textAlign: 'center' }}>Send to your bank</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink }}>Withdraw</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink2, textAlign: 'center' }}>Send to your bank</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 onPress={() => router.push('/add-bank-account')}
                 activeOpacity={0.85}
-                style={{ flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
+                style={{ flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 18, padding: 16, alignItems: 'center', gap: 10 }}
               >
                 <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(245,166,35,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="card-outline" size={22} color="#F5A623" />
                 </View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Bank Accounts</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570', textAlign: 'center' }}>Manage withdrawal accounts</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink }}>Bank Accounts</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink2, textAlign: 'center' }}>Manage withdrawal accounts</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -356,19 +364,19 @@ export default function WalletScreen() {
         {/* ── Recent Transactions ── */}
         <View style={{ marginHorizontal: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Recent Activity</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>Recent Activity</Text>
             {txList.length > 0 && (
               <TouchableOpacity onPress={() => router.push('/wallet-transactions')}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>See all</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.primaryInk }}>See all</Text>
               </TouchableOpacity>
             )}
           </View>
 
           {txList.length === 0 ? (
-            <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
-              <Ionicons name="receipt-outline" size={32} color="#3D3026" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#6B5E50' }}>No transactions yet</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#3D3026', textAlign: 'center' }}>
+            <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 32, alignItems: 'center', gap: 10 }}>
+              <Ionicons name="receipt-outline" size={32} color={T.ink4} />
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink3 }}>No transactions yet</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, textAlign: 'center' }}>
                 Fund your wallet to get started
               </Text>
             </View>
@@ -388,33 +396,33 @@ export default function WalletScreen() {
 
                 return groupsToShow.map(({ date, txs }) => (
                   <View key={date} style={{ marginBottom: 16 }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#6B5E50', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.ink3, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                       {date}
                     </Text>
-                    <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, overflow: 'hidden' }}>
+                    <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, overflow: 'hidden' }}>
                       {txs.map((tx, i) => {
                         const cfg = TX_CONFIG[tx.type];
                         const isPositive = cfg.sign === '+';
                         return (
                           <View key={tx.id} style={{
                             flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12,
-                            borderBottomWidth: i < txs.length - 1 ? 1 : 0, borderColor: '#2A1F14',
+                            borderBottomWidth: i < txs.length - 1 ? 1 : 0, borderColor: T.line,
                           }}>
                             <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${cfg.color}18`, alignItems: 'center', justifyContent: 'center' }}>
                               <Ionicons name={cfg.icon as any} size={20} color={cfg.color} />
                             </View>
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{cfg.label}</Text>
-                              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570', marginTop: 2 }} numberOfLines={1}>
+                              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>{cfg.label}</Text>
+                              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink2, marginTop: 2 }} numberOfLines={1}>
                                 {tx.description}
                               </Text>
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
-                              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: isPositive ? '#2D8653' : '#E85555' }}>
+                              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: isPositive ? T.successInk : T.dangerInk }}>
                                 {cfg.sign}{formatAmount(tx.amount)}
                               </Text>
                               <View style={{ marginTop: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: tx.status === 'success' ? 'rgba(45,134,83,0.12)' : tx.status === 'pending' ? 'rgba(245,166,35,0.12)' : 'rgba(232,85,85,0.12)' }}>
-                                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 10, color: tx.status === 'success' ? '#2D8653' : tx.status === 'pending' ? '#F5A623' : '#E85555', textTransform: 'uppercase' }}>
+                                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 10, color: tx.status === 'success' ? T.successInk : tx.status === 'pending' ? T.goldInk : T.dangerInk, textTransform: 'uppercase' }}>
                                   {tx.status}
                                 </Text>
                               </View>

@@ -47,6 +47,10 @@ export async function getWalletBalance(userId: string): Promise<{ available_bala
 export interface ProcessPaymentOptions {
   order_type?: 'pickup' | 'delivery'
   delivery_address?: string
+  /** Paid by the buyer on top of the items; goes to the runner */
+  delivery_fee?: number
+  delivery_lat?: number | null
+  delivery_lng?: number | null
 }
 
 export async function processPayment(
@@ -154,6 +158,9 @@ export async function processPayment(
               description: paymentRequest.description,
               order_type: orderType,
               delivery_address: isDelivery ? options!.delivery_address!.trim() : null,
+              delivery_fee: isDelivery ? Math.max(0, options?.delivery_fee ?? 0) : 0,
+              delivery_lat: isDelivery ? options?.delivery_lat ?? null : null,
+              delivery_lng: isDelivery ? options?.delivery_lng ?? null : null,
               otp_code: isDelivery ? generateOtpCode() : null,
               status: 'pending',
               escrow_status: 'held',

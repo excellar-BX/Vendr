@@ -21,6 +21,17 @@ async function main() {
       }
     }, 10 * 60 * 1000);
 
+    // Release escrow whose hold window has passed (delivery confirmed / pickup fallback)
+    setInterval(async () => {
+      try {
+        const { autoReleaseEscrow } = await import('./services/escrow/escrow.service')
+        const r = await autoReleaseEscrow()
+        if (r.released_count) console.log(`[Cron] Released escrow for ${r.released_count} order(s)`)
+      } catch (err) {
+        console.error('[Cron] Escrow auto-release failed:', err)
+      }
+    }, 10 * 60 * 1000)
+
     // Delete expired accounts (30-day soft delete window)
     deleteExpiredAccounts()
     setInterval(deleteExpiredAccounts, 24 * 60 * 60 * 1000)

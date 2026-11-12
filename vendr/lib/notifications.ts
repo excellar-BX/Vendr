@@ -20,12 +20,22 @@ if (!isExpoGo()) {
   try {
     const Notifications = require('expo-notifications');
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-      }),
+      handleNotification: async (notification: any) => {
+        // Don't buzz for a message in the chat the user is already looking at
+        let inOpenChat = false;
+        try {
+          const data = notification?.request?.content?.data ?? {};
+          const { usePresenceStore } = require('../stores/presenceStore');
+          const active = usePresenceStore.getState().activeConversationId;
+          inOpenChat = !!active && data.conversation_id === active;
+        } catch {}
+        return {
+          shouldShowBanner: !inOpenChat,
+          shouldShowList: !inOpenChat,
+          shouldPlaySound: !inOpenChat,
+          shouldSetBadge: true,
+        };
+      },
     });
   } catch {}
 }

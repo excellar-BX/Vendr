@@ -1,17 +1,20 @@
 import "../global.css";
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { View, useColorScheme } from 'react-native';
+import { vars } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
+import * as SystemUI from 'expo-system-ui';
 import {
   useFonts,
-  SpaceGrotesk_300Light,
-  SpaceGrotesk_400Regular,
-  SpaceGrotesk_500Medium,
-  SpaceGrotesk_600SemiBold,
-  SpaceGrotesk_700Bold,
-} from '@expo-google-fonts/space-grotesk';
+  PlusJakartaSans_300Light,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import * as Sentry from '@sentry/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -23,7 +26,9 @@ import { apiFetch, getAccessToken, clearTokens } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import { usePresenceStore } from '../stores/presenceStore';
 import SplashScreenView from '../components/SplashScreenView';
-import { connectSocket, disconnectSocket } from '../lib/socket';
+import { startSocket, stopSocket as disconnectSocket, onSocketEvent } from '../lib/socket';
+import { setChatCacheScope, clearChatCache } from '../lib/chatCache';
+import { startOutbox, resetOutbox } from '../lib/chatOutbox';
 import {
   registerPushToken,
   addNotificationReceivedListener,
@@ -31,6 +36,24 @@ import {
 } from '../lib/notifications';
 import { NetworkToast } from '../components/ui/NetworkToast';
 import { useNetwork } from '../hooks/useNetwork';
+import { T, useTheme, useThemeStore, THEME_VARS } from '../constants/theme';
+
+const THEME_STYLES = { light: vars(THEME_VARS.light), dark: vars(THEME_VARS.dark) };
+
+/** Resolves System/Light/Dark into the live theme. */
+function useResolveTheme() {
+  const system = useColorScheme();
+  const mode = useThemeStore((s) => s.mode);
+  const applyScheme = useThemeStore((s) => s.applyScheme);
+  const resolved = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
+  // Layout effect runs before paint, so there is no light/dark flash.
+  useLayoutEffect(() => {
+    applyScheme(resolved);
+    // Native window background behind screens (avoids white flashes in dark mode)
+    SystemUI.setBackgroundColorAsync(T.canvas).catch(() => {});
+  }, [resolved, applyScheme]);
+  return resolved;
+}
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,8 +83,9 @@ Sentry.init({
 });
 
 function RootLayout() {
+  useTheme();
+  const scheme = useResolveTheme();
   const { setUser, user, clear, justLoggedOut, setJustLoggedOut } = useAuthStore();
-  const { setUserPresence } = usePresenceStore();
   const [appReady, setAppReady] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -70,13 +94,17 @@ function RootLayout() {
   const responseListener = useRef<any>(null);
 
   const { isOnline } = useNetwork();
+  // The offline toast can be dismissed; it comes back the next time the connection drops
+  const [offlineToastDismissed, setOfflineToastDismissed] = useState(false);
+  useEffect(() => { if (isOnline) setOfflineToastDismissed(false); }, [isOnline]);
 
   const [fontsLoaded, fontError] = useFonts({
-    SpaceGrotesk_300Light,
-    SpaceGrotesk_400Regular,
-    SpaceGrotesk_500Medium,
-    SpaceGrotesk_600SemiBold,
-    SpaceGrotesk_700Bold,
+    PlusJakartaSans_300Light,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
   });
 
   // 1. Bootstrap Auth
@@ -112,14 +140,7 @@ function RootLayout() {
               setUser(userData);
               Sentry.setUser({ id: userData.id, email: userData.email });
 
-              connectSocket().then(socket => {
-                if (socket) {
-                  // Set up global user_presence listener
-                  socket.on('user_presence', (data: { userId: string; isOnline: boolean; lastSeen?: string }) => {
-                    setUserPresence(data.userId, data.isOnline, data.lastSeen);
-                  });
-                }
-              }).catch(console.error);
+              // Realtime connection is started by the user-keyed effect below
 
               if (userData?.notifications_enabled !== false) {
                 registerPushToken(userData.id);
@@ -178,6 +199,12 @@ function RootLayout() {
           }
           break;
         case 'review': router.push('/reviews'); break;
+        // Comments, replies and "a store you follow posted" open the post
+        case 'reel_comment':
+        case 'new_post':
+          if (data.reel_id) router.push({ pathname: '/reel/[reelId]', params: { reelId: data.reel_id } });
+          else router.push('/notifications');
+          break;
         case 'order': router.push('/orders'); break;
         default: router.push('/notifications');
       }
@@ -192,6 +219,55 @@ function RootLayout() {
       responseListener.current?.remove();
     };
   }, []);
+
+  // 2b. Realtime: the socket follows the logged-in user (login, logout, account switch)
+  const userId = user?.id;
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const presence = usePresenceStore.getState();
+    const prevUserId = prevUserIdRef.current;
+    prevUserIdRef.current = userId;
+    if (!userId) {
+      disconnectSocket();
+      presence.clearPresence();
+      // Only a real logout wipes on-device chats — not the brief "no user yet" at launch
+      if (prevUserId) {
+        resetOutbox();
+        clearChatCache();
+        setChatCacheScope(null);
+      }
+      return;
+    }
+    if (prevUserId && prevUserId !== userId) {
+      // Switched accounts without a logout in between
+      clearChatCache();
+    }
+    setChatCacheScope(userId);
+    startSocket();
+    startOutbox(userId);
+    const offs = [
+      onSocketEvent('connect', () => usePresenceStore.getState().bumpConnectionEpoch()),
+      onSocketEvent('user_presence', (d: { userId: string; isOnline: boolean; lastSeen?: string }) => {
+        usePresenceStore.getState().setUserPresence(d.userId, d.isOnline, d.lastSeen);
+      }),
+      onSocketEvent('user_typing', (d: { conversationId: string; userId: string; isTyping: boolean }) => {
+        if (d.userId !== userId) usePresenceStore.getState().setTyping(d.conversationId, d.userId, d.isTyping);
+      }),
+      // In-app notifications: bell badge updates instantly instead of every minute
+      onSocketEvent('notification_new', () => {
+        queryClient.setQueryData<number>(['unread-notifications-count'], (n) => (n ?? 0) + 1);
+        queryClient.invalidateQueries({ queryKey: ['unread-notifications-count'] });
+      }),
+      onSocketEvent('notifications_read', () => {
+        queryClient.invalidateQueries({ queryKey: ['unread-notifications-count'] });
+      }),
+      // A message arriving means they've stopped typing
+      onSocketEvent('new_message', (m: { conversation_id: string; sender_id: string }) => {
+        if (m.sender_id !== userId) usePresenceStore.getState().setTyping(m.conversation_id, m.sender_id, false);
+      }),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [userId]);
 
   // 3. Handle Splash visibility
   useEffect(() => {
@@ -230,7 +306,11 @@ function RootLayout() {
   }, [showSplash, appReady, user, sessionExpired, justLoggedOut, setJustLoggedOut]);
 
   if (showSplash || !appReady || (!fontsLoaded && !fontError)) {
-    return <SplashScreenView />;
+    return (
+      <View style={[{ flex: 1 }, THEME_STYLES[scheme]]}>
+        <SplashScreenView />
+      </View>
+    );
   }
 
   return (
@@ -238,10 +318,10 @@ function RootLayout() {
       client={queryClient}
       persistOptions={{ persister }}
     >
-      <View className="flex-1 bg-dark">
-        <StatusBar style="light" />
-        <NetworkToast visible={!isOnline} />
-        <Stack screenOptions={{ headerShown: false }}>
+      <View className="flex-1 bg-canvas" style={THEME_STYLES[scheme]}>
+        <StatusBar style={T.statusBar} />
+        <NetworkToast visible={!isOnline && !offlineToastDismissed} onDismiss={() => setOfflineToastDismissed(true)} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: T.canvas } }}>
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="vendor/[id]" options={{ animation: 'slide_from_right' }} />
@@ -256,7 +336,10 @@ function RootLayout() {
           <Stack.Screen name="about-app" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="profile-view" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="reel-upload" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
+          <Stack.Screen name="reel-edit/[reelId]" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
+          <Stack.Screen name="reel-insights" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="reel/[reelId]" options={{ animation: 'fade', headerShown: false }} />
+          <Stack.Screen name="hashtag/[tag]" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="contact-support" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="privacy-policy" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="terms-of-service" options={{ animation: 'slide_from_right' }} />

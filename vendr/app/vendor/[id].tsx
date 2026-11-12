@@ -13,7 +13,7 @@ import { useVendrAlert } from '../../components/ui/VendrAlert';
 import { useAuthStore } from '../../stores/authStore';
 import { formatDistance, formatPrice } from '../../lib/utils';
 import { Vendor, Product } from '../../types';
-import { analyticsApi } from '../../lib/api';
+import { analyticsApi, followApi } from '../../lib/api';
 import {
   useVendor,
   useVendorProducts,
@@ -26,6 +26,7 @@ import {
   useHasReportedVendor,
   useSubmitVendorReport,
 } from '../../hooks/useQueries';
+import { T, useTheme } from '../../constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -35,28 +36,29 @@ const HEADER_HEIGHT = 60;
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 function ProductCard({ product, onEnquire }: { product: Product; onEnquire: (p: Product) => void }) {
+  useTheme();
   return (
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={() => onEnquire(product)}
-      className="bg-dark-3 border border-faint rounded-2xl overflow-hidden"
+      className="bg-surface-2 border border-line rounded-2xl overflow-hidden"
       style={{ width: (width - 56) / 2 }}
     >
-      <View className="h-28 bg-dark-4 items-center justify-center">
+      <View className="h-28 bg-line items-center justify-center">
         {product.image_url ? (
           <Image source={{ uri: product.image_url }} className="w-full h-full" resizeMode="cover" />
         ) : (
-          <Ionicons name="image-outline" size={32} color="#3D3026" />
+          <Ionicons name="image-outline" size={32} color={T.ink4} />
         )}
       </View>
       <View className="p-3">
-        <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }} numberOfLines={1}>
+        <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }} numberOfLines={1}>
           {product.name}
         </Text>
         {product.description && (
-          <Text className="text-muted text-xs mt-0.5" numberOfLines={1}>{product.description}</Text>
+          <Text className="text-ink-2 text-xs mt-0.5" numberOfLines={1}>{product.description}</Text>
         )}
-        <Text className="text-orange text-sm mt-1.5" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+        <Text className="text-orange-ink text-sm mt-1.5" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
           {formatPrice(product.price)}
         </Text>
       </View>
@@ -70,20 +72,21 @@ function ReviewCard({ review, currentUserId, onDelete }: {
   currentUserId?: string;
   onDelete?: (id: string) => void;
 }) {
+  useTheme();
   const isOwn = currentUserId && review.user_id === currentUserId;
 
   return (
-    <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 16, marginBottom: 12 }}>
+    <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 16, marginBottom: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
           <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(232,82,26,0.12)', alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name="person-outline" size={16} color="#E8521A" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>
               {review.reviewer_name ?? 'Anonymous'}
             </Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>
               {new Date(review.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
             </Text>
           </View>
@@ -101,14 +104,14 @@ function ReviewCard({ review, currentUserId, onDelete }: {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{ marginLeft: 4 }}
             >
-              <Ionicons name="trash-outline" size={16} color="#E85555" />
+              <Ionicons name="trash-outline" size={16} color="#DC2626" />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
       {review.comment ? (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 20 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, lineHeight: 20 }}>
           {review.comment}
         </Text>
       ) : null}
@@ -118,6 +121,7 @@ function ReviewCard({ review, currentUserId, onDelete }: {
 
 // ─── Star Picker ──────────────────────────────────────────────────────────────
 function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  useTheme();
   return (
     <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'center', marginVertical: 8 }}>
       {[1,2,3,4,5].map(i => (
@@ -139,6 +143,7 @@ function WriteReviewModal({
   onClose: () => void;
   onSubmit: (rating: number, comment: string) => Promise<void>;
 }) {
+  useTheme();
   const [rating, setRating] = useState(existingReview?.rating ?? 0);
   const [comment, setComment] = useState(existingReview?.comment ?? '');
   const [submitting, setSubmitting] = useState(false);
@@ -163,23 +168,23 @@ function WriteReviewModal({
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
         <View style={{
-          backgroundColor: '#120E07', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-          borderWidth: 1, borderColor: '#2A1F14', padding: 24, paddingBottom: 40,
+          backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+          borderWidth: 1, borderColor: T.line, padding: 24, paddingBottom: 40,
         }}>
           {/* Handle */}
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#3D3026', alignSelf: 'center', marginBottom: 20 }} />
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: T.line, alignSelf: 'center', marginBottom: 20 }} />
 
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 4 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginBottom: 4 }}>
             {existingReview ? 'Edit Your Review' : 'Write a Review'}
           </Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', marginBottom: 24 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center', marginBottom: 24 }}>
             {vendorName}
           </Text>
 
           {/* Stars */}
           <StarPicker value={rating} onChange={setRating} />
           {rating > 0 && (
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#F5A623', textAlign: 'center', marginTop: 4, marginBottom: 20 }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.goldInk, textAlign: 'center', marginTop: 4, marginBottom: 20 }}>
               {labels[rating]}
             </Text>
           )}
@@ -187,17 +192,17 @@ function WriteReviewModal({
 
           {/* Comment */}
           <View style={{
-            backgroundColor: '#1A1208', borderWidth: 1,
-            borderColor: comment ? '#E8521A' : '#2A1F14',
+            backgroundColor: T.surface, borderWidth: 1,
+            borderColor: comment ? '#E8521A' : T.line,
             borderRadius: 16, padding: 14, marginBottom: 20, minHeight: 100,
           }}>
             <RNTextInput
               value={comment}
               onChangeText={setComment}
               placeholder="Share your experience (optional)..."
-              placeholderTextColor="#6B5E50"
+              placeholderTextColor={T.ink3}
               multiline
-              style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, lineHeight: 22, backgroundColor: 'transparent' }}
+              style={{ color: T.ink, fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, lineHeight: 22, backgroundColor: 'transparent' }}
             />
           </View>
 
@@ -205,23 +210,23 @@ function WriteReviewModal({
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity
               onPress={onClose}
-              style={{ flex: 1, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14' }}
+              style={{ flex: 1, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}
             >
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Cancel</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink2 }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSubmit}
               disabled={rating === 0 || submitting}
               style={{
                 flex: 2, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: rating > 0 ? '#E8521A' : '#2A1F14',
+                backgroundColor: rating > 0 ? '#E8521A' : T.line,
                 shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: rating > 0 ? 0.3 : 0, shadowRadius: 10, elevation: rating > 0 ? 6 : 0,
               }}
             >
               {submitting
                 ? <ActivityIndicator size="small" color="white" />
-                : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: rating > 0 ? 'white' : '#6B5E50' }}>
+                : <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: rating > 0 ? 'white' : T.ink3 }}>
                     {existingReview ? 'Update Review' : 'Submit Review'}
                   </Text>
               }
@@ -243,6 +248,7 @@ function ReportVendorModal({
   onClose: () => void;
   onSubmit: (reason: string, description: string) => Promise<void>;
 }) {
+  useTheme();
   const [reason, setReason] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -273,11 +279,11 @@ function ReportVendorModal({
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
         <View style={{
-          backgroundColor: '#120E07', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-          borderWidth: 1, borderColor: '#2A1F14', padding: 24, paddingBottom: 40,
+          backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+          borderWidth: 1, borderColor: T.line, padding: 24, paddingBottom: 40,
         }}>
           {/* Handle */}
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#3D3026', alignSelf: 'center', marginBottom: 20 }} />
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: T.line, alignSelf: 'center', marginBottom: 20 }} />
 
           {hasReported ? (
             <>
@@ -285,31 +291,31 @@ function ReportVendorModal({
                 <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(45,134,83,0.15)', borderWidth: 1, borderColor: 'rgba(45,134,83,0.3)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="checkmark-circle" size={32} color="#2D8653" />
                 </View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginTop: 16 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginTop: 16 }}>
                   Report Already Submitted
                 </Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', marginTop: 8, paddingHorizontal: 20 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center', marginTop: 8, paddingHorizontal: 20 }}>
                   You have already reported {vendorName}. Our team is reviewing your report.
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={onClose}
-                style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14' }}
+                style={{ height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}
               >
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Close</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink2 }}>Close</Text>
               </TouchableOpacity>
             </>
           ) : (
             <>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 4 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginBottom: 4 }}>
                 Report Vendor
               </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', marginBottom: 24 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center', marginBottom: 24 }}>
                 {vendorName}
               </Text>
 
               {/* Reason selection */}
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#9A8570', marginBottom: 12, letterSpacing: 0.5 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.ink2, marginBottom: 12, letterSpacing: 0.5 }}>
                 REASON FOR REPORT
               </Text>
               <View style={{ gap: 8, marginBottom: 20 }}>
@@ -320,18 +326,18 @@ function ReportVendorModal({
                     style={{
                       flexDirection: 'row', alignItems: 'center', padding: 14,
                       borderRadius: 12, borderWidth: 1,
-                      borderColor: reason === r.value ? '#E8521A' : '#2A1F14',
-                      backgroundColor: reason === r.value ? 'rgba(232,82,26,0.1)' : '#1A1208',
+                      borderColor: reason === r.value ? '#E8521A' : T.line,
+                      backgroundColor: reason === r.value ? 'rgba(232,82,26,0.1)' : T.surface,
                     }}
                   >
                     <View style={{
                       width: 20, height: 20, borderRadius: 10, borderWidth: 2,
-                      borderColor: reason === r.value ? '#E8521A' : '#3D3026',
+                      borderColor: reason === r.value ? '#E8521A' : T.lineStrong,
                       alignItems: 'center', justifyContent: 'center', marginRight: 12,
                     }}>
                       {reason === r.value && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#E8521A' }} />}
                     </View>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: reason === r.value ? '#E8521A' : '#FDF6EC' }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14, color: reason === r.value ? T.primaryInk : T.ink }}>
                       {r.label}
                     </Text>
                   </TouchableOpacity>
@@ -339,21 +345,21 @@ function ReportVendorModal({
               </View>
 
               {/* Description */}
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#9A8570', marginBottom: 12, letterSpacing: 0.5 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.ink2, marginBottom: 12, letterSpacing: 0.5 }}>
                 DESCRIPTION (OPTIONAL)
               </Text>
               <View style={{
-                backgroundColor: '#1A1208', borderWidth: 1,
-                borderColor: description ? '#E8521A' : '#2A1F14',
+                backgroundColor: T.surface, borderWidth: 1,
+                borderColor: description ? '#E8521A' : T.line,
                 borderRadius: 16, padding: 14, marginBottom: 20, minHeight: 100,
               }}>
                 <RNTextInput
                   value={description}
                   onChangeText={setDescription}
                   placeholder="Provide more details about your report..."
-                  placeholderTextColor="#6B5E50"
+                  placeholderTextColor={T.ink3}
                   multiline
-                  style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, lineHeight: 22, backgroundColor: 'transparent' }}
+                  style={{ color: T.ink, fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, lineHeight: 22, backgroundColor: 'transparent' }}
                 />
               </View>
 
@@ -361,23 +367,23 @@ function ReportVendorModal({
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <TouchableOpacity
                   onPress={onClose}
-                  style={{ flex: 1, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14' }}
+                  style={{ flex: 1, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}
                 >
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Cancel</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink2 }}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleSubmit}
                   disabled={!reason || submitting}
                   style={{
                     flex: 2, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: reason ? '#E8521A' : '#2A1F14',
+                    backgroundColor: reason ? '#E8521A' : T.line,
                     shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: reason ? 0.3 : 0, shadowRadius: 10, elevation: reason ? 6 : 0,
                   }}
                 >
                   {submitting
                     ? <ActivityIndicator size="small" color="white" />
-                    : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: reason ? 'white' : '#6B5E50' }}>
+                    : <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: reason ? 'white' : T.ink3 }}>
                         Submit Report
                       </Text>
                   }
@@ -394,6 +400,7 @@ function ReportVendorModal({
 
 // ─── Static Store Locator Map ─────────────────────────────────────────────────
 function StoreLocatorMap({ lat, lng, vendorName }: { lat: number; lng: number; vendorName: string }) {
+  useTheme();
   const html = `
 <!DOCTYPE html>
 <html>
@@ -403,8 +410,7 @@ function StoreLocatorMap({ lat, lng, vendorName }: { lat: number; lng: number; v
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body, #map { width:100%; height:100%; background:#0F0A06; }
-    .leaflet-tile { filter: brightness(0.8) saturate(0.85); }
+    html, body, #map { width:100%; height:100%; background:#F7F7F5; }
     .leaflet-control-zoom { display: none; }
     .leaflet-control-attribution { display: none; }
   </style>
@@ -425,10 +431,10 @@ function StoreLocatorMap({ lat, lng, vendorName }: { lat: number; lng: number; v
 </html>`;
 
   return (
-    <View style={{ height: 180, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#2A1F14' }}>
+    <View style={{ height: 180, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: T.line }}>
       <WebView
         source={{ html }}
-        style={{ flex: 1, backgroundColor: '#0F0A06' }}
+        style={{ flex: 1, backgroundColor: T.canvas }}
         scrollEnabled={false}
         pointerEvents="none"
       />
@@ -438,10 +444,10 @@ function StoreLocatorMap({ lat, lng, vendorName }: { lat: number; lng: number; v
         backgroundColor: 'rgba(15,10,6,0.85)', borderRadius: 10,
         paddingHorizontal: 10, paddingVertical: 6,
         flexDirection: 'row', alignItems: 'center', gap: 6,
-        borderWidth: 1, borderColor: '#2A1F14',
+        borderWidth: 1, borderColor: T.line,
       }}>
         <Ionicons name="location" size={13} color="#E8521A" />
-        <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#FDF6EC' }} numberOfLines={1}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: '#FFFFFF' }} numberOfLines={1}>
           {vendorName}
         </Text>
       </View>
@@ -450,19 +456,20 @@ function StoreLocatorMap({ lat, lng, vendorName }: { lat: number; lng: number; v
 }
 
 // ─── Info Row ─────────────────────────────────────────────────────────────────
-function InfoRow({ icon, label, value, iconColor = '#9A8570' }: {
+function InfoRow({ icon, label, value, iconColor = T.ink2 }: {
   icon: IoniconsName; label: string; value: string; iconColor?: string;
 }) {
+  useTheme();
   return (
     <View className="flex-row items-start gap-3 py-3">
-      <View className="w-8 h-8 rounded-xl bg-dark-3 border border-faint items-center justify-center mt-0.5">
+      <View className="w-8 h-8 rounded-xl bg-surface-2 border border-line items-center justify-center mt-0.5">
         <Ionicons name={icon} size={15} color={iconColor} />
       </View>
       <View className="flex-1">
-        <Text className="text-muted text-xs mb-0.5" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+        <Text className="text-ink-2 text-xs mb-0.5" style={{ fontFamily: 'PlusJakartaSans_500Medium' }}>
           {label}
         </Text>
-        <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+        <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_500Medium' }}>
           {value}
         </Text>
       </View>
@@ -472,7 +479,28 @@ function InfoRow({ icon, label, value, iconColor = '#9A8570' }: {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function VendorProfileScreen() {
+  useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
+
+  // Follow this store (their new posts land in your Following feed)
+  const [follow, setFollow] = useState<{ following: boolean; count: number } | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    followApi.status(id)
+      .then(({ data }: any) => setFollow({ following: !!data?.following, count: data?.follower_count ?? 0 }))
+      .catch(() => {});
+  }, [id]);
+  const toggleFollow = async () => {
+    if (!id || !follow) return;
+    const next = !follow.following;
+    setFollow({ following: next, count: Math.max(0, follow.count + (next ? 1 : -1)) });
+    try {
+      const { data } = await followApi.toggle(id);
+      setFollow({ following: !!data?.following, count: data?.follower_count ?? 0 });
+    } catch {
+      setFollow(follow);
+    }
+  };
   const { user } = useAuthStore();
   const { showAlert: vendrAlert, alertElement } = useVendrAlert();
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -612,7 +640,7 @@ export default function VendorProfileScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center">
+      <View className="flex-1 bg-canvas items-center justify-center">
         <ActivityIndicator size="large" color="#E8521A" />
       </View>
     );
@@ -620,13 +648,13 @@ export default function VendorProfileScreen() {
 
   if (!vendor) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center gap-3 px-8">
-        <Ionicons name="storefront-outline" size={48} color="#3D3026" />
-        <Text className="text-cream text-lg text-center" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+      <View className="flex-1 bg-canvas items-center justify-center gap-3 px-8">
+        <Ionicons name="storefront-outline" size={48} color={T.ink4} />
+        <Text className="text-ink text-lg text-center" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
           Vendor not found
         </Text>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text className="text-orange text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+          <Text className="text-orange-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
             Go back
           </Text>
         </TouchableOpacity>
@@ -635,8 +663,8 @@ export default function VendorProfileScreen() {
   }
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
 
       {/* Sticky animated header */}
       <Animated.View
@@ -646,29 +674,29 @@ export default function VendorProfileScreen() {
           paddingBottom: 12,
           backgroundColor: scrollY.interpolate({
             inputRange: [BANNER_HEIGHT - 80, BANNER_HEIGHT - 40],
-            outputRange: ['transparent', '#0F0A06'],
+            outputRange: ['rgba(255,255,255,0)', T.surface],
             extrapolate: 'clamp',
           }) as any,
         }}
       >
         <TouchableOpacity
-          className="w-9 h-9 rounded-xl bg-dark-2/80 border border-faint items-center justify-center"
+          className="w-9 h-9 rounded-xl bg-surface/80 border border-line items-center justify-center"
           onPress={() => router.back()}
         >
-          <Ionicons name="arrow-back" size={20} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={20} color={T.ink} />
         </TouchableOpacity>
 
         <Animated.View style={{ opacity: headerBg }}>
-          <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+          <Text className="text-ink text-base" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
             {vendor.shop_name}
           </Text>
         </Animated.View>
 
         <TouchableOpacity
-          className="w-9 h-9 rounded-xl bg-dark-2/80 border border-faint items-center justify-center"
+          className="w-9 h-9 rounded-xl bg-surface/80 border border-line items-center justify-center"
           onPress={handleShare}
         >
-          <Ionicons name="share-outline" size={18} color="#FDF6EC" />
+          <Ionicons name="share-outline" size={18} color={T.ink} />
         </TouchableOpacity>
       </Animated.View>
 
@@ -683,7 +711,7 @@ export default function VendorProfileScreen() {
       >
         {/* Banner + Logo */}
         <View style={{ marginBottom: vendor.logo_url ? 44 : 0 }}>
-          <View style={{ height: BANNER_HEIGHT }} className="bg-dark-3 items-center justify-center">
+          <View style={{ height: BANNER_HEIGHT }} className="bg-surface-2 items-center justify-center">
             {vendor.banner_url ? (
               <Image source={{ uri: vendor.banner_url }} className="w-full h-full" resizeMode="cover" />
             ) : (
@@ -698,9 +726,9 @@ export default function VendorProfileScreen() {
             <View style={{ position: 'absolute', bottom: -40, left: 20 }}>
               <View style={{
                 width: 72, height: 72, borderRadius: 18,
-                borderWidth: 3, borderColor: '#0F0A06',
+                borderWidth: 3, borderColor: T.canvas,
                 overflow: 'hidden',
-                shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8,
+                shadowColor: '#1C1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.16, shadowRadius: 8, elevation: 8,
               }}>
                 <Image source={{ uri: vendor.logo_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               </View>
@@ -709,13 +737,13 @@ export default function VendorProfileScreen() {
         </View>
 
         {/* Vendor info card */}
-        <View className="mx-4 bg-dark-2 border border-faint rounded-3xl p-4 mb-4"
-          style={{ marginTop: vendor.logo_url ? 0 : -24, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 }}>
+        <View className="mx-4 bg-surface border border-line rounded-3xl p-4 mb-4"
+          style={{ marginTop: vendor.logo_url ? 0 : -24, shadowColor: '#1C1917', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 }}>
 
           <View className="flex-row items-start justify-between mb-3">
             <View className="flex-1 mr-3">
               <View className="flex-row items-center gap-2 mb-1">
-                <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                <Text className="text-ink text-xl" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                   {vendor.shop_name} {vendor.user?.is_vendor_verified && (
                   <Ionicons name="shield-checkmark" size={18} color="#2D8653" />
                 )}
@@ -724,8 +752,8 @@ export default function VendorProfileScreen() {
               </View>
 
               <View className="flex-row items-center gap-1 mb-2">
-                <Ionicons name="location-outline" size={13} color="#9A8570" />
-                <Text className="text-muted text-xs">
+                <Ionicons name="location-outline" size={13} color={T.ink2} />
+                <Text className="text-ink-2 text-xs">
                   {vendor.distance != null ? formatDistance(vendor.distance) : vendor.address ?? 'Nearby'}
                 </Text>
               </View>
@@ -733,19 +761,24 @@ export default function VendorProfileScreen() {
               {/* Category pill */}
               <View style={{ alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: "#E8521A", flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <Ionicons name="pricetag-outline" size={11} color="white" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: 'white' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: 'white' }}>
                   {vendor.category}
                 </Text>
               </View>
             </View>
 
             {/* Rating */}
-            <View className="items-center bg-dark-3 border border-faint rounded-2xl px-3 py-2">
+            <View className="items-center bg-surface-2 border border-line rounded-2xl px-3 py-2">
               <Ionicons name="star" size={16} color="#F5A623" />
-              <Text className="text-cream text-sm mt-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+              <Text className="text-ink text-sm mt-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                 {vendor.rating > 0 ? vendor.rating.toFixed(1) : 'New'}
               </Text>
-              <Text className="text-muted text-xs">{vendor.review_count} reviews</Text>
+              <Text className="text-ink-2 text-xs">{vendor.review_count} reviews</Text>
+              {follow && (
+                <Text className="text-ink-2 text-xs" style={{ marginTop: 2 }}>
+                  {follow.count >= 1000 ? `${(follow.count / 1000).toFixed(1)}k` : follow.count} follower{follow.count === 1 ? '' : 's'}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -757,10 +790,10 @@ export default function VendorProfileScreen() {
                 onPress={() => router.push({ pathname: '/store/[storeId]', params: { storeId: id } })}
                 activeOpacity={0.85}
                 className="flex-1 bg-orange rounded-2xl py-3 flex-row items-center justify-center gap-2"
-                style={{ shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 }}
+                style={{ shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 6 }}
               >
                 <Ionicons name="settings-outline" size={16} color="white" />
-                <Text className="text-white text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                <Text className="text-white text-sm" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                   Manage Store
                 </Text>
               </TouchableOpacity>
@@ -769,32 +802,50 @@ export default function VendorProfileScreen() {
                 onPress={handleChat}
                 activeOpacity={0.85}
                 className="flex-1 bg-orange rounded-2xl py-3 flex-row items-center justify-center gap-2"
-                style={{ shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 }}
+                style={{ shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 6 }}
               >
                 <Ionicons name="chatbubble-outline" size={16} color="white" />
-                <Text className="text-white text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                <Text className="text-white text-sm" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                   Chat
                 </Text>
               </TouchableOpacity>
             )}
 
-            {/* Save + Share — hidden for owner */}
+            {/* Follow + Save + Share — hidden for owner */}
             {!isOwner && (
               <>
+                {follow && (
+                  <TouchableOpacity
+                    onPress={toggleFollow}
+                    activeOpacity={0.85}
+                    accessibilityLabel={follow.following ? 'Unfollow store' : 'Follow store'}
+                    style={{
+                      height: 48, borderRadius: 16, paddingHorizontal: 14,
+                      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      backgroundColor: follow.following ? T.surface : T.ink,
+                      borderWidth: 1, borderColor: follow.following ? T.line : T.ink,
+                    }}
+                  >
+                    <Ionicons name={follow.following ? 'checkmark' : 'add'} size={17} color={follow.following ? T.ink2 : T.canvas} />
+                    <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13.5, color: follow.following ? T.ink2 : T.canvas }}>
+                      {follow.following ? 'Following' : 'Follow'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   onPress={handleToggleSave}
                   activeOpacity={0.85}
                   style={{
                     width: 48, height: 48, borderRadius: 16,
                     alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: saved ? 'rgba(245,166,35,0.15)' : '#1A1208',
+                    backgroundColor: saved ? 'rgba(245,166,35,0.15)' : T.surface,
                     borderWidth: 1,
-                    borderColor: saved ? 'rgba(245,166,35,0.4)' : '#2A1F14',
+                    borderColor: saved ? 'rgba(245,166,35,0.4)' : T.line,
                   }}
                 >
                   {toggleSaveMutation.isPending
                     ? <ActivityIndicator size="small" color="#F5A623" />
-                    : <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? '#F5A623' : '#9A8570'} />
+                    : <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? '#F5A623' : T.ink2} />
                   }
                 </TouchableOpacity>
 
@@ -804,10 +855,10 @@ export default function VendorProfileScreen() {
                   style={{
                     width: 48, height: 48, borderRadius: 16,
                     alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                    backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                   }}
                 >
-                  <Ionicons name="share-outline" size={20} color="#9A8570" />
+                  <Ionicons name="share-outline" size={20} color={T.ink2} />
                 </TouchableOpacity>
               </>
             )}
@@ -827,15 +878,15 @@ export default function VendorProfileScreen() {
               onPress={() => setActiveTab(tab)}
               style={{
                 paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16,
-                backgroundColor: activeTab === tab ? '#E8521A' : '#1A1208',
+                backgroundColor: activeTab === tab ? '#E8521A' : T.surface,
                 borderWidth: 1,
-                borderColor: activeTab === tab ? '#E8521A' : '#2A1F14',
+                borderColor: activeTab === tab ? '#E8521A' : T.line,
               }}
             >
               <Text style={{
-                fontFamily: activeTab === tab ? 'SpaceGrotesk_600SemiBold' : 'SpaceGrotesk_400Regular',
+                fontFamily: activeTab === tab ? 'PlusJakartaSans_600SemiBold' : 'PlusJakartaSans_400Regular',
                 fontSize: 13,
-                color: activeTab === tab ? 'white' : '#6B5E50',
+                color: activeTab === tab ? 'white' : T.ink3,
               }}>
                 {tab === 'products' ? 'Products'
                   : tab === 'reviews' ? `Reviews (${reviews?.length ?? 0})`
@@ -853,13 +904,13 @@ export default function VendorProfileScreen() {
           {activeTab === 'products' && (
             (products?.length ?? 0) === 0 ? (
               <View className="items-center py-12 gap-3">
-                <View className="w-14 h-14 rounded-2xl bg-dark-2 border border-faint items-center justify-center">
-                  <Ionicons name="cube-outline" size={28} color="#3D3026" />
+                <View className="w-14 h-14 rounded-2xl bg-surface border border-line items-center justify-center">
+                  <Ionicons name="cube-outline" size={28} color={T.ink4} />
                 </View>
-                <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                <Text className="text-ink text-base" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
                   No products yet
                 </Text>
-                <Text className="text-muted text-sm text-center">
+                <Text className="text-ink-2 text-sm text-center">
                   This vendor hasn't listed any products yet.
                 </Text>
               </View>
@@ -885,7 +936,7 @@ export default function VendorProfileScreen() {
                   }}
                 >
                   <Ionicons name="star-outline" size={18} color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#E8521A' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.primaryInk }}>
                     Write a Review
                   </Text>
                 </TouchableOpacity>
@@ -904,7 +955,7 @@ export default function VendorProfileScreen() {
                       <Ionicons key={i} name={i <= myReview.rating ? 'star' : 'star-outline'} size={14} color="#F5A623" />
                     ))}
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#F5A623' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.goldInk }}>
                     Your review
                   </Text>
                 </View>
@@ -912,11 +963,11 @@ export default function VendorProfileScreen() {
 
               {(reviews?.length ?? 0) === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
-                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="star-outline" size={26} color="#3D3026" />
+                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="star-outline" size={26} color={T.ink4} />
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }}>No reviews yet</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink }}>No reviews yet</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center' }}>
                     {isOwner ? 'Reviews from buyers will appear here.' : 'Be the first to leave a review.'}
                   </Text>
                 </View>
@@ -941,39 +992,39 @@ export default function VendorProfileScreen() {
                   }}
                 >
                   <Ionicons name="flag-outline" size={18} color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#E8521A' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.primaryInk }}>
                     {hasReported ? 'View Report Status' : 'Report Vendor'}
                   </Text>
                 </TouchableOpacity>
               )}
 
-              <View className="bg-dark-2 border border-faint rounded-3xl overflow-hidden">
+              <View className="bg-surface border border-line rounded-3xl overflow-hidden">
               {vendor.description && (
-                <View className="p-4 border-b border-faint">
-                  <Text className="text-muted text-xs mb-1.5" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+                <View className="p-4 border-b border-line">
+                  <Text className="text-ink-2 text-xs mb-1.5" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
                     ABOUT
                   </Text>
-                  <Text className="text-cream text-sm leading-relaxed">{vendor.description}</Text>
+                  <Text className="text-ink text-sm leading-relaxed">{vendor.description}</Text>
                 </View>
               )}
               <View className="px-4 divide-y divide-faint">
                 <InfoRow icon="pricetag-outline" label="Category" value={vendor.category} iconColor="#E8521A" />
-                <View className="h-px bg-faint" />
+                <View className="h-px bg-line" />
                 {vendor.address && (
                   <>
                     <InfoRow icon="location-outline" label="Address" value={vendor.address} iconColor="#2D8653" />
-                    <View className="h-px bg-faint" />
+                    <View className="h-px bg-line" />
                   </>
                 )}
                 <InfoRow
                   icon="ellipse"
                   label="Status"
                   value={vendor.is_active ? 'Open now' : 'Closed'}
-                  iconColor={vendor.is_active ? '#2D8653' : '#9A8570'}
+                  iconColor={vendor.is_active ? '#2D8653' : T.ink2}
                 />
                 {vendor.user?.is_vendor_verified && (
                   <>
-                    <View className="h-px bg-faint" />
+                    <View className="h-px bg-line" />
                     <InfoRow icon="shield-checkmark-outline" label="Verification" value="Verified vendor" iconColor="#2D8653" />
                   </>
                 )}
@@ -984,7 +1035,7 @@ export default function VendorProfileScreen() {
             {vendor.lat && vendor.lng && (
               <View style={{ marginTop: 16 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#9A8570', letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11, color: T.ink2, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                     Store Location
                   </Text>
                   <TouchableOpacity
@@ -998,7 +1049,7 @@ export default function VendorProfileScreen() {
                     }}
                   >
                     <Ionicons name="navigate-outline" size={13} color="#E8521A" />
-                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#E8521A' }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.primaryInk }}>
                       Open in Maps
                     </Text>
                   </TouchableOpacity>
@@ -1011,8 +1062,8 @@ export default function VendorProfileScreen() {
                 </TouchableOpacity>
                 {vendor.address && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                    <Ionicons name="location-outline" size={13} color="#6B5E50" />
-                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', flex: 1 }}>
+                    <Ionicons name="location-outline" size={13} color={T.ink3} />
+                    <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, flex: 1 }}>
                       {vendor.address}
                     </Text>
                   </View>
@@ -1022,8 +1073,8 @@ export default function VendorProfileScreen() {
 
             {/* Seller card */}
             {vendor?.user && (
-              <View className="bg-dark-2 border border-faint rounded-3xl p-4 mt-4">
-                <Text className="text-muted text-xs mb-3 tracking-widest uppercase" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+              <View className="bg-surface border border-line rounded-3xl p-4 mt-4">
+                <Text className="text-ink-2 text-xs mb-3 tracking-widest uppercase" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
                   Sold by
                 </Text>
                 <View className="flex-row items-center gap-4">
@@ -1031,30 +1082,30 @@ export default function VendorProfileScreen() {
                   {vendor.user.avatar_url ? (
                     <Image
                       source={{ uri: vendor.user.avatar_url }}
-                      style={{ width: 52, height: 52, borderRadius: 14, borderWidth: 2, borderColor: '#2A1F14' }}
+                      style={{ width: 52, height: 52, borderRadius: 14, borderWidth: 2, borderColor: T.line }}
                       resizeMode="cover"
                     />
                   ) : (
                     <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: 'rgba(232,82,26,0.15)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.25)', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#E8521A' }}>
+                      <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.primaryInk }}>
                         {(vendor.user.full_name ?? 'V').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
                       </Text>
                     </View>
                   )}
                   <View className="flex-1">
-                    <Text className="text-cream text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+                    <Text className="text-ink text-base" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                       {vendor.user.full_name ?? 'Vendor'}
                     </Text>
                     <View className="flex-row items-center gap-1.5 mt-1">
-                      <Ionicons name="calendar-outline" size={12} color="#6B5E50" />
-                      <Text className="text-muted text-xs">
+                      <Ionicons name="calendar-outline" size={12} color={T.ink3} />
+                      <Text className="text-ink-2 text-xs">
                         Member since {new Date(vendor.user.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
                       </Text>
                     </View>
                     {vendor.user.is_vendor_verified && (
                       <View className="flex-row items-center gap-1 mt-1">
                         <Ionicons name="shield-checkmark" size={12} color="#2D8653" />
-                        <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: '#2D8653' }}>Verified seller</Text>
+                        <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 11, color: T.successInk }}>Verified seller</Text>
                       </View>
                     )}
                   </View>
@@ -1063,7 +1114,7 @@ export default function VendorProfileScreen() {
                       onPress={handleChat}
                       className="bg-orange/15 border border-orange/30 rounded-xl px-3 py-2"
                     >
-                      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#E8521A' }}>Chat</Text>
+                      <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.primaryInk }}>Chat</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1077,11 +1128,11 @@ export default function VendorProfileScreen() {
             <View>
               {reels.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 48, gap: 12 }}>
-                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="videocam-outline" size={26} color="#3D3026" />
+                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="videocam-outline" size={26} color={T.ink4} />
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }}>No reels yet</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink }}>No reels yet</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center' }}>
                     This vendor hasn't posted any reels yet.
                   </Text>
                 </View>
@@ -1095,18 +1146,23 @@ export default function VendorProfileScreen() {
                         pathname: '/reel/[reelId]',
                         params: { reelId: reel.id, vendorId: reel.vendor_id, startIndex: String(idx) },
                       })}
-                      style={{ width: (width - 56) / 3, height: ((width - 56) / 3) * 1.5, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1A1208' }}
+                      style={{ width: (width - 56) / 3, height: ((width - 56) / 3) * 1.5, borderRadius: 14, overflow: 'hidden', backgroundColor: T.surface }}
                     >
                       {reel.thumbnail_url ? (
                         <Image source={{ uri: reel.thumbnail_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                       ) : (
                         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                          <Ionicons name="play-circle-outline" size={28} color="#3D3026" />
+                          <Ionicons name="play-circle-outline" size={28} color={T.ink4} />
+                        </View>
+                      )}
+                      {(reel as any).media_type === 'photo' && (
+                        <View style={{ position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 8, padding: 4 }}>
+                          <Ionicons name="albums" size={13} color="white" />
                         </View>
                       )}
                       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 7, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         <Ionicons name="eye-outline" size={10} color="white" />
-                        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: 'white' }}>
+                        <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 10, color: 'white' }}>
                           {reel.view_count > 999 ? `${(reel.view_count / 1000).toFixed(1)}k` : reel.view_count}
                         </Text>
                       </View>

@@ -1,33 +1,35 @@
-export const Colors = {
-  // Primary
-  orange: '#E8521A',
-  orangeLight: '#FF6B35',
-  orangeDim: 'rgba(232, 82, 26, 0.15)',
+import { T } from './theme';
 
-  // Secondary
-  gold: '#F5A623',
+export { T, useTheme, useThemeStore } from './theme';
 
-  // Backgrounds
-  dark: '#0F0A06',
-  dark2: '#1A1208',
-  dark3: '#231A0E',
-  dark4: '#2E2214',
+/** Live theme tokens (same object as `T`). Values change with light/dark mode. */
+export const Colors = T;
 
-  // Text
-  cream: '#FDF6EC',
-  cream2: '#F5ECD8',
-  muted: '#9A8570',
-  subtle: '#6B5E50',
-  faint: '#3D3026',
+export const Fonts = {
+  light: 'PlusJakartaSans_300Light',
+  regular: 'PlusJakartaSans_400Regular',
+  medium: 'PlusJakartaSans_500Medium',
+  semibold: 'PlusJakartaSans_600SemiBold',
+  bold: 'PlusJakartaSans_700Bold',
+  extrabold: 'PlusJakartaSans_800ExtraBold',
+};
 
-  // Feedback
-  green: '#2D8653',
-  greenLight: '#4CAF50',
-  red: '#E85555',
+export const Radius = { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 };
 
-  // Transparent
-  overlayDark: 'rgba(15, 10, 6, 0.85)',
-  overlayOrange: 'rgba(232, 82, 26, 0.1)',
-  borderSubtle: 'rgba(255, 255, 255, 0.06)',
-  borderOrange: 'rgba(232, 82, 26, 0.2)',
+// Soft card elevation
+export const Shadow = {
+  card: {
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  raised: {
+    shadowColor: '#1C1917',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 6,
+  },
 };

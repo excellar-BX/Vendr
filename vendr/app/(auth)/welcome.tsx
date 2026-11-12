@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { Text } from '../../components/ui/StyledText';
 import { Button } from '../../components/ui/Button';
+import { T, useTheme } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +36,7 @@ const slides = [
 ];
 
 function MapIllustration() {
+  useTheme();
   return (
     <View className="w-52 h-52 rounded-full bg-orange/10 border border-orange/20 items-center justify-center">
       <Svg width={180} height={180} viewBox="0 0 180 180">
@@ -48,13 +50,14 @@ function MapIllustration() {
         <Circle cx={45} cy={55} r={5} fill="#F5A623" />
         <Circle cx={135} cy={75} r={5} fill="#F5A623" />
         <Circle cx={65} cy={130} r={5} fill="#F5A623" />
-        <Circle cx={125} cy={130} r={4} fill="#9A8570" fillOpacity={0.5} />
+        <Circle cx={125} cy={130} r={4} fill={T.ink4} fillOpacity={0.5} />
       </Svg>
     </View>
   );
 }
 
 function ShieldIllustration() {
+  useTheme();
   return (
     <View className="w-52 h-52 rounded-full items-center justify-center border"
       style={{ backgroundColor: 'rgba(45,134,83,0.12)', borderColor: 'rgba(45,134,83,0.2)' }}>
@@ -70,6 +73,7 @@ function ShieldIllustration() {
 }
 
 function CommunityIllustration() {
+  useTheme();
   return (
     <View className="w-52 h-52 rounded-full items-center justify-center border"
       style={{ backgroundColor: 'rgba(245,166,35,0.1)', borderColor: 'rgba(245,166,35,0.2)' }}>
@@ -81,7 +85,7 @@ function CommunityIllustration() {
         <Line x1={90} y1={92} x2={130} y2={105} stroke="#E8521A" strokeWidth={1.5} strokeOpacity={0.4} />
         <Line x1={67} y1={105} x2={113} y2={105} stroke="#E8521A" strokeWidth={1.5} strokeOpacity={0.4} />
         <Path d="M83 66 C83 63 86 61 90 64 C94 61 97 63 97 66 C97 72 90 77 90 77 C90 77 83 72 83 66Z"
-          fill="white" fillOpacity={0.9} />
+          fill={T.surface} fillOpacity={0.9} />
       </Svg>
     </View>
   );
@@ -90,6 +94,7 @@ function CommunityIllustration() {
 const illustrations = { map: MapIllustration, shield: ShieldIllustration, community: CommunityIllustration };
 
 export default function WelcomeScreen() {
+  useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -112,11 +117,11 @@ export default function WelcomeScreen() {
     return (
       <View style={{ width }} className="px-8 pt-4 items-center">
         <Illustration />
-        <Text style={{ fontWeight: '600' }} className="text-cream text-4xl text-center mt-9 mb-4 tracking-tight leading-tight"
+        <Text style={{ fontWeight: '800', letterSpacing: -0.8 }} className="text-ink text-4xl text-center mt-9 mb-4 leading-tight"
           >
           {item.title}
         </Text>
-        <Text className="text-muted text-base text-center leading-relaxed px-2">
+        <Text className="text-ink-2 text-base text-center leading-relaxed px-2">
           {item.subtitle}
         </Text>
       </View>
@@ -124,8 +129,8 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
 
       {/* Glows */}
       <View className="absolute -top-24 -right-20 w-80 h-80 rounded-full bg-orange opacity-[0.07]" />
@@ -133,7 +138,7 @@ export default function WelcomeScreen() {
 
       {/* Logo */}
       <View className="pt-14 pb-4">
-        <Text className="text-cream text-2xl tracking-tight" >
+        <Text className="text-ink text-2xl px-7" style={{ fontWeight: '800', letterSpacing: -0.5 }}>
           vendr<Text className="text-orange">.</Text>
         </Text>
       </View>
@@ -171,9 +176,9 @@ export default function WelcomeScreen() {
         <Button label="Get Started" onPress={() => router.push('/(auth)/register')} iconRight="arrow-forward" />
 
         <TouchableOpacity className="items-center py-2" onPress={() => router.push('/(auth)/login')}>
-          <Text className="text-subtle text-sm">
+          <Text className="text-ink-3 text-sm">
             Already have an account?{' '}
-            <Text className="text-orange" style={{ fontWeight: '600' }}>Sign in</Text>
+            <Text className="text-orange-ink" style={{ fontWeight: '600' }}>Sign in</Text>
           </Text>
         </TouchableOpacity>
       </View>

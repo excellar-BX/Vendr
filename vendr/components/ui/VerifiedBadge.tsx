@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './StyledText';
+import { T, useTheme } from '../../constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -17,6 +18,7 @@ export function VerifiedBadge({
   size = 'small',
   showText = true 
 }: VerifiedBadgeProps) {
+  useTheme();
   if (!isVerified) return null;
 
   const sizeConfig = {
@@ -28,8 +30,8 @@ export function VerifiedBadge({
   const config = sizeConfig[size];
 
   const tierConfig: Record<string, { color: string; icon: IoniconsName; label: string }> = {
-    basic: { color: '#2D8653', icon: 'checkmark-circle', label: 'Verified' },
-    premium: { color: '#F5A623', icon: 'diamond', label: 'Premium' },
+    basic: { color: T.successInk, icon: 'checkmark-circle', label: 'Verified' },
+    premium: { color: T.goldInk, icon: 'diamond', label: 'Premium' },
   };
 
   const tier = tierConfig[verificationTier] || tierConfig.basic;
@@ -49,7 +51,7 @@ export function VerifiedBadge({
         <Text 
           style={{ 
             color: tier.color, 
-            fontFamily: 'SpaceGrotesk_600SemiBold', 
+            fontFamily: 'PlusJakartaSans_600SemiBold', 
             fontSize: config.fontSize 
           }}
         >

@@ -1,3 +1,4 @@
+//vendr-backend/src/services/chat/chat.controller.ts
 import { FastifyRequest, FastifyReply } from 'fastify'
 import * as ChatService from './chat.service'
 import { createConversationSchema, sendMessageSchema, addReactionSchema } from './chat.schema'
@@ -26,26 +27,15 @@ export async function getConversationController(request: FastifyRequest, reply: 
 
     const { conversation, vendor, buyer, actingAsVendor } = await ChatService.getConversation(id, userId)
 
-    // Build response with enriched data
+    // The service already shapes vendor/buyer for the client; only expose the other party
     const result: any = {
       conversation,
       actingAsVendor,
-      vendor: actingAsVendor ? null : {
-        id: vendor.id,
-        business_name: vendor.business_name,
-        is_verified: vendor.user?.is_vendor_verified,
-        user_id: vendor.user_id,
-        ...(vendor.user && {
-          owner_name: vendor.user.full_name,
-          avatar_url: vendor.user.avatar_url,
-          owner_avatar: vendor.user.avatar_url,
-        }),
+      vendor: actingAsVendor ? null : vendor && {
+        ...vendor,
+        avatar_url: vendor.owner_avatar ?? null,
       },
-      buyer: actingAsVendor ? {
-        id: buyer.id,
-        name: buyer.name,
-        avatar_url: buyer.avatar_url,
-      } : null,
+      buyer: actingAsVendor ? buyer : null,
     }
 
     return reply.status(200).send({
@@ -145,7 +135,7 @@ export async function sendMessageController(request: FastifyRequest, reply: Fast
 
   try {
     const userId = request.user.id
-    const { conversation_id, content, type, image_url, payment_request_id, reply_to_id } = parsed.data
+    const { conversation_id, content, type, image_url, payment_request_id, reply_to_id, client_id } = parsed.data
 
     const message = await ChatService.sendMessage(conversation_id, userId, {
       conversation_id,
@@ -154,6 +144,7 @@ export async function sendMessageController(request: FastifyRequest, reply: Fast
       image_url,
       payment_request_id,
       reply_to_id,
+      client_id,
     })
 
     return reply.status(201).send({
@@ -211,15 +202,8 @@ export async function resetUnreadController(request: FastifyRequest, reply: Fast
   try {
     const { id } = request.params as { id: string }
     const userId = request.user.id
-    const { field } = request.query as { field: 'buyer_unread' | 'vendor_unread' }
-
-    if (!field) {
-      return reply.status(400).send({
-        success: false,
-        message: 'field query parameter is required (buyer_unread or vendor_unread)'
-      })
-    }
-
+    // The counter to reset is derived from the caller's role in the conversation;
+    // the legacy `field` query param is accepted but ignored.
     await ChatService.resetUnreadCount(id, userId)
 
     return reply.status(200).send({
@@ -239,23 +223,8 @@ export async function presenceController(request: FastifyRequest, reply: Fastify
     const userId = request.user.id
     const { is_online } = request.body as { is_online?: boolean }
 
+    // Persists + notifies the user's contacts over the socket
     await ChatService.updateUserPresence(userId, is_online ?? true)
-
-    // Emit Socket.io event for real-time presence updates (non-blocking)
-    try {
-      const { getSocketIO } = require('../../lib/socket')
-      const io = getSocketIO()
-
-      if (io) {
-        io.emit('user_presence', {
-          userId,
-          isOnline: is_online ?? true,
-          lastSeen: new Date().toISOString(),
-        })
-      }
-    } catch (socketError) {
-      console.error('[Chat] Socket.io emit error in presence:', socketError)
-    }
 
     return reply.status(200).send({
       success: true,
@@ -389,9 +358,9 @@ export async function updateMessageController(request: FastifyRequest, reply: Fa
   try {
     const { id } = request.params as { id: string }
     const userId = request.user.id
-    const { content } = request.body as { content: string }
+    const { content } = (request.body ?? {}) as { content?: string }
 
-    if (!content || typeof content !== 'string') {
+    if (!content || typeof content !== 'string' || !content.trim()) {
       return reply.status(400).send({
         success: false,
         message: 'Content is required',
@@ -435,14 +404,14 @@ export async function addReactionController(request: FastifyRequest, reply: Fast
   try {
     const { id } = request.params as { id: string }
     const userId = request.user.id
-    const { emoji } = request.body as { emoji: string }
-
-    if (!emoji) {
+    const parsed = addReactionSchema.safeParse(request.body)
+    if (!parsed.success) {
       return reply.status(400).send({
         success: false,
-        message: 'emoji is required',
+        message: 'Unsupported reaction',
       })
     }
+    const { emoji } = parsed.data
 
     const reaction = await ChatService.addReaction(id, userId, emoji)
 

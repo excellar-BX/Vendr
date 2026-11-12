@@ -2,6 +2,7 @@ import { View, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from './StyledText';
+import { T, useTheme } from '../../constants/theme';
 
 interface VerificationStatusBannerProps {
   isVerified: boolean;
@@ -16,6 +17,7 @@ export function VerificationStatusBanner({
   rejectionReason,
   vendorId 
 }: VerificationStatusBannerProps) {
+  useTheme();
   // If verified, don't show banner (badge is shown elsewhere)
   if (isVerified) return null;
 
@@ -31,14 +33,14 @@ export function VerificationStatusBanner({
             <Ionicons name="shield-checkmark-outline" size={20} color="#E8521A" />
           </View>
           <View className="flex-1">
-            <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+            <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               Get Verified
             </Text>
-            <Text className="text-muted text-xs mt-0.5">
+            <Text className="text-ink-2 text-xs mt-0.5">
               Build trust with buyers by verifying your business
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#6B5E50" />
+          <Ionicons name="chevron-forward" size={18} color={T.ink3} />
         </View>
       </TouchableOpacity>
     );
@@ -53,10 +55,10 @@ export function VerificationStatusBanner({
             <Ionicons name="time-outline" size={20} color="#3B82F6" />
           </View>
           <View className="flex-1">
-            <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+            <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               Verification in Review
             </Text>
-            <Text className="text-muted text-xs mt-0.5">
+            <Text className="text-ink-2 text-xs mt-0.5">
               Your verification request is being reviewed (3-4 business days)
             </Text>
           </View>
@@ -76,14 +78,14 @@ export function VerificationStatusBanner({
             <Ionicons name="close-circle-outline" size={20} color="#EF4444" />
           </View>
           <View className="flex-1">
-            <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+            <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               Verification Rejected
             </Text>
-            <Text className="text-muted text-xs mt-0.5">
+            <Text className="text-ink-2 text-xs mt-0.5">
               {rejectionReason || 'Please resubmit with correct information'}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#6B5E50" />
+          <Ionicons name="chevron-forward" size={18} color={T.ink3} />
         </View>
       </TouchableOpacity>
     );

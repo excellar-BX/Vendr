@@ -1,13 +1,14 @@
-import { useState, useRef } from 'react';
-import {
-  View, TouchableOpacity, Modal, FlatList,
-} from 'react-native';
+import { useState, useRef, useEffect } from 'react';
+import { View, TouchableOpacity, Modal, FlatList, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './StyledText';
+import { T, useTheme } from '../../constants/theme';
+import { Fonts } from '../../constants/colors';
 
 interface TimePickerProps {
   label: string;
-  value: string;
+  value: string; // "HH:mm" (24h)
   onChange: (time: string) => void;
   icon?: React.ComponentProps<typeof Ionicons>['name'];
 }
@@ -15,172 +16,213 @@ interface TimePickerProps {
 const ITEM_HEIGHT = 48;
 const VISIBLE_ITEMS = 5;
 const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
+const PAD = Math.floor(VISIBLE_ITEMS / 2); // rows above/below the centred selection
 
+// Plain module-level data — no hooks here.
 const HOURS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
 const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 
+function parse(value: string) {
+  const [h = '08', m = '00'] = (value || '').split(':');
+  return {
+    hour: HOURS.includes(h.padStart(2, '0')) ? h.padStart(2, '0') : '08',
+    minute: MINUTES.includes(m.padStart(2, '0')) ? m.padStart(2, '0') : '00',
+  };
+}
+
+function to12h(hour: string) {
+  const n = parseInt(hour, 10);
+  return { h: n % 12 === 0 ? 12 : n % 12, ampm: n >= 12 ? 'PM' : 'AM' };
+}
+
+function formatDisplay(t: string) {
+  const { hour, minute } = parse(t);
+  const { h, ampm } = to12h(hour);
+  return `${h}:${minute} ${ampm}`;
+}
+
 function WheelPicker({
-  items, selected, onSelect, formatItem,
+  items, selected, onSelect, formatItem, label,
 }: {
   items: string[];
   selected: string;
   onSelect: (val: string) => void;
   formatItem?: (val: string) => string;
+  label: string;
 }) {
-  const listRef = useRef<FlatList>(null);
+  useTheme();
+  const listRef = useRef<FlatList<string>>(null);
+  const index = Math.max(0, items.indexOf(selected));
 
-  const handleSelect = (item: string, index: number) => {
-    onSelect(item);
-    // Scroll so selected item is centered (2 items from top in a 5-item view)
-    listRef.current?.scrollToIndex({
-      index: Math.max(0, index - 2),
-      animated: true,
-    });
-  };
+  // Keep the selected value centred when it changes
+  useEffect(() => {
+    listRef.current?.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: true });
+  }, [index]);
 
   return (
-    <FlatList
-      ref={listRef}
-      data={items}
-      keyExtractor={(item) => item}
-      showsVerticalScrollIndicator={false}
-      style={{ flex: 1, height: PICKER_HEIGHT }}
-      initialScrollIndex={Math.max(0, items.indexOf(selected) - 2)}
-      getItemLayout={(_, index) => ({
-        length: ITEM_HEIGHT,
-        offset: ITEM_HEIGHT * index,
-        index,
-      })}
-      renderItem={({ item, index }) => {
-        const isSelected = item === selected;
-        return (
-          <TouchableOpacity
-            onPress={() => handleSelect(item, index)}
-            activeOpacity={0.7}
-            style={{ height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' }}
-          >
-            <Text
-              style={{
-                fontFamily: isSelected ? 'SpaceGrotesk_700Bold' : 'SpaceGrotesk_400Regular',
-                fontSize: isSelected ? 22 : 16,
-                color: isSelected ? '#E8521A' : '#6B5E50',
-                opacity: isSelected ? 1 : 0.5,
-              }}
+    <View style={{ flex: 1, height: PICKER_HEIGHT }}>
+      {/* Selection band behind the centred row */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute', left: 4, right: 4, top: PAD * ITEM_HEIGHT, height: ITEM_HEIGHT,
+          borderRadius: 12, backgroundColor: T.primarySoft,
+        }}
+      />
+      <FlatList
+        ref={listRef}
+        data={items}
+        keyExtractor={(item) => item}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_HEIGHT}
+        decelerationRate="fast"
+        contentContainerStyle={{ paddingVertical: PAD * ITEM_HEIGHT }}
+        initialScrollIndex={index}
+        getItemLayout={(_, i) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * i, index: i })}
+        onMomentumScrollEnd={(e) => {
+          const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
+          const val = items[Math.max(0, Math.min(i, items.length - 1))];
+          if (val && val !== selected) onSelect(val);
+        }}
+        accessibilityLabel={label}
+        renderItem={({ item }) => {
+          const isSelected = item === selected;
+          return (
+            <TouchableOpacity
+              onPress={() => onSelect(item)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${label} ${formatItem ? formatItem(item) : item}`}
+              style={{ height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' }}
             >
-              {formatItem ? formatItem(item) : item}
-            </Text>
-          </TouchableOpacity>
-        );
-      }}
-    />
+              <Text
+                style={{
+                  fontFamily: isSelected ? Fonts.bold : Fonts.medium,
+                  fontSize: isSelected ? 22 : 17,
+                  color: isSelected ? T.primaryInk : T.ink3,
+                }}
+              >
+                {formatItem ? formatItem(item) : item}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
   );
 }
 
 export function TimePicker({ label, value, onChange, icon }: TimePickerProps) {
+  useTheme();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
-  const [tempHour, setTempHour] = useState(value.split(':')[0] ?? '08');
-  const [tempMin, setTempMin] = useState(value.split(':')[1] ?? '00');
+  const [tempHour, setTempHour] = useState(parse(value).hour);
+  const [tempMin, setTempMin] = useState(parse(value).minute);
+
+  const openPicker = () => {
+    const p = parse(value);
+    setTempHour(p.hour);
+    setTempMin(p.minute);
+    setOpen(true);
+  };
 
   const confirm = () => {
     onChange(`${tempHour}:${tempMin}`);
     setOpen(false);
   };
 
-  const formatDisplay = (t: string) => {
-    const [h, m] = t.split(':');
-    const hour = parseInt(h);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-    return `${displayHour}:${m} ${ampm}`;
-  };
-
-  const formatHour = (h: string) => {
-    const hour = parseInt(h);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const display = hour % 12 === 0 ? 12 : hour % 12;
-    return `${display} ${ampm}`;
-  };
-
   return (
-    <View className="flex-1">
+    <View style={{ flex: 1 }}>
       <Text
-        className="text-muted text-xs tracking-widest uppercase mb-2"
-        style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+        style={{
+          fontFamily: Fonts.semibold, fontSize: 12, color: T.ink2,
+          letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8,
+        }}
       >
         {label}
       </Text>
 
+      {/* Field */}
       <TouchableOpacity
-        onPress={() => {
-          setTempHour(value.split(':')[0] ?? '08');
-          setTempMin(value.split(':')[1] ?? '00');
-          setOpen(true);
-        }}
+        onPress={openPicker}
         activeOpacity={0.8}
-        className="flex-row items-center bg-dark-2 border border-faint rounded-2xl px-4 h-14 gap-3"
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${formatDisplay(value)}. Change`}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 10, height: 56, paddingHorizontal: 16,
+          borderRadius: 16, backgroundColor: T.surface, borderWidth: 1, borderColor: T.lineStrong,
+        }}
       >
-        {icon && <Ionicons name={icon} size={18} color="#6B5E50" />}
-        <Text className="text-cream text-base flex-1" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
+        <Ionicons name={icon ?? 'time-outline'} size={18} color={T.ink3} />
+        <Text style={{ flex: 1, fontFamily: Fonts.semibold, fontSize: 16, color: T.ink }}>
           {formatDisplay(value)}
         </Text>
-        <Ionicons name="chevron-down" size={16} color="#6B5E50" />
+        <Ionicons name="chevron-down" size={16} color={T.ink3} />
       </TouchableOpacity>
 
-      <Modal visible={open} transparent animationType="slide">
-        <TouchableOpacity
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}
-          activeOpacity={1}
-          onPress={() => setOpen(false)}
-        />
+      {/* Sheet */}
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)} statusBarTranslucent>
+        <Pressable style={{ flex: 1, backgroundColor: T.overlay }} onPress={() => setOpen(false)} accessibilityLabel="Close" />
 
-        <View className="bg-dark-2 border-t border-faint rounded-t-3xl px-5 pt-4 pb-10">
-          <View className="w-10 h-1 bg-faint rounded-full self-center mb-4" />
+        <View
+          style={{
+            backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+            borderTopWidth: 1, borderColor: T.line,
+            paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 20,
+          }}
+        >
+          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: T.lineStrong, alignSelf: 'center', marginBottom: 16 }} />
 
-          <Text className="text-cream text-lg text-center mb-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            {label}
-          </Text>
-
-          <Text className="text-orange text-3xl text-center mb-5" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+          <Text style={{ fontFamily: Fonts.bold, fontSize: 17, color: T.ink, textAlign: 'center' }}>{label}</Text>
+          <Text style={{ fontFamily: Fonts.extrabold, fontSize: 32, color: T.primaryInk, textAlign: 'center', marginTop: 4, marginBottom: 18, letterSpacing: -0.5 }}>
             {formatDisplay(`${tempHour}:${tempMin}`)}
           </Text>
 
-          <View className="flex-row mb-2 px-4">
-            <Text className="flex-1 text-center text-muted text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              HOUR
-            </Text>
-            <View className="w-8" />
-            <Text className="flex-1 text-center text-muted text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              MINUTE
-            </Text>
+          <View style={{ flexDirection: 'row', marginBottom: 6, paddingHorizontal: 8 }}>
+            <Text style={{ flex: 1, textAlign: 'center', fontFamily: Fonts.semibold, fontSize: 12, color: T.ink2, letterSpacing: 1 }}>HOUR</Text>
+            <View style={{ width: 24 }} />
+            <Text style={{ flex: 1, textAlign: 'center', fontFamily: Fonts.semibold, fontSize: 12, color: T.ink2, letterSpacing: 1 }}>MINUTE</Text>
           </View>
 
-          <View className="flex-row items-center px-2" style={{ height: PICKER_HEIGHT }}>
+          <View
+            style={{
+              flexDirection: 'row', alignItems: 'center', height: PICKER_HEIGHT,
+              backgroundColor: T.surface2, borderRadius: 18, paddingHorizontal: 4, overflow: 'hidden',
+            }}
+          >
             <WheelPicker
               items={HOURS}
               selected={tempHour}
               onSelect={setTempHour}
-              formatItem={formatHour}
+              formatItem={(h) => { const t = to12h(h); return `${t.h} ${t.ampm}`; }}
+              label="Hour"
             />
-            <Text className="text-orange text-2xl w-8 text-center" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-              :
-            </Text>
-            <WheelPicker
-              items={MINUTES}
-              selected={tempMin}
-              onSelect={setTempMin}
-            />
+            <Text style={{ width: 24, textAlign: 'center', fontFamily: Fonts.bold, fontSize: 22, color: T.primaryInk }}>:</Text>
+            <WheelPicker items={MINUTES} selected={tempMin} onSelect={setTempMin} label="Minute" />
           </View>
 
-          <TouchableOpacity
-            onPress={confirm}
-            activeOpacity={0.85}
-            className="bg-orange rounded-2xl py-4 items-center mt-5"
-            style={{ shadowColor: '#E8521A', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 6 }}
-          >
-            <Text className="text-white text-base" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-              Confirm
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+            <TouchableOpacity
+              onPress={() => setOpen(false)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              style={{ flex: 1, height: 54, borderRadius: 16, borderWidth: 1, borderColor: T.lineStrong, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: Fonts.semibold, fontSize: 16, color: T.ink }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={confirm}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              style={{
+                flex: 2, height: 54, borderRadius: 16, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center',
+                shadowColor: T.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 4,
+              }}
+            >
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 16, color: '#FFFFFF' }}>Confirm</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </View>

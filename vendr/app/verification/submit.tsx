@@ -13,8 +13,10 @@ import { Text as StyledText } from '../../components/ui/StyledText';
 import { apiFetch } from '../../lib/api';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
 import { useAuthStore } from '../../stores/authStore';
+import { T, useTheme } from '../../constants/theme';
 
 export default function VerificationSubmitScreen() {
+  useTheme();
   const { vendorId: paramVendorId } = useLocalSearchParams<{ vendorId?: string }>();
   const { user } = useAuthStore();
   
@@ -175,14 +177,14 @@ export default function VerificationSubmitScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
       {alertElement}
-      <StatusBar style="light" />
+      <StatusBar style={T.statusBar} />
 
       {checkingStatus ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#E8521A" />
-          <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', marginTop: 16 }}>
+          <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink2, marginTop: 16 }}>
             Checking verification status...
           </StyledText>
         </View>
@@ -193,19 +195,19 @@ export default function VerificationSubmitScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16,
-        borderBottomWidth: 1, borderBottomColor: '#1A1208', gap: 12,
+        borderBottomWidth: 1, borderBottomColor: T.line, gap: 12,
       }}>
         <TouchableOpacity
           onPress={() => router.back()}
           style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <StyledText style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC' }}>
+          <StyledText style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink }}>
             Get Verified
           </StyledText>
-          <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50' }}>
+          <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3 }}>
             Verify your business to build trust
           </StyledText>
         </View>
@@ -226,29 +228,29 @@ export default function VerificationSubmitScreen() {
               }}>
                 <Ionicons name="information-circle" size={18} color="#E8521A" />
               </View>
-              <StyledText style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>
+              <StyledText style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>
                 Why get verified?
               </StyledText>
             </View>
-            <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 20 }}>
+            <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, lineHeight: 20 }}>
               Verified vendors receive a badge on their profile, appear higher in search results, and build more trust with buyers.
             </StyledText>
           </View>
 
           {/* CAC Number */}
           <View style={{ gap: 8 }}>
-            <StyledText style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>
+            <StyledText style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>
               CAC Registration Number
             </StyledText>
             <TextInput
               value={formData.cac_number}
               onChangeText={(text) => setFormData({ ...formData, cac_number: text })}
               placeholder="e.g., RC1234567"
-              placeholderTextColor="#6B5E50"
+              placeholderTextColor={T.ink3}
               style={{
-                backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
-                fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC',
+                fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink,
               }}
               autoCapitalize="characters"
             />
@@ -256,40 +258,40 @@ export default function VerificationSubmitScreen() {
 
           {/* NIN Number */}
           <View style={{ gap: 8 }}>
-            <StyledText style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>
+            <StyledText style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>
               NIN Number
             </StyledText>
             <TextInput
               value={formData.nin_number}
               onChangeText={(text) => setFormData({ ...formData, nin_number: text })}
               placeholder="e.g., 12345678901"
-              placeholderTextColor="#6B5E50"
+              placeholderTextColor={T.ink3}
               keyboardType="number-pad"
               maxLength={11}
               style={{
-                backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
-                fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC',
+                fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink,
               }}
             />
           </View>
 
           {/* Business Address */}
           <View style={{ gap: 8 }}>
-            <StyledText style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>
+            <StyledText style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>
               Business Address
             </StyledText>
             <TextInput
               value={formData.business_address}
               onChangeText={(text) => setFormData({ ...formData, business_address: text })}
               placeholder="Enter your full business address"
-              placeholderTextColor="#6B5E50"
+              placeholderTextColor={T.ink3}
               multiline
               numberOfLines={3}
               style={{
-                backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
-                fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC',
+                fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink,
                 minHeight: 80,
                 textAlignVertical: 'top',
               }}
@@ -298,22 +300,22 @@ export default function VerificationSubmitScreen() {
 
           {/* Documents Section */}
           <View style={{ gap: 16 }}>
-            <StyledText style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>
+            <StyledText style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>
               Supporting Documents
             </StyledText>
 
             {/* CAC Certificate */}
             <View style={{ gap: 8 }}>
-              <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>
+              <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>
                 CAC Registration Certificate
               </StyledText>
               {documents.cac_certificate ? (
                 <View style={{
-                  backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2D8653',
+                  backgroundColor: T.surface, borderWidth: 1, borderColor: '#2D8653',
                   borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
                 }}>
                   <Ionicons name="checkmark-circle" size={20} color="#2D8653" />
-                  <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC', flex: 1 }}>
+                  <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink, flex: 1 }}>
                     Document uploaded
                   </StyledText>
                   <TouchableOpacity onPress={() => setDocuments(prev => ({ ...prev, cac_certificate: undefined }))}>
@@ -325,12 +327,12 @@ export default function VerificationSubmitScreen() {
                   onPress={() => handleUploadDocument('cac_certificate')}
                   disabled={uploading.cac_certificate}
                   style={{
-                    backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                    backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                     borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
                   }}
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color="#E8521A" />
-                  <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC' }}>
+                  <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink }}>
                     {uploading.cac_certificate ? 'Uploading...' : 'Upload CAC Certificate'}
                   </StyledText>
                 </TouchableOpacity>
@@ -339,16 +341,16 @@ export default function VerificationSubmitScreen() {
 
             {/* NIN Card */}
             <View style={{ gap: 8 }}>
-              <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>
+              <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>
                 NIN Card
               </StyledText>
               {documents.nin_card ? (
                 <View style={{
-                  backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2D8653',
+                  backgroundColor: T.surface, borderWidth: 1, borderColor: '#2D8653',
                   borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
                 }}>
                   <Ionicons name="checkmark-circle" size={20} color="#2D8653" />
-                  <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC', flex: 1 }}>
+                  <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink, flex: 1 }}>
                     Document uploaded
                   </StyledText>
                   <TouchableOpacity onPress={() => setDocuments(prev => ({ ...prev, nin_card: undefined }))}>
@@ -360,12 +362,12 @@ export default function VerificationSubmitScreen() {
                   onPress={() => handleUploadDocument('nin_card')}
                   disabled={uploading.nin_card}
                   style={{
-                    backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                    backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                     borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
                   }}
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color="#E8521A" />
-                  <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC' }}>
+                  <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink }}>
                     {uploading.nin_card ? 'Uploading...' : 'Upload NIN Card'}
                   </StyledText>
                 </TouchableOpacity>
@@ -374,16 +376,16 @@ export default function VerificationSubmitScreen() {
 
             {/* Proof of Address */}
             <View style={{ gap: 8 }}>
-              <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>
+              <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>
                 Proof of Address (Utility Bill, Bank Statement, etc.)
               </StyledText>
               {documents.proof_of_address ? (
                 <View style={{
-                  backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2D8653',
+                  backgroundColor: T.surface, borderWidth: 1, borderColor: '#2D8653',
                   borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
                 }}>
                   <Ionicons name="checkmark-circle" size={20} color="#2D8653" />
-                  <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC', flex: 1 }}>
+                  <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink, flex: 1 }}>
                     Document uploaded
                   </StyledText>
                   <TouchableOpacity onPress={() => setDocuments(prev => ({ ...prev, proof_of_address: undefined }))}>
@@ -395,12 +397,12 @@ export default function VerificationSubmitScreen() {
                   onPress={() => handleUploadDocument('proof_of_address')}
                   disabled={uploading.proof_of_address}
                   style={{
-                    backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                    backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                     borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12,
                   }}
                 >
                   <Ionicons name="cloud-upload-outline" size={20} color="#E8521A" />
-                  <StyledText style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#FDF6EC' }}>
+                  <StyledText style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink }}>
                     {uploading.proof_of_address ? 'Uploading...' : 'Upload Proof of Address'}
                   </StyledText>
                 </TouchableOpacity>
@@ -423,7 +425,7 @@ export default function VerificationSubmitScreen() {
             ) : (
               <>
                 <Ionicons name="shield-checkmark" size={18} color="white" />
-                <StyledText style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: 'white' }}>
+                <StyledText style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: 'white' }}>
                   Submit Verification
                 </StyledText>
               </>
@@ -432,7 +434,7 @@ export default function VerificationSubmitScreen() {
 
           {/* Note */}
           <StyledText style={{
-            fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50',
+            fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3,
             textAlign: 'center', lineHeight: 18,
           }}>
             Your information will be reviewed within 3-4 business days. You'll receive a notification once your verification is complete.

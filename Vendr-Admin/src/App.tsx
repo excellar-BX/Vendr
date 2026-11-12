@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage'
 import UsersPage from './pages/UsersPage'
 import VendorsPage from './pages/VendorsPage'
 import VerificationsPage from './pages/VerificationsPage'
+import RunnersPage from './pages/RunnersPage'
 import OrdersPage from './pages/OrdersPage'
 import TransactionsPage from './pages/TransactionsPage'
 import DisputesPage from './pages/DisputesPage'
@@ -59,6 +60,7 @@ function AppRoutes() {
         <Route path="/vendors" element={<VendorsPage />} />
         <Route path="/vendor-reports" element={<ReportedVendorsPage />} />
         <Route path="/verifications" element={<VerificationsPage />} />
+        <Route path="/runners" element={<RunnersPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/disputes" element={<DisputesPage />} />

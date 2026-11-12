@@ -3,8 +3,8 @@ import {
   View, ScrollView, TouchableOpacity, KeyboardAvoidingView,
   Platform, ActivityIndicator, Alert, Animated, Image, Modal,
 } from 'react-native';
-import { uploadFile } from '../lib/storage';
-import { apiFetch } from '../lib/api';
+import * as FileSystem from 'expo-file-system/legacy';
+import { runnerApi, storageApi } from '../lib/api';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import { StyledInput } from '../components/ui/StyledInput';
 import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
 import { useLocation } from '../hooks/useLocation';
+import { T, useTheme } from '../constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -54,8 +55,9 @@ interface FormData {
 }
 
 function SectionLabel({ label }: { label: string }) {
+  useTheme();
   return (
-    <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+    <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
       {label}
     </Text>
   );
@@ -69,15 +71,16 @@ function InputField({
   placeholder: string; multiline?: boolean; keyboardType?: any;
   icon?: IoniconsName; maxLength?: number;
 }) {
+  useTheme();
   return (
     <View className="mb-4">
       <SectionLabel label={label} />
-      <View className={`flex-row items-${multiline ? 'start' : 'center'} bg-dark-2 border border-faint rounded-2xl px-4 ${multiline ? 'py-3' : 'h-14'} gap-3`}>
-        {icon && <Ionicons name={icon} size={18} color="#6B5E50" style={{ marginTop: multiline ? 2 : 0 }} />}
+      <View className={`flex-row items-${multiline ? 'start' : 'center'} bg-surface border border-line rounded-2xl px-4 ${multiline ? 'py-3' : 'h-14'} gap-3`}>
+        {icon && <Ionicons name={icon} size={18} color={T.ink3} style={{ marginTop: multiline ? 2 : 0 }} />}
         <StyledInput
-          className="flex-1 text-cream text-base"
+          className="flex-1 text-ink text-base"
           placeholder={placeholder}
-          placeholderTextColor="#6B5E50"
+          placeholderTextColor={T.ink3}
           value={value}
           onChangeText={onChangeText}
           multiline={multiline}
@@ -88,7 +91,7 @@ function InputField({
         />
       </View>
       {maxLength && (
-        <Text className="text-muted text-xs text-right mt-1">{value.length}/{maxLength}</Text>
+        <Text className="text-ink-2 text-xs text-right mt-1">{value.length}/{maxLength}</Text>
       )}
     </View>
   );
@@ -97,6 +100,7 @@ function InputField({
 function TimeInput({ label, value, onChange, icon }: {
   label: string; value: string; onChange: (v: string) => void; icon: IoniconsName;
 }) {
+  useTheme();
   const [show, setShow] = useState(false);
   const [tempDate, setTempDate] = useState<Date | null>(null);
 
@@ -139,13 +143,13 @@ function TimeInput({ label, value, onChange, icon }: {
       <TouchableOpacity
         onPress={() => { setTempDate(toDate(value)); setShow(true); }}
         activeOpacity={0.8}
-        className="flex-row items-center bg-dark-2 border border-faint rounded-2xl px-4 h-14 gap-3"
+        className="flex-row items-center bg-surface border border-line rounded-2xl px-4 h-14 gap-3"
       >
-        <Ionicons name={icon} size={18} color="#6B5E50" />
-        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: '#FDF6EC', fontSize: 16, flex: 1 }}>
+        <Ionicons name={icon} size={18} color={T.ink3} />
+        <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', color: T.ink, fontSize: 16, flex: 1 }}>
           {value || '--:--'}
         </Text>
-        <Ionicons name="chevron-down" size={16} color="#6B5E50" />
+        <Ionicons name="chevron-down" size={16} color={T.ink3} />
       </TouchableOpacity>
 
       {Platform.OS === 'android' && show && (
@@ -165,14 +169,14 @@ function TimeInput({ label, value, onChange, icon }: {
             activeOpacity={1}
             onPress={cancelIOS}
           />
-          <View style={{ backgroundColor: '#1A1208', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#2A1F14' }}>
+          <View style={{ backgroundColor: T.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: T.line }}>
               <TouchableOpacity onPress={cancelIOS} style={{ padding: 4 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', color: '#9A8570', fontSize: 15 }}>Cancel</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', color: T.ink2, fontSize: 15 }}>Cancel</Text>
               </TouchableOpacity>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#FDF6EC', fontSize: 15 }}>{label}</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', color: T.ink, fontSize: 15 }}>{label}</Text>
               <TouchableOpacity onPress={confirmIOS} style={{ padding: 4 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#2D8653', fontSize: 15 }}>Done</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', color: T.successInk, fontSize: 15 }}>Done</Text>
               </TouchableOpacity>
             </View>
             <DateTimePicker
@@ -194,6 +198,7 @@ function TimeInput({ label, value, onChange, icon }: {
 function LeafletMap({ lat, lng, onPin }: {
   lat: number; lng: number; onPin: (lat: number, lng: number) => void;
 }) {
+  useTheme();
   const webviewRef = useRef<any>(null);
 
   const html = `
@@ -205,8 +210,7 @@ function LeafletMap({ lat, lng, onPin }: {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body, #map { width:100%; height:100%; background:#0F0A06; }
-    .leaflet-tile { filter: brightness(0.85) saturate(0.9); }
+    html, body, #map { width:100%; height:100%; background:#F7F7F5; }
   </style>
 </head>
 <body>
@@ -260,6 +264,7 @@ function LeafletMap({ lat, lng, onPin }: {
 function PhotoUpload({ label, uri, onChange }: {
   label: string; uri: string | null; onChange: (uri: string | null) => void;
 }) {
+  useTheme();
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -279,14 +284,14 @@ function PhotoUpload({ label, uri, onChange }: {
       <TouchableOpacity
         onPress={pickImage}
         activeOpacity={0.8}
-        className="bg-dark-2 border border-faint rounded-2xl p-4 items-center justify-center h-32"
+        className="bg-surface border border-line rounded-2xl p-4 items-center justify-center h-32"
       >
         {uri ? (
           <Image source={{ uri }} className="w-full h-full rounded-xl" resizeMode="cover" />
         ) : (
           <View className="items-center">
-            <Ionicons name="camera-outline" size={32} color="#6B5E50" />
-            <Text className="text-muted text-xs mt-2">Tap to upload</Text>
+            <Ionicons name="camera-outline" size={32} color={T.ink3} />
+            <Text className="text-ink-2 text-xs mt-2">Tap to upload</Text>
           </View>
         )}
       </TouchableOpacity>
@@ -295,6 +300,7 @@ function PhotoUpload({ label, uri, onChange }: {
 }
 
 export default function BecomeRunnerScreen() {
+  useTheme();
   const { user, setUser } = useAuthStore();
   const { lat, lng, address } = useLocation();
 
@@ -334,30 +340,66 @@ export default function BecomeRunnerScreen() {
     }));
   };
 
+  // Upload a picked photo to storage; remote URLs (e.g. existing avatar) are used as-is
+  const uploadPhoto = async (uri: string | null, kind: 'profile' | 'vehicle'): Promise<string | null> => {
+    if (!uri) return null;
+    if (/^https?:\/\//.test(uri)) return uri;
+    const key = `runners/${user?.id ?? 'me'}/${kind}_${Date.now()}.jpg`;
+    const { data } = await storageApi.signUpload(key, 'image/jpeg');
+    const res = await FileSystem.uploadAsync(data.uploadUrl, uri, {
+      httpMethod: 'PUT',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+    if (res.status < 200 || res.status >= 300) throw new Error(`Photo upload failed (${res.status})`);
+    return data.publicUrl;
+  };
+
   const handleSubmit = async () => {
+    if (!formData.vehicle_type) {
+      Alert.alert('Vehicle needed', 'Choose how you’ll deliver (bike, car…).');
+      return;
+    }
+    if (formData.available_days.length === 0) {
+      Alert.alert('Pick your days', 'Choose at least one day you’re available.');
+      return;
+    }
     setLoading(true);
     try {
-      // TODO: Upload photos and submit to API
-      // const profilePhotoUrl = formData.profile_photo_uri ? await uploadFile(formData.profile_photo_uri) : null;
-      // const vehiclePhotoUrl = formData.vehicle_photo_uri ? await uploadFile(formData.vehicle_photo_uri) : null;
-      
-      // await apiFetch('/runner/register', {
-      //   method: 'POST',
-      //   body: JSON.stringify({
-      //     ...formData,
-      //     profile_photo: profilePhotoUrl,
-      //     vehicle_photo: vehiclePhotoUrl,
-      //   }),
-      // });
-
-      // Update user as runner
-      setUser({ ...user, is_runner: true });
-
-      Alert.alert('Success!', 'Your runner account has been created.', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/profile') },
+      const [profilePhotoUrl, vehiclePhotoUrl] = await Promise.all([
+        uploadPhoto(formData.profile_photo_uri, 'profile'),
+        uploadPhoto(formData.vehicle_photo_uri, 'vehicle'),
       ]);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to create runner account. Please try again.');
+
+      await runnerApi.register({
+        full_name: formData.full_name.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        // The picker stores the display label ("Bicycle"); the API expects "bicycle"
+        vehicle_type: formData.vehicle_type.trim().toLowerCase(),
+        plate_number: formData.plate_number.trim() || undefined,
+        vehicle_color: formData.vehicle_color.trim() || undefined,
+        address: formData.address.trim(),
+        operating_lat: mapLat,
+        operating_lng: mapLng,
+        operating_radius_km: formData.operating_radius,
+        available_days: formData.available_days,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+        profile_photo_url: profilePhotoUrl,
+        vehicle_photo_url: vehiclePhotoUrl,
+      });
+
+      if (user) setUser({ ...user, is_runner: true } as any);
+
+      Alert.alert(
+        'Application sent! 🎉',
+        "We're reviewing your details. You'll get a notification when you're approved — then switch on Runner Mode in your profile to start taking jobs.",
+        [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }],
+      );
+    } catch (err: any) {
+      const fieldErrors = err?.errors ? Object.values(err.errors).flat().join('\n') : null;
+      Alert.alert("Couldn't sign you up", fieldErrors || err?.message || 'Please try again.');
     } finally {
       setLoading(false);
     }
@@ -409,14 +451,14 @@ export default function BecomeRunnerScreen() {
                   key={type.label}
                   onPress={() => updateField('vehicle_type', type.label)}
                   activeOpacity={0.8}
-                  className={`flex-1 min-w-[45%] bg-dark-2 border rounded-2xl p-3 items-center ${
-                    formData.vehicle_type === type.label ? 'border-green-500 bg-green-500/10' : 'border-faint'
+                  className={`flex-1 min-w-[45%] bg-surface border rounded-2xl p-3 items-center ${
+                    formData.vehicle_type === type.label ? 'border-success bg-success/10' : 'border-line'
                   }`}
                 >
-                  <Ionicons name={type.icon} size={24} color={formData.vehicle_type === type.label ? '#2D8653' : '#6B5E50'} />
+                  <Ionicons name={type.icon} size={24} color={formData.vehicle_type === type.label ? '#2D8653' : T.ink3} />
                   <Text
-                    className={`text-xs mt-2 ${formData.vehicle_type === type.label ? 'text-green-500' : 'text-muted'}`}
-                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+                    className={`text-xs mt-2 ${formData.vehicle_type === type.label ? 'text-success' : 'text-ink-2'}`}
+                    style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}
                   >
                     {type.label}
                   </Text>
@@ -468,7 +510,7 @@ export default function BecomeRunnerScreen() {
               className="flex-row items-center gap-2 mb-4"
             >
               <Ionicons name="location-outline" size={16} color="#2D8653" />
-              <Text className="text-green-500 text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+              <Text className="text-success text-xs" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
                 Use current location
               </Text>
             </TouchableOpacity>
@@ -480,21 +522,21 @@ export default function BecomeRunnerScreen() {
               icon="location-outline"
             />
             <SectionLabel label="Operating Radius (km)" />
-            <View className="flex-row items-center gap-4 bg-dark-2 border border-faint rounded-2xl px-4 h-14">
-              <Ionicons name="resize-outline" size={18} color="#6B5E50" />
-              <Text className="text-cream text-base flex-1">{formData.operating_radius} km</Text>
+            <View className="flex-row items-center gap-4 bg-surface border border-line rounded-2xl px-4 h-14">
+              <Ionicons name="resize-outline" size={18} color={T.ink3} />
+              <Text className="text-ink text-base flex-1">{formData.operating_radius} km</Text>
               <View className="flex-row gap-2">
                 {[3, 5, 10, 15].map((radius) => (
                   <TouchableOpacity
                     key={radius}
                     onPress={() => updateField('operating_radius', radius)}
                     className={`px-3 py-1 rounded-lg ${
-                      formData.operating_radius === radius ? 'bg-green-500/20' : 'bg-dark-3'
+                      formData.operating_radius === radius ? 'bg-success/20' : 'bg-surface-2'
                     }`}
                   >
                     <Text
-                      className={`text-xs ${formData.operating_radius === radius ? 'text-green-500' : 'text-muted'}`}
-                      style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+                      className={`text-xs ${formData.operating_radius === radius ? 'text-success' : 'text-ink-2'}`}
+                      style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}
                     >
                       {radius}
                     </Text>
@@ -515,13 +557,13 @@ export default function BecomeRunnerScreen() {
                   key={day}
                   onPress={() => toggleDay(day)}
                   activeOpacity={0.8}
-                  className={`flex-1 min-w-[13%] bg-dark-2 border rounded-xl py-2.5 items-center ${
-                    formData.available_days.includes(day) ? 'border-green-500 bg-green-500/10' : 'border-faint'
+                  className={`flex-1 min-w-[13%] bg-surface border rounded-xl py-2.5 items-center ${
+                    formData.available_days.includes(day) ? 'border-success bg-success/10' : 'border-line'
                   }`}
                 >
                   <Text
-                    className={`text-xs ${formData.available_days.includes(day) ? 'text-green-500' : 'text-muted'}`}
-                    style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
+                    className={`text-xs ${formData.available_days.includes(day) ? 'text-success' : 'text-ink-2'}`}
+                    style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}
                   >
                     {day}
                   </Text>
@@ -546,45 +588,45 @@ export default function BecomeRunnerScreen() {
       case 4: // Review
         return (
           <ScrollView showsVerticalScrollIndicator={false}>
-            <View className="bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-              <Text className="text-green-500 text-sm mb-3" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            <View className="bg-surface border border-line rounded-2xl p-4 mb-4">
+              <Text className="text-success text-sm mb-3" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                 Personal Info
               </Text>
               <View className="space-y-2">
-                <Text className="text-cream text-sm">{formData.full_name}</Text>
-                <Text className="text-muted text-xs">{formData.phone}</Text>
-                <Text className="text-muted text-xs">{formData.email}</Text>
+                <Text className="text-ink text-sm">{formData.full_name}</Text>
+                <Text className="text-ink-2 text-xs">{formData.phone}</Text>
+                <Text className="text-ink-2 text-xs">{formData.email}</Text>
               </View>
             </View>
 
-            <View className="bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-              <Text className="text-green-500 text-sm mb-3" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            <View className="bg-surface border border-line rounded-2xl p-4 mb-4">
+              <Text className="text-success text-sm mb-3" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                 Vehicle Info
               </Text>
               <View className="space-y-2">
-                <Text className="text-cream text-sm">{formData.vehicle_type}</Text>
-                <Text className="text-muted text-xs">{formData.plate_number}</Text>
-                <Text className="text-muted text-xs">{formData.vehicle_color}</Text>
+                <Text className="text-ink text-sm">{formData.vehicle_type}</Text>
+                <Text className="text-ink-2 text-xs">{formData.plate_number}</Text>
+                <Text className="text-ink-2 text-xs">{formData.vehicle_color}</Text>
               </View>
             </View>
 
-            <View className="bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-              <Text className="text-green-500 text-sm mb-3" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            <View className="bg-surface border border-line rounded-2xl p-4 mb-4">
+              <Text className="text-success text-sm mb-3" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                 Location
               </Text>
               <View className="space-y-2">
-                <Text className="text-cream text-sm">{formData.address}</Text>
-                <Text className="text-muted text-xs">Radius: {formData.operating_radius} km</Text>
+                <Text className="text-ink text-sm">{formData.address}</Text>
+                <Text className="text-ink-2 text-xs">Radius: {formData.operating_radius} km</Text>
               </View>
             </View>
 
-            <View className="bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-              <Text className="text-green-500 text-sm mb-3" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            <View className="bg-surface border border-line rounded-2xl p-4 mb-4">
+              <Text className="text-success text-sm mb-3" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
                 Availability
               </Text>
               <View className="space-y-2">
-                <Text className="text-cream text-sm">{formData.available_days.join(', ')}</Text>
-                <Text className="text-muted text-xs">{formData.start_time} - {formData.end_time}</Text>
+                <Text className="text-ink text-sm">{formData.available_days.join(', ')}</Text>
+                <Text className="text-ink-2 text-xs">{formData.start_time} - {formData.end_time}</Text>
               </View>
             </View>
           </ScrollView>
@@ -615,24 +657,24 @@ export default function BecomeRunnerScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-dark"
+      className="flex-1 bg-canvas"
     >
-      <StatusBar style="light" />
-      <View className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-green-500 opacity-[0.06]" />
+      <StatusBar style={T.statusBar} />
+      <View className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-success opacity-[0.06]" />
 
       {/* Header */}
       <View className="px-5 pt-14 pb-4">
         <View className="flex-row items-center gap-3 mb-4">
           {step > 0 && (
-            <TouchableOpacity onPress={() => setStep(step - 1)} className="w-10 h-10 bg-dark-2 border border-faint rounded-xl items-center justify-center">
-              <Ionicons name="chevron-back" size={20} color="#FDF6EC" />
+            <TouchableOpacity onPress={() => setStep(step - 1)} className="w-10 h-10 bg-surface border border-line rounded-xl items-center justify-center">
+              <Ionicons name="chevron-back" size={20} color={T.ink} />
             </TouchableOpacity>
           )}
           <View className="flex-1">
-            <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
+            <Text className="text-ink text-xl" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>
               {STEPS[step].title}
             </Text>
-            <Text className="text-muted text-xs">{STEPS[step].subtitle}</Text>
+            <Text className="text-ink-2 text-xs">{STEPS[step].subtitle}</Text>
           </View>
         </View>
 
@@ -642,7 +684,7 @@ export default function BecomeRunnerScreen() {
             <View
               key={index}
               className={`flex-1 h-1 rounded-full ${
-                index <= step ? 'bg-green-500' : 'bg-dark-3'
+                index <= step ? 'bg-success' : 'bg-surface-2'
               }`}
             />
           ))}
@@ -658,7 +700,7 @@ export default function BecomeRunnerScreen() {
       </ScrollView>
 
       {/* Bottom Action */}
-      <View className="absolute bottom-0 left-0 right-0 bg-dark border-t border-faint p-5">
+      <View className="absolute bottom-0 left-0 right-0 bg-canvas border-t border-line p-5">
         {step === STEPS.length - 1 ? (
           <Button
             label="Submit Application"

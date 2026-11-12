@@ -30,6 +30,8 @@ import {
 import * as VendorReportService from '../vendor-report/vendor-report.service';
 import { updateVendorReportSchema } from '../vendor-report/vendor-report.schema';
 import { authenticate } from '../../middlewares/authenticate';
+import { requireAdmin } from '../../middlewares/requireAdmin';
+import * as RunnerService from '../runner/runner.service';
 
 export async function adminRoutes(fastify: FastifyInstance) {
   // Admin Login (public)
@@ -47,7 +49,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Get current admin user (protected)
   fastify.get('/admin/me', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       try {
         const result = await adminMe(request.user.id);
@@ -58,9 +60,35 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
   });
 
+  // ── Runners (approve / suspend) ─────────────────────────────────────────
+  fastify.get('/admin/runners', {
+    preHandler: [authenticate, requireAdmin],
+    handler: async (request, reply) => {
+      try {
+        const { status, search } = request.query as { status?: string; search?: string };
+        return reply.send(await RunnerService.adminListRunners({ status, search }));
+      } catch (error: any) {
+        reply.status(error.statusCode ?? 500).send({ message: error.message });
+      }
+    },
+  });
+
+  fastify.patch('/admin/runners/:id', {
+    preHandler: [authenticate, requireAdmin],
+    handler: async (request, reply) => {
+      try {
+        const { id } = request.params as { id: string };
+        const { status, reason } = (request.body ?? {}) as { status?: string; reason?: string };
+        return reply.send(await RunnerService.adminSetRunnerStatus(id, status ?? '', reason));
+      } catch (error: any) {
+        reply.status(error.statusCode ?? 500).send({ message: error.message });
+      }
+    },
+  });
+
   // Dashboard Stats
   fastify.get('/admin/stats', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       try {
         const stats = await getDashboardStats();
@@ -73,7 +101,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Verification Requests
   fastify.get('/admin/verifications', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { status, limit = '50', offset = '0' } = request.query as {
         status?: string;
@@ -98,7 +126,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/admin/verifications/:id', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -115,7 +143,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/verifications/:id/approve', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -128,7 +156,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/verifications/:id/reject', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const { reason } = request.body as { reason?: string };
@@ -143,7 +171,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Users
   fastify.get('/admin/users', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { limit = '50', offset = '0', search, role } = request.query as {
         limit?: string;
@@ -166,7 +194,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/admin/users/:id', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -179,7 +207,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/admin/users/:id', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -192,7 +220,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.patch('/admin/users/:id', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -206,7 +234,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Vendors
   fastify.get('/admin/vendors', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { limit = '50', offset = '0', search, is_fraud_flagged } = request.query as {
         limit?: string;
@@ -233,7 +261,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/admin/vendors/:id', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -246,7 +274,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/vendors/:id/flag', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const { reason } = request.body as { reason: string };
@@ -260,7 +288,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/vendors/:id/unflag', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -273,7 +301,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/vendors/:id/suspend', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -286,7 +314,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/vendors/:id/unsuspend', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -300,7 +328,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Orders & Escrow
   fastify.get('/admin/orders', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { limit = '50', offset = '0', status } = request.query as {
         limit?: string;
@@ -321,7 +349,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.patch('/admin/orders/:id/release', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -334,7 +362,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.patch('/admin/orders/:id/cancel', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       try {
@@ -348,7 +376,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Waitlist
   fastify.get('/admin/waitlist', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       try {
         const entries = await getWaitlist();
@@ -361,7 +389,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Disputes
   fastify.get('/admin/disputes', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { status, limit = '50', offset = '0' } = request.query as {
         status?: string;
@@ -382,7 +410,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/admin/disputes/:id/resolve', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const { resolution, admin_notes } = request.body as {
@@ -405,7 +433,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Broadcast notification
   fastify.post('/admin/notifications/broadcast', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { title, body, audience } = request.body as {
         title: string;
@@ -423,7 +451,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Transactions
   fastify.get('/admin/transactions', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { limit = '50', offset = '0', status, type } = request.query as {
         limit?: string;
@@ -447,7 +475,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Wallet Transactions
   fastify.get('/admin/wallet-transactions', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { limit = '50', offset = '0', txType } = request.query as {
         limit?: string;
@@ -469,7 +497,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
 
   // Vendor Reports
   fastify.get('/admin/vendor-reports', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { limit = '50', offset = '0', status } = request.query as {
         limit?: string;
@@ -490,7 +518,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/admin/vendor-reports/:reportId', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { reportId } = request.params as { reportId: string };
       try {
@@ -503,7 +531,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   fastify.patch('/admin/vendor-reports/:reportId', {
-    preHandler: [authenticate],
+    preHandler: [authenticate, requireAdmin],
     handler: async (request, reply) => {
       const { reportId } = request.params as { reportId: string };
       const parseResult = updateVendorReportSchema.safeParse(request.body);

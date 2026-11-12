@@ -1,143 +1,158 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo, memo, useEffect } from 'react';
 import {
-  View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, TextInput,
-  Image,
+  View, FlatList, TouchableOpacity, RefreshControl, TextInput,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../../components/ui/StyledText';
-import { chatApi } from '../../lib/api';
+import { ChatAvatar } from '../../components/chat/ChatAvatar';
 import { useAuthStore } from '../../stores/authStore';
-import { usePresenceStore } from '../../stores/presenceStore';
-import { connectSocket, disconnectSocket } from '../../lib/socket'; 
+import { useIsTyping, usePresenceStore } from '../../stores/presenceStore';
+import { onSocketStatus, SocketStatus } from '../../lib/socket';
+import {
+  useConversations, ConversationItem, getUnread, getOtherName, getOtherAvatar, getOtherUserId,
+} from '../../hooks/useConversations';
+import { T, useTheme } from '../../constants/theme';
 
-interface Conversation {
-  id: string;
-  buyer_id: string;
-  vendor_id: string;
-  last_message: string | null;
-  last_message_at: string;
-  buyer_unread: number;
-  vendor_unread: number;
-  last_message_mine?: boolean;
-  last_message_delivered?: boolean;
-  last_message_read?: boolean;
-  vendor: { id: string; logo_url?: string | null; avatar_url?: string | null; business_name: string; is_verified: boolean; user_id: string } | null;
-  buyer: { id: string; name: string; avatar_url: string | null } | null;
-  other_online?: boolean;
-  // Derived per-conversation role
-  iAmVendor: boolean;
-}
+type Filter = 'all' | 'unread' | 'buying' | 'selling';
 
-function formatTime(iso: string) {
+function formatListTime(iso: string) {
   const date = new Date(iso);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  const isThisYear = date.getFullYear() === now.getFullYear();
-  if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (isThisYear) return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  const diffDays = (now.getTime() - date.getTime()) / 86_400_000;
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'short' });
+  if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString([], { year: '2-digit', month: 'short', day: 'numeric' });
 }
 
-function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) {
-  const getUserPresence = usePresenceStore(state => state.getUserPresence);
-  const otherName = conv.iAmVendor
-    ? (conv.buyer?.name || 'Unknown Buyer')
-    : (conv.vendor?.business_name || 'Unknown Vendor');
-  const unread = conv.iAmVendor ? conv.vendor_unread : conv.buyer_unread;
-  const initials = (otherName ?? 'U').slice(0, 2).toUpperCase();
-  
-  // Get online status from global presence store
-  const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
-  const presence = getUserPresence(otherUserId || '');
-  const otherOnline = presence?.isOnline || false;
+// ── Row ─────────────────────────────────────────────────────────────────────
+const ConversationRow = memo(function ConversationRow({ conv, showRole }: { conv: ConversationItem; showRole: boolean }) {
+  useTheme();
+  const typing = useIsTyping(conv.id);
+  const unread = getUnread(conv);
+  const name = getOtherName(conv);
+  const hasUnread = unread > 0;
 
-  const fallbackAvatar = () => (
-    <View className="w-12 h-12 rounded-full bg-dark-2 border border-faint items-center justify-center">
-      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#E8521A' }}>
-        {initials}
-      </Text>
-    </View>
-  );
+  const preview = (() => {
+    if (conv.last_message_deleted) return { icon: 'ban-outline' as const, text: 'Message deleted', italic: true };
+    if (conv.last_message_type === 'image' || conv.last_message === 'Photo') return { icon: 'image-outline' as const, text: 'Photo' };
+    if (conv.last_message_type === 'payment_request' || conv.last_message === 'Payment request') {
+      return { icon: 'cash-outline' as const, text: 'Payment request' };
+    }
+    if (!conv.last_message) return { icon: null, text: conv.iAmVendor ? 'New enquiry' : 'Say hello 👋', italic: true };
+    return { icon: null, text: conv.last_message };
+  })();
 
   return (
+    // Static style on purpose: NativeWind's Pressable wrapper can drop function
+    // styles, which collapsed this row into a vertical stack.
     <TouchableOpacity
-      onPress={() => router.push({ pathname: '/chat/[conversationId]', params: { conversationId: conv.id } })}
-      activeOpacity={0.75}
-      className="flex-row items-center px-5 py-4 border-b border-faint gap-3"
+      onPress={() => router.push({
+        pathname: '/chat/[conversationId]',
+        // Header info travels with the navigation so the chat opens fully drawn
+        params: {
+          conversationId: conv.id,
+          name,
+          avatar: getOtherAvatar(conv) ?? '',
+          uid: getOtherUserId(conv) ?? '',
+          asVendor: conv.iAmVendor ? '1' : '0',
+          verified: !conv.iAmVendor && conv.vendor?.is_verified ? '1' : '0',
+          vid: conv.vendor?.id ?? '',
+        },
+      })}
+      activeOpacity={0.6}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        paddingHorizontal: 16, paddingVertical: 12, width: '100%',
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`Chat with ${name}${hasUnread ? `, ${unread} unread` : ''}`}
     >
-      <View className="relative">
-        {conv.iAmVendor ? (
-          conv.buyer?.avatar_url ? (
-            <Image source={{ uri: conv.buyer.avatar_url }} className="w-12 h-12 rounded-full border border-faint" />
-          ) : fallbackAvatar()
-        ) : (
-          conv.vendor?.logo_url ? (
-            <Image source={{ uri: conv.vendor.logo_url }} className="w-12 h-12 rounded-full border border-faint" />
-          ) : conv.vendor?.avatar_url ? (
-            <Image source={{ uri: conv.vendor.avatar_url }} className="w-12 h-12 rounded-full border border-faint" />
-          ) : fallbackAvatar()
-        )}
-        <View className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-dark ${otherOnline ? 'bg-green-500' : 'bg-dark-3'}`} />
-      </View>
+      <ChatAvatar uri={getOtherAvatar(conv)} name={name} userId={getOtherUserId(conv)} size={54} />
 
-      <View className="flex-1">
-        <View className="flex-row items-center justify-between mb-0.5">
-          <View className="flex-row items-center gap-1.5">
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0 }}>
             <Text
-              className="text-cream text-sm"
-              style={{ fontFamily: unread > 0 ? 'SpaceGrotesk_700Bold' : 'SpaceGrotesk_500Medium' }}
+              numberOfLines={1}
+              style={{
+                flexShrink: 1, fontSize: 15, color: T.ink,
+                fontFamily: hasUnread ? 'PlusJakartaSans_700Bold' : 'PlusJakartaSans_600SemiBold',
+              }}
             >
-              {otherName}
+              {name}
             </Text>
             {!conv.iAmVendor && conv.vendor?.is_verified && (
-              <Ionicons name="shield-checkmark" size={12} color="#2D8653" />
+              <Ionicons name="shield-checkmark" size={13} color={T.successInk} />
             )}
-            {/* Label so dual-role users know which context */}
-            {conv.iAmVendor && (
-              <View style={{ backgroundColor: 'rgba(245,166,35,0.15)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
-                <Text style={{ fontSize: 9, fontFamily: 'SpaceGrotesk_600SemiBold', color: '#F5A623' }}>AS VENDOR</Text>
+            {showRole && (
+              <View style={{
+                backgroundColor: conv.iAmVendor ? T.goldSoft : T.infoSoft,
+                borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1.5,
+              }}>
+                <Text style={{
+                  fontSize: 9.5, letterSpacing: 0.3, fontFamily: 'PlusJakartaSans_700Bold',
+                  color: conv.iAmVendor ? T.goldInk : T.infoInk,
+                }}>
+                  {conv.iAmVendor ? 'SELLING' : 'BUYING'}
+                </Text>
               </View>
             )}
           </View>
-          <Text className="text-xs" style={{ fontFamily: 'SpaceGrotesk_400Regular', color: unread > 0 ? '#E8521A' : '#6B5E50' }}>
-            {formatTime(conv.last_message_at)}
+          <Text style={{
+            fontSize: 12,
+            fontFamily: hasUnread ? 'PlusJakartaSans_600SemiBold' : 'PlusJakartaSans_400Regular',
+            color: hasUnread ? T.primaryInk : T.ink3,
+          }}>
+            {formatListTime(conv.last_message_at)}
           </Text>
         </View>
 
-        <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center gap-1 flex-1 mr-2">
-            {conv.last_message_mine && (
-              <Ionicons
-                name={conv.last_message_read ? 'checkmark-done' : conv.last_message_delivered ? 'checkmark-done' : 'checkmark'}
-                size={13}
-                color={conv.last_message_read ? '#E8521A' : conv.last_message_delivered ? '#9A8570' : '#6B5E50'}
-              />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 }}>
+            {typing ? (
+              <Text numberOfLines={1} style={{ fontSize: 13.5, fontFamily: 'PlusJakartaSans_500Medium', color: T.primaryInk }}>
+                typing…
+              </Text>
+            ) : (
+              <>
+                {conv.last_message_mine && !conv.last_message_deleted && conv.last_message && (
+                  <Ionicons
+                    name={conv.last_message_delivered || conv.last_message_read ? 'checkmark-done' : 'checkmark'}
+                    size={15}
+                    color={conv.last_message_read ? T.info : T.ink4}
+                  />
+                )}
+                {preview.icon && <Ionicons name={preview.icon} size={14} color={hasUnread ? T.ink2 : T.ink3} />}
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    flexShrink: 1, fontSize: 13.5,
+                    fontFamily: hasUnread ? 'PlusJakartaSans_600SemiBold' : 'PlusJakartaSans_400Regular',
+                    fontStyle: preview.italic ? 'italic' : 'normal',
+                    color: hasUnread ? T.ink : T.ink3,
+                  }}
+                >
+                  {preview.text}
+                </Text>
+              </>
             )}
-            <Text
-              className="text-sm flex-1"
-              style={{
-                fontFamily: unread > 0 ? 'SpaceGrotesk_500Medium' : 'SpaceGrotesk_400Regular',
-                color: unread > 0 ? '#FDF6EC' : '#9A8570',
-              }}
-              numberOfLines={1}
-            >
-              {conv.last_message ?? 'Start a conversation'}
-            </Text>
           </View>
-          {unread > 0 && (
+          {hasUnread && (
             <View style={{
-              backgroundColor: '#E8521A',
-              borderRadius: 12,
-              minWidth: 20,
-              height: 20,
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingHorizontal: 5,
+              backgroundColor: T.primary, borderRadius: 11, minWidth: 22, height: 22,
+              alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
             }}>
-              <Text style={{ fontSize: 11, fontFamily: 'SpaceGrotesk_700Bold', color: 'white', lineHeight: 14 }}>
+              <Text style={{ fontSize: 11.5, fontFamily: 'PlusJakartaSans_700Bold', color: T.onPrimary }}>
                 {unread > 99 ? '99+' : unread}
               </Text>
             </View>
@@ -146,179 +161,225 @@ function ConversationItem({ conv, myId }: { conv: Conversation; myId: string }) 
       </View>
     </TouchableOpacity>
   );
+});
+
+// ── Loading skeleton ────────────────────────────────────────────────────────
+function SkeletonRow() {
+  useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: T.surface2 }} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <View style={{ width: '45%', height: 12, borderRadius: 6, backgroundColor: T.surface2 }} />
+        <View style={{ width: '75%', height: 10, borderRadius: 5, backgroundColor: T.surface2 }} />
+      </View>
+    </View>
+  );
 }
 
+function FilterChip({ label, active, count, onPress }: { label: string; active: boolean; count?: number; onPress: () => void }) {
+  useTheme();
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        paddingHorizontal: 14, height: 34, borderRadius: 17,
+        backgroundColor: active ? T.ink : T.surface,
+        borderWidth: 1, borderColor: active ? T.ink : T.line,
+      }}
+    >
+      <Text style={{ fontSize: 13, fontFamily: 'PlusJakartaSans_600SemiBold', color: active ? T.canvas : T.ink2 }}>
+        {label}
+      </Text>
+      {!!count && (
+        <View style={{
+          minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5,
+          backgroundColor: active ? T.primary : T.primarySoft, alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Text style={{ fontSize: 10.5, fontFamily: 'PlusJakartaSans_700Bold', color: active ? T.onPrimary : T.primaryInk }}>
+            {count > 99 ? '99+' : count}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ── Screen ──────────────────────────────────────────────────────────────────
 export default function ChatListScreen() {
-  const { user } = useAuthStore();
-  const { getUserPresence, activeConversationId } = usePresenceStore();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  useTheme();
+  const insets = useSafeAreaInsets();
+  const user = useAuthStore((s) => s.user);
+  const { data, isLoading, isError, refetch, isRefetching } = useConversations();
   const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [manualRefresh, setManualRefresh] = useState(false);
+  const [socketStatus, setSocketStatus] = useState<SocketStatus>('idle');
 
-  const fetchConversations = async (isSilent = false) => {
-    if (!user?.id) return;
-    if (!isSilent && !refreshing) setLoading(true);
+  useEffect(() => onSocketStatus(setSocketStatus), []);
 
-    try {
-      const { data } = await chatApi.getConversations();
-      setConversations(data || []);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  // Always resync when the tab regains focus (cheap; cached data shows instantly)
+  useFocusEffect(useCallback(() => {
+    // Looking at the list means no chat is open — never let a stale value
+    // suppress unread counts for incoming messages.
+    usePresenceStore.getState().setActiveConversationId(null);
+    if (user?.id) refetch();
+  }, [user?.id, refetch]));
+
+  const conversations = data ?? [];
+  const isDualRole = useMemo(
+    () => conversations.some((c) => c.iAmVendor) && conversations.some((c) => !c.iAmVendor),
+    [conversations]
+  );
+  const unreadConvs = useMemo(() => conversations.filter((c) => getUnread(c) > 0).length, [conversations]);
+
+  // Reset an unavailable filter (e.g. "Selling" when the user no longer has vendor chats)
+  useEffect(() => {
+    if (!isDualRole && (filter === 'buying' || filter === 'selling')) setFilter('all');
+  }, [isDualRole, filter]);
+
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return conversations.filter((c) => {
+      if (filter === 'unread' && getUnread(c) === 0) return false;
+      if (filter === 'buying' && c.iAmVendor) return false;
+      if (filter === 'selling' && !c.iAmVendor) return false;
+      if (!q) return true;
+      return getOtherName(c).toLowerCase().includes(q) || (c.last_message ?? '').toLowerCase().includes(q);
+    });
+  }, [conversations, filter, searchQuery]);
+
+  const onRefresh = async () => {
+    setManualRefresh(true);
+    try { await refetch(); } finally { setManualRefresh(false); }
   };
 
-  useFocusEffect(useCallback(() => { fetchConversations(true); }, [user]));
+  const showConnecting = socketStatus === 'connecting' || socketStatus === 'disconnected';
 
-  // FIX #10: Filter logic
-  const filteredConversations = conversations.filter(c => {
-    const name = c.iAmVendor ? c.buyer?.name : c.vendor?.business_name;
-    return name?.toLowerCase().includes(searchQuery.toLowerCase());
-  });
-
-  // FIX #1: Real-time update list WITHOUT full API refresh
-  useEffect(() => {
-    let mounted = true;
-    let socketListenerCleanup: (() => void) | undefined;
-
-    const setupSocket = async () => {
-      const socket = await connectSocket();
-      if (!socket || !mounted) return;
-
-      const onNewMessage = (data: { conversation_id: string; content: string; sender_id: string; type?: string }) => {
-        setConversations(prev => {
-          const index = prev.findIndex(c => c.id === data.conversation_id);
-          if (index === -1) {
-            fetchConversations(true);
-            return prev;
-          }
-          const updated = [...prev];
-          const conv = { ...updated[index] };
-
-          conv.last_message = data.type === 'image'
-            ? 'Photo'
-            : data.type === 'payment_request'
-            ? 'Payment request'
-            : data.content;
-          conv.last_message_at = new Date().toISOString();
-          conv.last_message_mine = data.sender_id === user?.id;
-
-          // Only increment unread count if message is from other user AND conversation is not currently active
-          if (data.sender_id !== user?.id && data.conversation_id !== activeConversationId) {
-            if (conv.iAmVendor) conv.vendor_unread = (conv.vendor_unread ?? 0) + 1;
-            else conv.buyer_unread = (conv.buyer_unread ?? 0) + 1;
-          }
-
-          updated.splice(index, 1);
-          return [conv, ...updated];
-        });
-      };
-
-      const onMessagesRead = (data: { conversationId: string; readBy: string }) => {
-        setConversations(prev => prev.map(conv => {
-          if (conv.id !== data.conversationId) return conv;
-          const otherUserId = conv.iAmVendor ? conv.buyer_id : conv.vendor?.user_id;
-          if (otherUserId === data.readBy && conv.last_message_mine) {
-            const updated = { ...conv };
-            updated.last_message_read = true;
-            return updated;
-          }
-          return conv;
-        }));
-      };
-
-      socket.on('new_message', onNewMessage);
-      socket.on('messages_read', onMessagesRead);
-      socket.on('message_deleted', (data: { conversationId: string }) => {
-        setConversations(prev => prev.map(conv => {
-          if (conv.id !== data.conversationId) return conv;
-          return {
-            ...conv,
-            last_message: conv.last_message_mine ? 'Deleted' : (conv.last_message ?? ''),
-          };
-        }));
-      });
-
-      socketListenerCleanup = () => {
-        socket.off('new_message', onNewMessage);
-        socket.off('messages_read', onMessagesRead);
-        socket.off('message_deleted', () => {});
-      };
-    };
-
-    setupSocket();
-
-    return () => {
-      mounted = false;
-      socketListenerCleanup?.();
-      // Don't disconnect socket - it's managed app-wide in _layout.tsx
-    };
-  }, [user]);
-
-  const totalUnread = conversations.reduce((sum, c) =>
-    sum + (c.iAmVendor ? c.vendor_unread : c.buyer_unread), 0
-  );
+  const renderEmpty = () => {
+    if (isLoading) return <View>{Array.from({ length: 7 }).map((_, i) => <SkeletonRow key={i} />)}</View>;
+    if (isError && conversations.length === 0) {
+      return (
+        <View style={{ alignItems: 'center', paddingTop: 80, paddingHorizontal: 32, gap: 10 }}>
+          <Ionicons name="cloud-offline-outline" size={40} color={T.ink4} />
+          <Text style={{ fontSize: 17, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>Couldn't load chats</Text>
+          <Text style={{ fontSize: 14, color: T.ink3, textAlign: 'center' }}>Check your connection and try again.</Text>
+          <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 8, backgroundColor: T.primary, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12 }}>
+            <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.onPrimary }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    const searching = !!searchQuery.trim() || filter !== 'all';
+    return (
+      <View style={{ alignItems: 'center', paddingTop: 72, paddingHorizontal: 32, gap: 10 }}>
+        <View style={{
+          width: 84, height: 84, borderRadius: 28, backgroundColor: T.primarySoft,
+          alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+        }}>
+          <Ionicons name={searching ? 'search' : 'chatbubbles'} size={36} color={T.primary} />
+        </View>
+        <Text style={{ fontSize: 18, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink, textAlign: 'center' }}>
+          {searching ? 'No chats found' : 'No messages yet'}
+        </Text>
+        <Text style={{ fontSize: 14, color: T.ink3, textAlign: 'center', lineHeight: 20 }}>
+          {searching
+            ? filter === 'unread' && !searchQuery ? "You're all caught up." : 'Try a different name or filter.'
+            : 'Find a vendor you like and tap Chat to ask about a product.'}
+        </Text>
+        {!searching && (
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)')}
+            style={{ marginTop: 10, backgroundColor: T.primary, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12 }}
+          >
+            <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.onPrimary }}>Browse vendors</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
-      <View className="px-5 pt-14 pb-4 border-b border-faint">
-        <Text style={{fontFamily: 'SpaceGrotesk_700Bold'}} className="text-cream text-2xl">Messages</Text>
-        
-        {/* FIX #10: Search Bar */}
-        <View className="mt-4 bg-dark-2 rounded-xl flex-row items-center px-3 py-2 border border-faint">
-          <Ionicons name="search" size={18} color="#6B5E50" />
-          <TextInput 
-            className="flex-1 ml-2 text-cream" 
-            placeholder="Search chats..." 
-            placeholderTextColor="#6B5E50"
-            value={searchQuery}
-            style={{fontFamily: 'SpaceGrotesk_500Medium'}}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
-      
-      {loading ? (
-        <View className="flex-1 items-center justify-center gap-3">
-          <ActivityIndicator size="large" color="#E8521A" />
-        </View>
-      ) : filteredConversations.length === 0 ? (
-        <View className="flex-1 items-center justify-center gap-4 px-8">
-          <View className="w-20 h-20 rounded-3xl bg-dark-2 border border-faint items-center justify-center">
-            <Ionicons name="chatbubbles-outline" size={36} color="#3D3026" />
+      {/* Header */}
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 16, paddingBottom: 12, gap: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View>
+            <Text style={{ fontSize: 28, fontFamily: 'PlusJakartaSans_800ExtraBold', color: T.ink, letterSpacing: -0.5 }}>
+              Messages
+            </Text>
+            {showConnecting ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: T.gold }} />
+                <Text style={{ fontSize: 12.5, color: T.ink3, fontFamily: 'PlusJakartaSans_500Medium' }}>Connecting…</Text>
+              </View>
+            ) : unreadConvs > 0 ? (
+              <Text style={{ fontSize: 12.5, color: T.ink3, fontFamily: 'PlusJakartaSans_500Medium', marginTop: 2 }}>
+                {unreadConvs} unread {unreadConvs === 1 ? 'chat' : 'chats'}
+              </Text>
+            ) : null}
           </View>
-          <Text className="text-cream text-xl text-center" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            {searchQuery ? 'No results found' : 'No messages yet'}
-          </Text>
-          <Text className="text-muted text-sm text-center">
-            {searchQuery ? 'Try a different search term' : 'Find a vendor and tap Chat to start a conversation'}
-          </Text>
-          {!searchQuery && (
-            <TouchableOpacity onPress={() => router.push('/(tabs)')} className="bg-orange rounded-2xl px-6 py-3 mt-2">
-              <Text className="text-white text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Browse Vendors</Text>
+        </View>
+
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: T.surface, borderRadius: 14, borderWidth: 1, borderColor: T.line,
+          paddingHorizontal: 12, height: 44,
+        }}>
+          <Ionicons name="search" size={18} color={T.ink3} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search chats"
+            placeholderTextColor={T.ink4}
+            returnKeyType="search"
+            autoCorrect={false}
+            style={{ flex: 1, fontSize: 15, color: T.ink, fontFamily: 'PlusJakartaSans_500Medium', paddingVertical: 0 }}
+          />
+          {!!searchQuery && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+              <Ionicons name="close-circle" size={18} color={T.ink4} />
             </TouchableOpacity>
           )}
         </View>
-      ) : (
-        <FlatList
-          data={filteredConversations}
-          keyExtractor={c => c.id}
-          renderItem={({ item }) => (
-            <ConversationItem conv={item} myId={user?.id ?? ''} />
-          )}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); fetchConversations(); }}
-              tintColor="#E8521A"
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+
+        {conversations.length > 0 && (
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            <FilterChip label="All" active={filter === 'all'} onPress={() => setFilter('all')} />
+            <FilterChip label="Unread" active={filter === 'unread'} count={unreadConvs} onPress={() => setFilter('unread')} />
+            {isDualRole && (
+              <>
+                <FilterChip label="Buying" active={filter === 'buying'} onPress={() => setFilter('buying')} />
+                <FilterChip label="Selling" active={filter === 'selling'} onPress={() => setFilter('selling')} />
+              </>
+            )}
+          </View>
+        )}
+      </View>
+
+      <FlatList
+        data={isLoading ? [] : filtered}
+        keyExtractor={(c) => c.id}
+        renderItem={({ item }) => <ConversationRow conv={item} showRole={isDualRole} />}
+        ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: T.line, marginLeft: 84 }} />}
+        ListEmptyComponent={renderEmpty}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={{ paddingBottom: 24, flexGrow: 1 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={manualRefresh && isRefetching}
+            onRefresh={onRefresh}
+            tintColor={T.primary}
+            colors={[T.primary]}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

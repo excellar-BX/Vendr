@@ -1,322 +1,184 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  View, ScrollView, TouchableOpacity, ActivityIndicator, Alert,
-} from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { Text } from '../../components/ui/StyledText';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
-import { apiFetch } from '../../lib/api';
+import { RUNNER_GREEN, naira, openDirections } from '../../components/runner/RunnerKit';
+import { runnerApi, RunnerJob } from '../../lib/api';
+import { T, useTheme } from '../../constants/theme';
 
-type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
-
-interface JobDetail {
-  id: string;
-  order_id: string;
-  pickup_address: string;
-  dropoff_address: string;
-  pickup_lat: number;
-  pickup_lng: number;
-  dropoff_lat: number;
-  dropoff_lng: number;
-  delivery_fee: number;
-  distance_km: number;
-  estimated_time: string;
-  seller_name: string;
-  seller_avatar?: string;
-  seller_phone?: string;
-  items_count: number;
-  items: Array<{ name: string; quantity: number; image?: string }>;
-  special_instructions?: string;
-  created_at: string;
-  expires_at: string;
-}
-
-export default function JobDetailScreen() {
+/** One open delivery job: route, pay, items — accept it or pass. */
+export default function RunnerJobScreen() {
+  useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
   const { showAlert, alertElement } = useVendrAlert();
-  const [job, setJob] = useState<JobDetail | null>(null);
+  const [job, setJob] = useState<RunnerJob | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
 
-  const fetchJob = useCallback(async () => {
+  const load = useCallback(async () => {
+    if (!id) return;
+    setError(null);
     try {
-      // TODO: Replace with actual API call
-      // const res = await apiFetch(`/runner/jobs/${id}`, { method: 'GET' });
-      // setJob(res.data);
-      
-      // Mock data
-      setJob({
-        id: id as string,
-        order_id: 'ORD-1234567890',
-        pickup_address: '12 Adetokunbo Ademola Street, Victoria Island, Lagos',
-        dropoff_address: '45 Awolowo Road, Ikoyi, Lagos',
-        pickup_lat: 6.4281,
-        pickup_lng: 3.4219,
-        dropoff_lat: 6.4398,
-        dropoff_lng: 3.4064,
-        delivery_fee: 2500,
-        distance_km: 3.2,
-        estimated_time: '15 min',
-        seller_name: 'Chike Electronics',
-        seller_phone: '+234 802 123 4567',
-        items_count: 2,
-        items: [
-          { name: 'iPhone 13 Pro Case', quantity: 1 },
-          { name: 'Screen Protector', quantity: 1 },
-        ],
-        special_instructions: 'Call when you arrive at pickup',
-        created_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 15 * 60000).toISOString(),
-      });
-    } catch (err) {
-      showAlert({
-        title: 'Error',
-        message: 'Failed to load job details',
-        type: 'danger',
-      });
+      const { data } = await runnerApi.job(id);
+      setJob(data);
+      // Already mine? Go straight to the delivery
+      if (data?.my_run_id) router.replace({ pathname: '/runner-run/[id]', params: { id: data.my_run_id } });
+    } catch (e: any) {
+      setError(e?.statusCode === 404 ? 'This job no longer exists.' : "Couldn't load this job.");
     } finally {
       setLoading(false);
     }
-  }, [id, showAlert]);
+  }, [id]);
 
-  useEffect(() => {
-    fetchJob();
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const handleAcceptJob = async () => {
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/runner-jobs'));
+
+  const accept = async () => {
+    if (!job) return;
     setAccepting(true);
     try {
-      // TODO: Replace with actual API call
-      // await apiFetch(`/runner/jobs/${id}/accept`, { method: 'POST' });
-      
+      const { data: run } = await runnerApi.accept(job.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      router.replace({ pathname: '/runner-run/[id]', params: { id: run.id } });
+    } catch (e: any) {
       showAlert({
-        title: 'Job Accepted!',
-        message: 'Navigate to pickup location to begin delivery',
-        type: 'success',
-        buttons: [
-          {
-            text: 'Go to Active',
-            onPress: () => router.replace('/(tabs)/runner-active'),
-          },
-        ],
-      });
-    } catch (err) {
-      showAlert({
-        title: 'Error',
-        message: 'Failed to accept job. Please try again.',
-        type: 'danger',
+        title: e?.statusCode === 409 ? 'Too slow 😅' : "Couldn't accept",
+        message: e?.message ?? 'Please try again.',
+        type: 'warning',
+        buttons: [{ text: 'OK', onPress: e?.statusCode === 409 ? goBack : undefined }],
       });
     } finally {
       setAccepting(false);
     }
   };
 
-  const handleDeclineJob = () => {
-    showAlert({
-      title: 'Decline Job',
-      message: 'Are you sure you want to decline this delivery?',
-      type: 'question',
-      buttons: [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // TODO: Replace with actual API call
-              // await apiFetch(`/runner/jobs/${id}/decline`, { method: 'POST' });
-              router.back();
-            } catch (err) {
-              showAlert({
-                title: 'Error',
-                message: 'Failed to decline job',
-                type: 'danger',
-              });
-            }
-          },
-        },
-      ],
-    });
-  };
-
-  if (loading) {
-    return (
-      <View className="flex-1 bg-dark items-center justify-center">
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#2D8653" />
+  const Stop = ({ color, label, address, lat, lng, square }: { color: string; label: string; address: string; lat: number; lng: number; square?: boolean }) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <View style={{ width: 12, height: 12, borderRadius: square ? 3 : 6, backgroundColor: color }} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink4, letterSpacing: 0.6 }}>{label}</Text>
+        <Text style={{ fontSize: 14.5, color: T.ink, marginTop: 1 }}>{address}</Text>
       </View>
-    );
-  }
-
-  if (!job) {
-    return (
-      <View className="flex-1 bg-dark items-center justify-center px-5">
-        <StatusBar style="light" />
-        <Ionicons name="alert-circle-outline" size={48} color="#E85555" />
-        <Text className="text-cream text-lg mt-4" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-          Job not found
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="bg-green-500 rounded-2xl py-3 px-6 mt-4"
-        >
-          <Text className="text-dark text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            Go Back
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const timeRemaining = Math.max(0, Math.floor((new Date(job.expires_at).getTime() - Date.now()) / 60000));
+      <TouchableOpacity onPress={() => openDirections(lat, lng, address)} accessibilityLabel={`Directions to ${label.toLowerCase()}`}
+        style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: T.surface2, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name="navigate" size={17} color={RUNNER_GREEN} />
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <View className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-green-500 opacity-[0.06]" />
-
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-5 pt-14 pb-4">
-        <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 bg-dark-2 border border-faint rounded-xl items-center justify-center">
-          <Ionicons name="chevron-back" size={20} color="#FDF6EC" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: insets.top + 6, paddingHorizontal: 8, paddingBottom: 8 }}>
+        <TouchableOpacity onPress={goBack} accessibilityLabel="Back" style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="chevron-back" size={26} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-lg" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Job Details</Text>
-        <View className="w-10" />
+        <Text style={{ fontSize: 18, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>Job details</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
-        {/* Delivery Fee Card */}
-        <View className="mx-5 bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30 rounded-3xl p-5 mb-4">
-          <View className="flex-row items-center justify-between">
-            <View>
-              <Text className="text-muted text-xs mb-1">Delivery Fee</Text>
-              <Text className="text-cream text-3xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                ₦{job.delivery_fee.toLocaleString()}
-              </Text>
-            </View>
-            <View className="bg-orange/20 px-3 py-1.5 rounded-full">
-              <Text className="text-orange text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                {timeRemaining} min left
-              </Text>
-            </View>
-          </View>
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={RUNNER_GREEN} /></View>
+      ) : !job ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 36 }}>
+          <Ionicons name="alert-circle-outline" size={40} color={T.ink4} />
+          <Text style={{ fontSize: 15, color: T.ink, textAlign: 'center' }}>{error}</Text>
+          <TouchableOpacity onPress={goBack} style={{ backgroundColor: RUNNER_GREEN, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12 }}>
+            <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>Back to jobs</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Route Info */}
-        <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-          <View className="flex-row items-start gap-3">
-            <View className="mt-1">
-              <View className="w-2 h-2 bg-orange rounded-full" />
-              <View className="w-0.5 h-16 bg-faint ml-1" />
-              <View className="w-2 h-2 bg-green-500 rounded-full mt-1" />
-            </View>
-            <View className="flex-1">
-              <View className="mb-4">
-                <Text className="text-muted text-xs mb-1">PICKUP</Text>
-                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-                  {job.pickup_address}
-                </Text>
-              </View>
-              <View>
-                <Text className="text-muted text-xs mb-1">DROPOFF</Text>
-                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-                  {job.dropoff_address}
-                </Text>
+      ) : (
+        <>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 120, gap: 14 }}>
+            {/* Pay */}
+            <View style={{ backgroundColor: RUNNER_GREEN, borderRadius: 22, padding: 20 }}>
+              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>You earn</Text>
+              <Text style={{ fontSize: 36, fontFamily: 'PlusJakartaSans_800ExtraBold', color: '#FFFFFF', letterSpacing: -0.8 }}>{naira(job.delivery_fee)}</Text>
+              <View style={{ flexDirection: 'row', gap: 16, marginTop: 8 }}>
+                {[
+                  ['navigate-outline', `${job.to_pickup_km} km to pickup`],
+                  ['swap-horizontal', `${job.trip_km} km trip`],
+                  ['time-outline', `~${job.estimated_time}`],
+                ].map(([icon, label]) => (
+                  <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Ionicons name={icon as any} size={13} color="rgba(255,255,255,0.85)" />
+                    <Text style={{ fontSize: 12.5, color: '#FFFFFF' }}>{label}</Text>
+                  </View>
+                ))}
               </View>
             </View>
-          </View>
-          <View className="flex-row items-center gap-4 mt-4 pt-4 border-t border-faint">
-            <View className="flex-row items-center gap-1">
-              <Ionicons name="location-outline" size={14} color="#9A8570" />
-              <Text className="text-muted text-xs">{job.distance_km.toFixed(1)} km</Text>
-            </View>
-            <View className="flex-row items-center gap-1">
-              <Ionicons name="time-outline" size={14} color="#9A8570" />
-              <Text className="text-muted text-xs">{job.estimated_time}</Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Seller Info */}
-        <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-          <Text className="text-muted text-xs mb-3">SELLER</Text>
-          <View className="flex-row items-center gap-3">
-            <View className="w-10 h-10 bg-orange/20 rounded-full items-center justify-center">
-              <Text className="text-orange text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                {job.seller_name.charAt(0)}
-              </Text>
+            {!job.is_available && (
+              <View style={{ padding: 12, borderRadius: 14, backgroundColor: T.dangerSoft }}>
+                <Text style={{ fontSize: 13.5, color: T.dangerInk, fontFamily: 'PlusJakartaSans_600SemiBold' }}>Another runner has already taken this job.</Text>
+              </View>
+            )}
+
+            {/* Route */}
+            <View style={{ backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 16, gap: 14 }}>
+              <Stop color="#E8521A" label={`PICKUP${job.seller_name ? ` · ${job.seller_name.toUpperCase()}` : ''}`} address={job.pickup_address} lat={job.pickup_lat} lng={job.pickup_lng} />
+              <View style={{ height: 1, backgroundColor: T.line, marginLeft: 24 }} />
+              <Stop color={RUNNER_GREEN} square label="DROP-OFF" address={job.dropoff_address} lat={job.dropoff_lat} lng={job.dropoff_lng} />
             </View>
-            <View className="flex-1">
-              <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                {job.seller_name}
-              </Text>
-              {job.seller_phone && (
-                <Text className="text-muted text-xs">{job.seller_phone}</Text>
+
+            {/* Items */}
+            <View style={{ backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 16 }}>
+              <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink3, letterSpacing: 0.6, marginBottom: 8 }}>WHAT YOU'RE CARRYING</Text>
+              {(job.items ?? []).map((it, i) => (
+                <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+                  <Text style={{ flex: 1, fontSize: 14, color: T.ink }}>{it.name}</Text>
+                  <Text style={{ fontSize: 13, color: T.ink3 }}>×{it.quantity}</Text>
+                </View>
+              ))}
+              {!!job.special_instructions && (
+                <View style={{ marginTop: 8, padding: 10, borderRadius: 12, backgroundColor: T.goldSoft }}>
+                  <Text style={{ fontSize: 13, color: T.goldInk }}>📝 {job.special_instructions}</Text>
+                </View>
               )}
             </View>
-            <TouchableOpacity className="w-10 h-10 bg-green-500/20 rounded-full items-center justify-center">
-              <Ionicons name="call-outline" size={18} color="#2D8653" />
-            </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* Items */}
-        <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-          <Text className="text-muted text-xs mb-3">ITEMS ({job.items_count})</Text>
-          {job.items.map((item, index) => (
-            <View key={index} className="flex-row items-center justify-between py-2 border-b border-faint last:border-0">
-              <Text className="text-cream text-sm">{item.name}</Text>
-              <Text className="text-muted text-xs">x{item.quantity}</Text>
+            {/* How it works */}
+            <View style={{ backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 16, gap: 10 }}>
+              <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink3, letterSpacing: 0.6 }}>HOW IT WORKS</Text>
+              {[
+                ['1', 'Go to the seller and enter the 6-digit pickup code they give you.'],
+                ['2', 'Take the order to the buyer.'],
+                ['3', 'Enter the buyer’s delivery code to finish — your fee lands in Earnings.'],
+              ].map(([n, t]) => (
+                <View key={n} style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: `${RUNNER_GREEN}1F`, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_700Bold', color: RUNNER_GREEN }}>{n}</Text>
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 13.5, color: T.ink2, lineHeight: 19 }}>{t}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </ScrollView>
 
-        {/* Special Instructions */}
-        {job.special_instructions && (
-          <View className="mx-5 bg-orange/10 border border-orange/30 rounded-2xl p-4 mb-4">
-            <View className="flex-row items-start gap-2">
-              <Ionicons name="information-circle-outline" size={16} color="#F5A623" />
-              <View className="flex-1">
-                <Text className="text-orange text-xs mb-1" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                  Special Instructions
-                </Text>
-                <Text className="text-muted text-xs">{job.special_instructions}</Text>
-              </View>
+          {job.is_available && (
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 12, backgroundColor: T.canvas, borderTopWidth: 1, borderTopColor: T.line }}>
+              <TouchableOpacity onPress={goBack} style={{ height: 54, paddingHorizontal: 22, borderRadius: 16, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.ink2 }}>Pass</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={accept} disabled={accepting} style={{ flex: 1, height: 54, borderRadius: 16, backgroundColor: RUNNER_GREEN, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+                {accepting ? <ActivityIndicator color="#FFFFFF" /> : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_800ExtraBold', color: '#FFFFFF' }}>Accept · {naira(job.delivery_fee)}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Bottom Actions */}
-      <View className="absolute bottom-0 left-0 right-0 bg-dark border-t border-faint p-5">
-        <View className="flex-row gap-3">
-          <TouchableOpacity
-            onPress={handleDeclineJob}
-            disabled={accepting}
-            className="flex-1 bg-dark-2 border border-faint rounded-2xl py-3.5 items-center"
-          >
-            <Text className="text-muted text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              Decline
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleAcceptJob}
-            disabled={accepting}
-            className="flex-1 bg-green-500 rounded-2xl py-3.5 items-center"
-          >
-            {accepting ? (
-              <ActivityIndicator size="small" color="#1A1208" />
-            ) : (
-              <Text className="text-dark text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                Accept Job
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-
+          )}
+        </>
+      )}
       {alertElement}
     </View>
   );

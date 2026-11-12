@@ -1,341 +1,264 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  View, ScrollView, TouchableOpacity, ActivityIndicator,
-} from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useState, useCallback } from 'react';
+import { View, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import { Text } from '../../components/ui/StyledText';
-import { useVendrAlert } from '../../components/ui/VendrAlert';
-import { apiFetch } from '../../lib/api';
+import { RUNNER_GREEN, naira, openDirections, callPhone, CodeSheet } from '../../components/runner/RunnerKit';
+import { runnerApi, RunnerRun } from '../../lib/api';
+import { T, useTheme } from '../../constants/theme';
 
-type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+const STEPS = [
+  { key: 'assigned', label: 'Pick up' },
+  { key: 'picked_up', label: 'Collected' },
+  { key: 'in_transit', label: 'On the way' },
+  { key: 'delivered', label: 'Delivered' },
+] as const;
 
-type RunStatus = 'assigned' | 'picked_up' | 'in_transit' | 'delivered';
-
-interface RunDetail {
-  id: string;
-  order_id: string;
-  pickup_address: string;
-  dropoff_address: string;
-  pickup_lat: number;
-  pickup_lng: number;
-  dropoff_lat: number;
-  dropoff_lng: number;
-  seller_name: string;
-  seller_phone?: string;
-  buyer_name: string;
-  buyer_phone?: string;
-  delivery_fee: number;
-  status: RunStatus;
-  assigned_at: string;
-  picked_up_at?: string;
-  estimated_delivery: string;
-  items: Array<{ name: string; quantity: number }>;
-}
-
-const STATUS_STEPS: RunStatus[] = ['assigned', 'picked_up', 'in_transit', 'delivered'];
-
-const STATUS_LABELS: Record<RunStatus, string> = {
-  assigned: 'Assigned',
-  picked_up: 'Picked Up',
-  in_transit: 'In Transit',
-  delivered: 'Delivered',
-};
-
-export default function RunTrackingScreen() {
+/** A delivery in progress: guided pickup → drop-off with the seller's and buyer's codes. */
+export default function RunScreen() {
+  useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { showAlert, alertElement } = useVendrAlert();
-  const [run, setRun] = useState<RunDetail | null>(null);
+  const insets = useSafeAreaInsets();
+  const [run, setRun] = useState<RunnerRun | null>(null);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<'pickup' | 'delivery' | null>(null);
+  const [justDelivered, setJustDelivered] = useState(false);
 
-  const fetchRun = useCallback(async () => {
+  const load = useCallback(async (isRefresh = false) => {
+    if (!id) return;
+    if (isRefresh) setRefreshing(true);
     try {
-      // TODO: Replace with actual API call
-      // const res = await apiFetch(`/runner/runs/${id}`, { method: 'GET' });
-      // setRun(res.data);
-      
-      // Mock data
-      setRun({
-        id: id as string,
-        order_id: 'ORD-1234567890',
-        pickup_address: '12 Adetokunbo Ademola Street, Victoria Island, Lagos',
-        dropoff_address: '45 Awolowo Road, Ikoyi, Lagos',
-        pickup_lat: 6.4281,
-        pickup_lng: 3.4219,
-        dropoff_lat: 6.4398,
-        dropoff_lng: 3.4064,
-        seller_name: 'Chike Electronics',
-        seller_phone: '+234 802 123 4567',
-        buyer_name: 'Tunde Bakare',
-        buyer_phone: '+234 803 987 6543',
-        delivery_fee: 2500,
-        status: 'picked_up',
-        assigned_at: new Date(Date.now() - 15 * 60000).toISOString(),
-        picked_up_at: new Date(Date.now() - 5 * 60000).toISOString(),
-        estimated_delivery: '10 min',
-        items: [
-          { name: 'iPhone 13 Pro Case', quantity: 1 },
-          { name: 'Screen Protector', quantity: 1 },
-        ],
-      });
-    } catch (err) {
-      showAlert({
-        title: 'Error',
-        message: 'Failed to load run details',
-        type: 'danger',
-      });
+      const { data } = await runnerApi.run(id);
+      setRun(data);
+      setError(null);
+    } catch (e: any) {
+      setError(e?.statusCode === 403 ? 'This delivery belongs to another runner.' : e?.statusCode === 404 ? 'Delivery not found.' : "Couldn't load this delivery.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [id, showAlert]);
+  }, [id]);
 
-  useEffect(() => {
-    fetchRun();
-  }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const handleUpdateStatus = async (newStatus: RunStatus) => {
-    setUpdating(true);
-    try {
-      // TODO: Replace with actual API call
-      // await apiFetch(`/runner/runs/${id}/status`, {
-      //   method: 'PATCH',
-      //   body: JSON.stringify({ status: newStatus }),
-      // });
-      
-      setRun(prev => prev ? { ...prev, status: newStatus } : null);
-      
-      if (newStatus === 'delivered') {
-        showAlert({
-          title: 'Delivery Complete!',
-          message: 'Great job! Your earnings will be available shortly.',
-          type: 'success',
-          buttons: [
-            {
-              text: 'View Earnings',
-              onPress: () => router.replace('/(tabs)/runner-earnings'),
-            },
-          ],
-        });
-      }
-    } catch (err) {
-      showAlert({
-        title: 'Error',
-        message: 'Failed to update status. Please try again.',
-        type: 'danger',
-      });
-    } finally {
-      setUpdating(false);
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/runner-active'));
+
+  const confirmPickup = async (code: string) => {
+    if (!run?.order_id) throw new Error('This delivery has no order attached.');
+    const { data } = await runnerApi.confirmPickup(run.order_id, code);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setRun(data);
+    setSheet(null);
+  };
+
+  const confirmDelivery = async (code: string) => {
+    if (!run?.order_id) throw new Error('This delivery has no order attached.');
+    await runnerApi.confirmDelivery(run.order_id, code);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setSheet(null);
+    setJustDelivered(true);
+    load();
+  };
+
+  // Heading to the buyer marks the run "on the way" (buyer sees it move)
+  const navigateToBuyer = async () => {
+    if (!run) return;
+    openDirections(run.dropoff_lat, run.dropoff_lng, run.dropoff_address);
+    if (run.status === 'picked_up') {
+      try { const { data } = await runnerApi.startDelivery(run.id); setRun(data); } catch {}
     }
   };
 
-  const getCurrentStepIndex = () => STATUS_STEPS.indexOf(run?.status || 'assigned');
-
-  if (loading) {
+  if (loading || !run) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center">
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#2D8653" />
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 36 }}>
+        <StatusBar style={T.statusBar} />
+        {loading ? <ActivityIndicator color={RUNNER_GREEN} /> : (
+          <>
+            <Ionicons name="alert-circle-outline" size={40} color={T.ink4} />
+            <Text style={{ fontSize: 15, color: T.ink, textAlign: 'center' }}>{error}</Text>
+            <TouchableOpacity onPress={goBack} style={{ backgroundColor: RUNNER_GREEN, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12 }}>
+              <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>Go back</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     );
   }
 
-  if (!run) {
+  const stepIndex = STEPS.findIndex((s) => s.key === run.status);
+  const delivered = run.status === 'delivered';
+  const atPickupStage = run.status === 'assigned';
+
+  // ── Delivered ─────────────────────────────────────────────────────────────
+  if (delivered) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center px-5">
-        <StatusBar style="light" />
-        <Ionicons name="alert-circle-outline" size={48} color="#E85555" />
-        <Text className="text-cream text-lg mt-4" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-          Run not found
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 }}>
+        <StatusBar style={T.statusBar} />
+        <Animated.View entering={justDelivered ? ZoomIn.springify().damping(10) : undefined}
+          style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: `${RUNNER_GREEN}1F`, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="checkmark-circle" size={64} color={RUNNER_GREEN} />
+        </Animated.View>
+        <Text style={{ fontSize: 24, fontFamily: 'PlusJakartaSans_800ExtraBold', color: T.ink }}>Delivered!</Text>
+        <Text style={{ fontSize: 15, color: T.ink2, textAlign: 'center' }}>
+          You earned <Text style={{ fontFamily: 'PlusJakartaSans_800ExtraBold', color: RUNNER_GREEN }}>{naira(run.delivery_fee)}</Text>
         </Text>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="bg-green-500 rounded-2xl py-3 px-6 mt-4"
-        >
-          <Text className="text-dark text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            Go Back
-          </Text>
-        </TouchableOpacity>
+        <Text style={{ fontSize: 13, color: T.ink3, textAlign: 'center', lineHeight: 19 }}>
+          It shows as pending in Earnings and becomes withdrawable once the order settles (about 2 hours).
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14, alignSelf: 'stretch' }}>
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/runner-earnings')} style={{ flex: 1, height: 52, borderRadius: 16, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 14.5, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink2 }}>Earnings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/runner-jobs')} style={{ flex: 1.3, height: 52, borderRadius: 16, backgroundColor: RUNNER_GREEN, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 14.5, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>Find next job</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
-  const currentStep = getCurrentStepIndex();
+  const Party = ({ role, name, phone, address, lat, lng, onNavigate, color }: {
+    role: string; name: string; phone: string | null; address: string; lat: number; lng: number; onNavigate: () => void; color: string;
+  }) => (
+    <View style={{ backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: `${color}1F`, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_800ExtraBold', color }}>{name.slice(0, 1).toUpperCase()}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink4, letterSpacing: 0.6 }}>{role}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>{name}</Text>
+        </View>
+        {!!phone && (
+          <TouchableOpacity onPress={() => callPhone(phone)} accessibilityLabel={`Call ${role.toLowerCase()}`}
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: T.surface2, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="call" size={17} color={RUNNER_GREEN} />
+          </TouchableOpacity>
+        )}
+      </View>
+      <Text style={{ fontSize: 13.5, color: T.ink2, marginTop: 10, lineHeight: 19 }}>{address}</Text>
+      <TouchableOpacity onPress={onNavigate} style={{ marginTop: 12, height: 44, borderRadius: 14, backgroundColor: T.surface2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        <Ionicons name="navigate" size={16} color={RUNNER_GREEN} />
+        <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>Navigate</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <View className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-green-500 opacity-[0.06]" />
-
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-5 pt-14 pb-4">
-        <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 bg-dark-2 border border-faint rounded-xl items-center justify-center">
-          <Ionicons name="chevron-back" size={20} color="#FDF6EC" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: insets.top + 6, paddingHorizontal: 8, paddingBottom: 8 }}>
+        <TouchableOpacity onPress={goBack} accessibilityLabel="Back" style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="chevron-back" size={26} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-lg" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-          Track Delivery
-        </Text>
-        <TouchableOpacity className="w-10 h-10 bg-dark-2 border border-faint rounded-xl items-center justify-center">
-          <Ionicons name="call-outline" size={18} color="#2D8653" />
-        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 18, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>Delivery</Text>
+          <Text style={{ fontSize: 12, color: T.ink3 }}>Order #{(run.order_id ?? run.id).slice(0, 8).toUpperCase()} · {naira(run.delivery_fee)}</Text>
+        </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
-        {/* Status Progress */}
-        <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-5 mb-4">
-          <View className="flex-row justify-between mb-4">
-            {STATUS_STEPS.map((step, index) => {
-              const isCompleted = index < currentStep;
-              const isCurrent = index === currentStep;
-              return (
-                <View key={step} className="flex-1 items-center">
-                  <View
-                    className={`w-8 h-8 rounded-full items-center justify-center ${
-                      isCompleted ? 'bg-green-500' : isCurrent ? 'bg-green-500/30 border-2 border-green-500' : 'bg-dark-3'
-                    }`}
-                  >
-                    {isCompleted ? (
-                      <Ionicons name="checkmark" size={16} color="#1A1208" />
-                    ) : (
-                      <View className={`w-3 h-3 rounded-full ${isCurrent ? 'bg-green-500' : 'bg-faint'}`} />
-                    )}
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 130, gap: 14 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={RUNNER_GREEN} colors={[RUNNER_GREEN]} />}
+      >
+        {/* Progress */}
+        <View style={{ flexDirection: 'row', backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 14 }}>
+          {STEPS.map((s, i) => {
+            const done = i < stepIndex;
+            const current = i === stepIndex;
+            return (
+              <View key={s.key} style={{ flex: 1, alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
+                  <View style={{ flex: 1, height: 2, backgroundColor: i === 0 ? 'transparent' : i <= stepIndex ? RUNNER_GREEN : T.line }} />
+                  <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: done ? RUNNER_GREEN : current ? `${RUNNER_GREEN}2E` : T.surface2, borderWidth: current ? 2 : 0, borderColor: RUNNER_GREEN }}>
+                    {done ? <Ionicons name="checkmark" size={14} color="#FFFFFF" /> : <Text style={{ fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold', color: current ? RUNNER_GREEN : T.ink4 }}>{i + 1}</Text>}
                   </View>
-                  <Text
-                    className={`text-xs mt-2 ${
-                      isCurrent ? 'text-green-500' : isCompleted ? 'text-muted' : 'text-faint'
-                    }`}
-                    style={{ fontFamily: 'SpaceGrotesk_500Medium' }}
-                  >
-                    {STATUS_LABELS[step]}
-                  </Text>
+                  <View style={{ flex: 1, height: 2, backgroundColor: i === STEPS.length - 1 ? 'transparent' : i < stepIndex ? RUNNER_GREEN : T.line }} />
                 </View>
-              );
-            })}
-          </View>
-          <View className="flex-row items-center justify-between pt-4 border-t border-faint">
-            <Text className="text-muted text-xs">Order #{run.order_id.slice(-6)}</Text>
-            <Text className="text-green-500 text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              ₦{run.delivery_fee.toLocaleString()}
-            </Text>
-          </View>
+                <Text style={{ fontSize: 11, marginTop: 6, fontFamily: current ? 'PlusJakartaSans_700Bold' : 'PlusJakartaSans_500Medium', color: current ? T.ink : T.ink3 }}>{s.label}</Text>
+              </View>
+            );
+          })}
         </View>
 
-        {/* Route Info */}
-        <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-          <View className="flex-row items-start gap-3">
-            <View className="mt-1">
-              <View className="w-2 h-2 bg-orange rounded-full" />
-              <View className="w-0.5 h-16 bg-faint ml-1" />
-              <View className="w-2 h-2 bg-green-500 rounded-full mt-1" />
-            </View>
-            <View className="flex-1">
-              <View className="mb-4">
-                <Text className="text-muted text-xs mb-1">FROM</Text>
-                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-                  {run.seller_name}
-                </Text>
-                <Text className="text-muted text-xs">{run.pickup_address}</Text>
-              </View>
-              <View>
-                <Text className="text-muted text-xs mb-1">TO</Text>
-                <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_500Medium' }}>
-                  {run.buyer_name}
-                </Text>
-                <Text className="text-muted text-xs">{run.dropoff_address}</Text>
-              </View>
-            </View>
-          </View>
+        {/* What to do now */}
+        <View style={{ backgroundColor: atPickupStage ? '#FFF1EA' : `${RUNNER_GREEN}14`, borderRadius: 18, padding: 14, flexDirection: 'row', gap: 10 }}>
+          <Ionicons name={atPickupStage ? 'storefront' : 'person'} size={20} color={atPickupStage ? '#C2410C' : RUNNER_GREEN} />
+          <Text style={{ flex: 1, fontSize: 13.5, lineHeight: 19, color: atPickupStage ? '#9A3412' : T.ink }}>
+            {atPickupStage
+              ? `Go to ${run.seller_name}. When you collect the order, ask the seller for their 6-digit pickup code.`
+              : `Take the order to ${run.buyer_name}. At the door, ask for their delivery code (it's in their Orders page).`}
+          </Text>
         </View>
 
-        {/* Contact Cards */}
-        <View className="mx-5 flex-row gap-3 mb-4">
-          <TouchableOpacity className="flex-1 bg-dark-2 border border-faint rounded-2xl p-4">
-            <View className="flex-row items-center gap-2 mb-2">
-              <View className="w-8 h-8 bg-orange/20 rounded-full items-center justify-center">
-                <Text className="text-orange text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                  {run.seller_name.charAt(0)}
-                </Text>
-              </View>
-              <Text className="text-cream text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                Seller
-              </Text>
-            </View>
-            <Text className="text-muted text-xs mb-2">{run.seller_name}</Text>
-            <TouchableOpacity className="flex-row items-center gap-1">
-              <Ionicons name="call-outline" size={14} color="#2D8653" />
-              <Text className="text-green-500 text-xs">Call</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-          <TouchableOpacity className="flex-1 bg-dark-2 border border-faint rounded-2xl p-4">
-            <View className="flex-row items-center gap-2 mb-2">
-              <View className="w-8 h-8 bg-green-500/20 rounded-full items-center justify-center">
-                <Text className="text-green-500 text-xs" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                  {run.buyer_name.charAt(0)}
-                </Text>
-              </View>
-              <Text className="text-cream text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                Buyer
-              </Text>
-            </View>
-            <Text className="text-muted text-xs mb-2">{run.buyer_name}</Text>
-            <TouchableOpacity className="flex-row items-center gap-1">
-              <Ionicons name="call-outline" size={14} color="#2D8653" />
-              <Text className="text-green-500 text-xs">Call</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </View>
+        {atPickupStage ? (
+          <Party role="SELLER" name={run.seller_name} phone={run.seller_phone} address={run.pickup_address} lat={run.pickup_lat} lng={run.pickup_lng} color="#E8521A"
+            onNavigate={() => openDirections(run.pickup_lat, run.pickup_lng, run.pickup_address)} />
+        ) : (
+          <Party role="BUYER" name={run.buyer_name} phone={run.buyer_phone} address={run.dropoff_address} lat={run.dropoff_lat} lng={run.dropoff_lng} color={RUNNER_GREEN}
+            onNavigate={navigateToBuyer} />
+        )}
 
         {/* Items */}
-        <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-4 mb-4">
-          <Text className="text-muted text-xs mb-3">ITEMS ({run.items.length})</Text>
-          {run.items.map((item, index) => (
-            <View key={index} className="flex-row items-center justify-between py-2 border-b border-faint last:border-0">
-              <Text className="text-cream text-sm">{item.name}</Text>
-              <Text className="text-muted text-xs">x{item.quantity}</Text>
+        <View style={{ backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 16 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink3, letterSpacing: 0.6, marginBottom: 6 }}>ITEMS</Text>
+          {(run.items ?? []).map((it, i) => (
+            <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 }}>
+              <Text style={{ flex: 1, fontSize: 14, color: T.ink }}>{it.name}</Text>
+              <Text style={{ fontSize: 13, color: T.ink3 }}>×{it.quantity}</Text>
             </View>
           ))}
+          {!!run.special_instructions && <Text style={{ fontSize: 13, color: T.goldInk, marginTop: 6 }}>📝 {run.special_instructions}</Text>}
         </View>
 
-        {/* ETA */}
-        <View className="mx-5 bg-green-500/10 border border-green-500/30 rounded-2xl p-4 mb-4">
-          <View className="flex-row items-center gap-2">
-            <Ionicons name="time-outline" size={20} color="#2D8653" />
-            <View>
-              <Text className="text-green-500 text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-                Estimated Arrival
-              </Text>
-              <Text className="text-cream text-lg" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                {run.estimated_delivery}
-              </Text>
-            </View>
+        {/* The other stop, for reference */}
+        <View style={{ backgroundColor: T.surface, borderRadius: 20, borderWidth: 1, borderColor: T.line, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+          <Ionicons name={atPickupStage ? 'flag-outline' : 'storefront-outline'} size={18} color={T.ink3} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink4, letterSpacing: 0.6 }}>{atPickupStage ? `THEN DELIVER TO ${run.buyer_name.toUpperCase()}` : `PICKED UP FROM ${run.seller_name.toUpperCase()}`}</Text>
+            <Text numberOfLines={2} style={{ fontSize: 13, color: T.ink2, marginTop: 2 }}>{atPickupStage ? run.dropoff_address : run.pickup_address}</Text>
           </View>
         </View>
       </ScrollView>
 
-      {/* Bottom Action */}
-      {run.status !== 'delivered' && (
-        <View className="absolute bottom-0 left-0 right-0 bg-dark border-t border-faint p-5">
-          <TouchableOpacity
-            onPress={() => {
-              const nextStatus = STATUS_STEPS[currentStep + 1];
-              handleUpdateStatus(nextStatus);
-            }}
-            disabled={updating}
-            className="bg-green-500 rounded-2xl py-3.5 items-center"
-          >
-            {updating ? (
-              <ActivityIndicator size="small" color="#1A1208" />
-            ) : (
-              <Text className="text-dark text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-                {run.status === 'assigned' ? 'Confirm Pickup' : 'Confirm Delivery'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Main action */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 12, backgroundColor: T.canvas, borderTopWidth: 1, borderTopColor: T.line }}>
+        <TouchableOpacity
+          onPress={() => setSheet(atPickupStage ? 'pickup' : 'delivery')}
+          style={{ height: 56, borderRadius: 18, backgroundColor: atPickupStage ? '#E8521A' : RUNNER_GREEN, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+        >
+          <Ionicons name="keypad" size={19} color="#FFFFFF" />
+          <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_800ExtraBold', color: '#FFFFFF' }}>
+            {atPickupStage ? 'Enter pickup code' : 'Enter delivery code'}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {alertElement}
+      <CodeSheet
+        visible={sheet === 'pickup'}
+        title="Seller's pickup code"
+        subtitle={`Ask ${run.seller_name} for the 6-digit code shown on their order.`}
+        length={6}
+        icon="storefront"
+        onSubmit={confirmPickup}
+        onClose={() => setSheet(null)}
+      />
+      <CodeSheet
+        visible={sheet === 'delivery'}
+        title="Buyer's delivery code"
+        subtitle={`Ask ${run.buyer_name} for the 4-digit delivery code in their Orders page. Only enter it once they have the order.`}
+        length={4}
+        icon="person"
+        onSubmit={confirmDelivery}
+        onClose={() => setSheet(null)}
+      />
     </View>
   );
 }

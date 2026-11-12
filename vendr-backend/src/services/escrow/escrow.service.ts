@@ -84,18 +84,21 @@ export async function releaseEscrow(orderId: string) {
     },
   });
 
-  const vendorWallet = await prisma.wallet.findUnique({
+  // Upsert: vendors without a wallet row used to be marked "paid" while receiving nothing
+  await prisma.wallet.upsert({
     where: { user_id: order.vendor.user_id },
+    create: { user_id: order.vendor.user_id, available_balance: escrowHold.amount, frozen_balance: 0 },
+    update: { available_balance: { increment: escrowHold.amount } },
   });
 
-  if (vendorWallet) {
-    await prisma.wallet.update({
-      where: { user_id: order.vendor.user_id },
-      data: {
-        available_balance: { increment: escrowHold.amount },
-      },
-    });
-  }
+  // The runner's delivery fee becomes withdrawable once the order is settled
+  await prisma.runnerEarning.updateMany({
+    where: {
+      status: 'pending',
+      run_id: { in: (await prisma.deliveryRun.findMany({ where: { job: { order_id: orderId }, status: 'delivered' }, select: { id: true } })).map((r) => r.id) },
+    },
+    data: { status: 'available' },
+  });
 
   await prisma.order.update({
     where: { id: orderId },
@@ -216,18 +219,11 @@ export async function refundEscrow(orderId: string, reason?: string) {
     },
   });
 
-  const buyerWallet = await prisma.wallet.findUnique({
+  await prisma.wallet.upsert({
     where: { user_id: order.buyer_id },
+    create: { user_id: order.buyer_id, available_balance: escrowHold.amount, frozen_balance: 0 },
+    update: { available_balance: { increment: escrowHold.amount } },
   });
-
-  if (buyerWallet) {
-    await prisma.wallet.update({
-      where: { user_id: order.buyer_id },
-      data: {
-        available_balance: { increment: escrowHold.amount },
-      },
-    });
-  }
 
   await prisma.order.update({
     where: { id: orderId },

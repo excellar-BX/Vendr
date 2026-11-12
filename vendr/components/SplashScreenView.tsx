@@ -26,7 +26,7 @@ export default function SplashScreenView() {
   }, []);
 
   return (
-    <View className="flex-1 bg-dark items-center justify-center">
+    <View className="flex-1 bg-canvas items-center justify-center">
       {/* Glow */}
       <View
         className="absolute rounded-full bg-orange opacity-[0.06]"
@@ -45,14 +45,14 @@ export default function SplashScreenView() {
 />
 
         {/* Wordmark */}
-        <Text style={{fontWeight: '400', fontFamily: 'SpaceGrotesk_600SemiBold',}} className="text-cream text-4xl">
+        <Text style={{fontFamily: 'PlusJakartaSans_800ExtraBold', letterSpacing: -1,}} className="text-ink text-4xl">
           vendr<Text className="text-orange">.</Text>
         </Text>
       </Animated.View>
 
       {/* Tagline */}
       <Animated.Text
-        className="text-subtle text-xs tracking-[0.2em] uppercase mt-6"
+        className="text-ink-3 text-xs tracking-[0.2em] uppercase mt-6"
         style={{ opacity: taglineOpacity, transform: [{ translateY: taglineY }], fontWeight: '400' }}
       >
         Where Local Thrives

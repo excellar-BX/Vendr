@@ -11,6 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Text } from '../../components/ui/StyledText';
 import { apiFetch } from '../../lib/api';
 import { useVendrAlert } from '../../components/ui/VendrAlert';
+import { T, useTheme } from '../../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_H = 160;
@@ -117,6 +118,7 @@ async function pickImage() {
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function StoreDashboardScreen() {
+  useTheme();
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
   const { alert, alertElement } = useVendrAlert();
 
@@ -424,12 +426,12 @@ export default function StoreDashboardScreen() {
   };
 
   const inputStyle = {
-    fontFamily: 'SpaceGrotesk_400Regular' as const,
-    color: '#FDF6EC',
+    fontFamily: 'PlusJakartaSans_400Regular' as const,
+    color: T.ink,
     fontSize: 15,
-    backgroundColor: '#1A1208',
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: '#3D3026',
+    borderColor: T.lineStrong,
     borderRadius: 16,
     paddingHorizontal: 16,
     height: 56,
@@ -437,31 +439,31 @@ export default function StoreDashboardScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center">
+      <View className="flex-1 bg-canvas items-center justify-center">
         <ActivityIndicator size="large" color="#E8521A" />
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-dark">
+    <View className="flex-1 bg-canvas">
       {alertElement}
-      <StatusBar style="light" />
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
         <View className="flex-1">
-          <Text className="text-cream text-xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{store?.shop_name}</Text>
-          <Text className="text-muted text-xs">{store?.category}</Text>
+          <Text className="text-ink text-xl" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>{store?.shop_name}</Text>
+          <Text className="text-ink-2 text-xs">{store?.category}</Text>
         </View>
         <TouchableOpacity
           onPress={() => router.push({ pathname: '/vendor/[id]', params: { id: storeId } })}
-          className="w-9 h-9 bg-dark-2 border border-faint rounded-xl items-center justify-center"
+          className="w-9 h-9 bg-surface border border-line rounded-xl items-center justify-center"
         >
-          <Ionicons name="eye-outline" size={18} color="#9A8570" />
+          <Ionicons name="eye-outline" size={18} color={T.ink2} />
         </TouchableOpacity>
       </View>
 
@@ -473,16 +475,16 @@ export default function StoreDashboardScreen() {
             {store?.banner_url ? (
               <Image source={{ uri: store.banner_url }} style={{ width: '100%', height: BANNER_H }} resizeMode="cover" />
             ) : (
-              <View style={{ width: '100%', height: BANNER_H, backgroundColor: '#1A1208', alignItems: 'center', justifyContent: 'center', gap: 8, borderBottomWidth: 1, borderColor: '#2A1F14' }}>
-                <Ionicons name="image-outline" size={32} color="#3D3026" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#6B5E50' }}>Tap to add banner</Text>
+              <View style={{ width: '100%', height: BANNER_H, backgroundColor: T.surface, alignItems: 'center', justifyContent: 'center', gap: 8, borderBottomWidth: 1, borderColor: T.line }}>
+                <Ionicons name="image-outline" size={32} color={T.ink4} />
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink3 }}>Tap to add banner</Text>
               </View>
             )}
             <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               {uploadingBanner
                 ? <ActivityIndicator size="small" color="white" />
                 : <Ionicons name="camera" size={13} color="white" />}
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: 'white' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11, color: 'white' }}>
                 {uploadingBanner ? 'Uploading…' : 'Edit banner'}
               </Text>
             </View>
@@ -490,16 +492,16 @@ export default function StoreDashboardScreen() {
 
           <View style={{ position: 'absolute', bottom: -44, left: 20 }}>
             <TouchableOpacity activeOpacity={0.85} onPress={handleLogoUpload}>
-              <View style={{ width: 80, height: 80, borderRadius: 20, borderWidth: 3, borderColor: '#0F0A06', backgroundColor: '#1A1208', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 }}>
+              <View style={{ width: 80, height: 80, borderRadius: 20, borderWidth: 3, borderColor: T.canvas, backgroundColor: T.surface, overflow: 'hidden', shadowColor: '#1C1917', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.16, shadowRadius: 8, elevation: 8 }}>
                 {store?.logo_url ? (
                   <Image source={{ uri: store.logo_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                 ) : (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="storefront-outline" size={28} color="#3D3026" />
+                    <Ionicons name="storefront-outline" size={28} color={T.ink4} />
                   </View>
                 )}
               </View>
-              <View style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: 13, backgroundColor: '#E8521A', borderWidth: 2, borderColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: 13, backgroundColor: '#E8521A', borderWidth: 2, borderColor: T.canvas, alignItems: 'center', justifyContent: 'center' }}>
                 {uploadingLogo
                   ? <ActivityIndicator size="small" color="white" />
                   : <Ionicons name="camera" size={12} color="white" />}
@@ -511,18 +513,18 @@ export default function StoreDashboardScreen() {
         <View style={{ paddingHorizontal: 20, gap: 20 }}>
 
           {/* Store status card */}
-          <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 16, gap: 14 }}>
+          <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 16, gap: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#FDF6EC' }}>Store Status</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570', marginTop: 2 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: T.ink }}>Store Status</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink2, marginTop: 2 }}>
                   {store?.is_active ? 'Customers can find and message you' : 'Your store is hidden from search'}
                 </Text>
               </View>
-              <Switch value={store?.is_active ?? false} onValueChange={toggleStoreActive} trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white" />
+              <Switch value={store?.is_active ?? false} onValueChange={toggleStoreActive} trackColor={{ false: T.ink4, true: '#E8521A' }} thumbColor="white" />
             </View>
 
-            <View style={{ height: 1, backgroundColor: '#2A1F14' }} />
+            <View style={{ height: 1, backgroundColor: T.line }} />
 
             <TouchableOpacity onPress={() => setShowCategoryPicker(true)} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -530,49 +532,49 @@ export default function StoreDashboardScreen() {
                   <Ionicons name="pricetag-outline" size={16} color="#E8521A" />
                 </View>
                 <View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>Category</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC', marginTop: 1 }}>{store?.category}</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>Category</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink, marginTop: 1 }}>{store?.category}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#6B5E50" />
+              <Ionicons name="chevron-forward" size={16} color={T.ink3} />
             </TouchableOpacity>
 
             {store?.is_verified && (
               <>
-                <View style={{ height: 1, backgroundColor: '#2A1F14' }} />
+                <View style={{ height: 1, backgroundColor: T.line }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="shield-checkmark" size={16} color="#2D8653" />
-                  <Text style={{ fontSize: 12, fontFamily: 'SpaceGrotesk_500Medium', color: '#2D8653' }}>Verified store</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_500Medium', color: T.successInk }}>Verified store</Text>
                 </View>
               </>
             )}
             {store && store.review_count > 0 && (
               <>
-                <View style={{ height: 1, backgroundColor: '#2A1F14' }} />
+                <View style={{ height: 1, backgroundColor: T.line }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="star" size={14} color="#F5A623" />
-                  <Text style={{ fontSize: 13, fontFamily: 'SpaceGrotesk_600SemiBold', color: '#F5A623' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.goldInk }}>
                     {store.rating?.toFixed(1)} · {store.review_count} review{store.review_count !== 1 ? 's' : ''}
                   </Text>
                 </View>
               </>
             )}
 
-            <View style={{ height: 1, backgroundColor: '#2A1F14' }} />
+            <View style={{ height: 1, backgroundColor: T.line }} />
 
             <TouchableOpacity onPress={() => { setDeleteConfirmText(''); setShowDeleteStore(true); }} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(232,85,85,0.12)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="trash-outline" size={16} color="#E85555" />
+                <Ionicons name="trash-outline" size={16} color="#DC2626" />
               </View>
               <View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#E85555' }}>Delete Store</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50', marginTop: 1 }}>Permanently remove this store</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.dangerInk }}>Delete Store</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3, marginTop: 1 }}>Permanently remove this store</Text>
               </View>
             </TouchableOpacity>
           </View>
 
           {/* ── Tabs ── */}
-          <View style={{ flexDirection: 'row', backgroundColor: '#1A1208', borderRadius: 16, padding: 4, borderWidth: 1, borderColor: '#2A1F14' }}>
+          <View style={{ flexDirection: 'row', backgroundColor: T.surface, borderRadius: 16, padding: 4, borderWidth: 1, borderColor: T.line }}>
             {TABS.map(tab => (
               <TouchableOpacity
                 key={tab}
@@ -584,8 +586,8 @@ export default function StoreDashboardScreen() {
                 }}
               >
                 <Text style={{
-                  fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13,
-                  color: activeTab === tab ? 'white' : '#6B5E50',
+                  fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13,
+                  color: activeTab === tab ? 'white' : T.ink3,
                 }}>
                   {tab}{tab === 'Products' ? ` (${products.length})` : ` (${reels.length})`}
                 </Text>
@@ -598,45 +600,45 @@ export default function StoreDashboardScreen() {
             <View style={{ gap: 12 }}>
               <TouchableOpacity onPress={openAddProduct} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#E8521A', borderRadius: 14, paddingVertical: 13 }}>
                 <Ionicons name="add" size={18} color="white" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: 'white', fontSize: 14 }}>Add Product</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', color: 'white', fontSize: 14 }}>Add Product</Text>
               </TouchableOpacity>
 
               {products.length === 0 ? (
-                <View className="bg-dark-2 border border-faint border-dashed rounded-2xl p-8 items-center gap-3">
-                  <Ionicons name="cube-outline" size={32} color="#3D3026" />
-                  <Text className="text-muted text-sm text-center">No products yet. Add your first product to start selling.</Text>
+                <View className="bg-surface border border-line border-dashed rounded-2xl p-8 items-center gap-3">
+                  <Ionicons name="cube-outline" size={32} color={T.ink4} />
+                  <Text className="text-ink-2 text-sm text-center">No products yet. Add your first product to start selling.</Text>
                 </View>
               ) : (
                 products.map(p => (
-                  <View key={p.id} className="bg-dark-2 border border-faint rounded-2xl overflow-hidden">
+                  <View key={p.id} className="bg-surface border border-line rounded-2xl overflow-hidden">
                     {p.image_url ? (
                       <Image source={{ uri: p.image_url }} style={{ width: '100%', height: 120 }} resizeMode="cover" />
                     ) : (
-                      <View style={{ width: '100%', height: 72, backgroundColor: '#1A1208', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="image-outline" size={24} color="#3D3026" />
+                      <View style={{ width: '100%', height: 72, backgroundColor: T.surface, alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="image-outline" size={24} color={T.ink4} />
                       </View>
                     )}
                     <View className="p-4 gap-2">
                       <View className="flex-row items-start gap-3">
                         <View className="flex-1">
-                          <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>{p.name}</Text>
-                          {p.description ? <Text className="text-muted text-xs mt-0.5" numberOfLines={2}>{p.description}</Text> : null}
-                          <Text style={{ fontSize: 14, fontFamily: 'SpaceGrotesk_700Bold', color: '#E8521A', marginTop: 4 }}>{formatPrice(p.price)}</Text>
+                          <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>{p.name}</Text>
+                          {p.description ? <Text className="text-ink-2 text-xs mt-0.5" numberOfLines={2}>{p.description}</Text> : null}
+                          <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: T.primaryInk, marginTop: 4 }}>{formatPrice(p.price)}</Text>
                         </View>
                       </View>
-                      <View className="flex-row items-center justify-between pt-2 border-t border-faint">
+                      <View className="flex-row items-center justify-between pt-2 border-t border-line">
                         <View className="flex-row items-center gap-2">
-                          <Switch value={p.is_available} onValueChange={() => toggleProductAvailable(p)} trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white" style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }} />
-                          <Text style={{ fontSize: 12, fontFamily: 'SpaceGrotesk_500Medium', color: p.is_available ? '#FDF6EC' : '#6B5E50' }}>
+                          <Switch value={p.is_available} onValueChange={() => toggleProductAvailable(p)} trackColor={{ false: T.ink4, true: '#E8521A' }} thumbColor="white" style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }} />
+                          <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_500Medium', color: p.is_available ? T.ink : T.ink3 }}>
                             {p.is_available ? 'Available' : 'Unavailable'}
                           </Text>
                         </View>
                         <View className="flex-row gap-2">
-                          <TouchableOpacity onPress={() => openEditProduct(p)} className="w-8 h-8 bg-dark-3 border border-faint rounded-xl items-center justify-center">
-                            <Ionicons name="pencil-outline" size={14} color="#9A8570" />
+                          <TouchableOpacity onPress={() => openEditProduct(p)} className="w-8 h-8 bg-surface-2 border border-line rounded-xl items-center justify-center">
+                            <Ionicons name="pencil-outline" size={14} color={T.ink2} />
                           </TouchableOpacity>
-                          <TouchableOpacity onPress={() => deleteProduct(p)} className="w-8 h-8 bg-dark-3 border border-faint rounded-xl items-center justify-center">
-                            <Ionicons name="trash-outline" size={14} color="#E85555" />
+                          <TouchableOpacity onPress={() => deleteProduct(p)} className="w-8 h-8 bg-surface-2 border border-line rounded-xl items-center justify-center">
+                            <Ionicons name="trash-outline" size={14} color="#DC2626" />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -666,21 +668,21 @@ export default function StoreDashboardScreen() {
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#E8521A', borderRadius: 14, paddingVertical: 13 }}
               >
                 <Ionicons name="add" size={18} color="white" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', color: 'white', fontSize: 14 }}>Upload Reel</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', color: 'white', fontSize: 14 }}>Upload Reel</Text>
               </TouchableOpacity>
 
               {reels.length === 0 ? (
-                <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderStyle: 'dashed', borderRadius: 20, padding: 40, alignItems: 'center', gap: 12 }}>
-                  <Ionicons name="videocam-outline" size={36} color="#3D3026" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#6B5E50' }}>No reels yet</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#3D3026', textAlign: 'center' }}>
+                <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderStyle: 'dashed', borderRadius: 20, padding: 40, alignItems: 'center', gap: 12 }}>
+                  <Ionicons name="videocam-outline" size={36} color={T.ink4} />
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink3 }}>No reels yet</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, textAlign: 'center' }}>
                     Upload short videos to showcase your products and attract more customers.
                   </Text>
                 </View>
               ) : (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
                   {reels.map((reel, idx) => (
-                    <View key={reel.id} style={{ width: REEL_SIZE, height: REEL_SIZE * 1.5, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1A1208' }}>
+                    <View key={reel.id} style={{ width: REEL_SIZE, height: REEL_SIZE * 1.5, borderRadius: 14, overflow: 'hidden', backgroundColor: T.surface }}>
                       <TouchableOpacity
                         activeOpacity={0.85}
                         onPress={() => router.push({
@@ -693,13 +695,13 @@ export default function StoreDashboardScreen() {
                           <Image source={{ uri: reel.thumbnail_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                         ) : (
                           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                            <Ionicons name="play-circle-outline" size={28} color="#3D3026" />
+                            <Ionicons name="play-circle-outline" size={28} color={T.ink4} />
                           </View>
                         )}
                         {/* View count */}
                         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 7, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                           <Ionicons name="eye-outline" size={10} color="white" />
-                          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: 'white' }}>
+                          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 10, color: 'white' }}>
                             {reel.view_count > 999 ? `${(reel.view_count / 1000).toFixed(1)}k` : reel.view_count}
                           </Text>
                         </View>
@@ -712,7 +714,7 @@ export default function StoreDashboardScreen() {
                       >
                         {deletingReelId === reel.id
                           ? <ActivityIndicator size="small" color="white" />
-                          : <Ionicons name="trash-outline" size={14} color="#FF6B6B" />}
+                          : <Ionicons name="trash-outline" size={14} color="#DC2626" />}
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -726,16 +728,16 @@ export default function StoreDashboardScreen() {
       {/* ── Add / Edit Product Modal ── */}
       <Modal visible={showAddProduct} transparent animationType="slide">
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowAddProduct(false)} />
-        <View style={{ backgroundColor: '#1A1208', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: '#2A1F14', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 36 }}>
-          <View style={{ width: 40, height: 4, backgroundColor: '#3D3026', borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 20 }}>
+        <View style={{ backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: T.line, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 36 }}>
+          <View style={{ width: 40, height: 4, backgroundColor: T.line, borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginBottom: 20 }}>
             {editingProduct ? 'Edit Product' : 'Add Product'}
           </Text>
 
           <TouchableOpacity
             onPress={handlePickProductImage}
             activeOpacity={0.85}
-            style={{ width: '100%', height: 140, borderRadius: 18, overflow: 'hidden', backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#3D3026', borderStyle: (pImageUri || pImageUrl) ? 'solid' : 'dashed', marginBottom: 16, alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: '100%', height: 140, borderRadius: 18, overflow: 'hidden', backgroundColor: T.canvas, borderWidth: 1, borderColor: T.lineStrong, borderStyle: (pImageUri || pImageUrl) ? 'solid' : 'dashed', marginBottom: 16, alignItems: 'center', justifyContent: 'center' }}
           >
             {pImageUri ? (
               <Image source={{ uri: pImageUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
@@ -746,36 +748,36 @@ export default function StoreDashboardScreen() {
                 <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(232,82,26,0.12)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="camera-outline" size={24} color="#E8521A" />
                 </View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#6B5E50' }}>Add product photo</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#3D3026' }}>Tap to choose from gallery</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink3 }}>Add product photo</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>Tap to choose from gallery</Text>
               </View>
             )}
             {(pImageUri || pImageUrl) && (
               <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <Ionicons name="camera" size={12} color="white" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: 'white' }}>Change photo</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11, color: 'white' }}>Change photo</Text>
               </View>
             )}
           </TouchableOpacity>
 
           <View style={{ gap: 12 }}>
-            <TextInput value={pName} onChangeText={setPName} placeholder="Product name" placeholderTextColor="#6B5E50" style={inputStyle} />
-            <TextInput value={pDesc} onChangeText={setPDesc} placeholder="Description (optional)" placeholderTextColor="#6B5E50" multiline style={[inputStyle, { height: 80, paddingTop: 14, textAlignVertical: 'top' }]} />
-            <TextInput value={pPrice} onChangeText={setPPrice} placeholder="Price (₦)" placeholderTextColor="#6B5E50" keyboardType="numeric" style={inputStyle} />
+            <TextInput value={pName} onChangeText={setPName} placeholder="Product name" placeholderTextColor={T.ink3} style={inputStyle} />
+            <TextInput value={pDesc} onChangeText={setPDesc} placeholder="Description (optional)" placeholderTextColor={T.ink3} multiline style={[inputStyle, { height: 80, paddingTop: 14, textAlignVertical: 'top' }]} />
+            <TextInput value={pPrice} onChangeText={setPPrice} placeholder="Price (₦)" placeholderTextColor={T.ink3} keyboardType="numeric" style={inputStyle} />
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>Available now</Text>
-              <Switch value={pAvailable} onValueChange={setPAvailable} trackColor={{ false: '#3D3026', true: '#E8521A' }} thumbColor="white" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: T.canvas, borderWidth: 1, borderColor: T.line, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14, color: T.ink }}>Available now</Text>
+              <Switch value={pAvailable} onValueChange={setPAvailable} trackColor={{ false: T.ink4, true: '#E8521A' }} thumbColor="white" />
             </View>
 
             <TouchableOpacity
               onPress={saveProduct}
               disabled={saving || uploadingProductImg}
-              style={{ backgroundColor: '#E8521A', borderRadius: 16, height: 56, alignItems: 'center', justifyContent: 'center', marginTop: 4, shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 }}
+              style={{ backgroundColor: '#E8521A', borderRadius: 16, height: 56, alignItems: 'center', justifyContent: 'center', marginTop: 4, shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 }}
             >
               {(saving || uploadingProductImg)
                 ? <ActivityIndicator size="small" color="white" />
-                : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: 'white', fontSize: 16 }}>{editingProduct ? 'Save Changes' : 'Add Product'}</Text>
+                : <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', color: 'white', fontSize: 16 }}>{editingProduct ? 'Save Changes' : 'Add Product'}</Text>
               }
             </TouchableOpacity>
           </View>
@@ -785,9 +787,9 @@ export default function StoreDashboardScreen() {
       {/* ── Category Picker Modal ── */}
       <Modal visible={showCategoryPicker} transparent animationType="slide">
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowCategoryPicker(false)} />
-        <View style={{ backgroundColor: '#1A1208', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: '#2A1F14', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 36 }}>
-          <View style={{ width: 40, height: 4, backgroundColor: '#3D3026', borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 20 }}>Change Category</Text>
+        <View style={{ backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: T.line, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 36 }}>
+          <View style={{ width: 40, height: 4, backgroundColor: T.line, borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginBottom: 20 }}>Change Category</Text>
           <View style={{ gap: 10 }}>
             {CATEGORIES.map(cat => {
               const active = store?.category === cat.label;
@@ -796,12 +798,12 @@ export default function StoreDashboardScreen() {
                   key={cat.label}
                   onPress={() => handleChangeCategory(cat.label)}
                   activeOpacity={0.8}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: active ? 'rgba(232,82,26,0.12)' : '#0F0A06', borderWidth: 1, borderColor: active ? '#E8521A' : '#2A1F14', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: active ? 'rgba(232,82,26,0.12)' : T.canvas, borderWidth: 1, borderColor: active ? '#E8521A' : T.line, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14 }}
                 >
-                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: active ? 'rgba(232,82,26,0.2)' : '#1A1208', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name={cat.icon} size={18} color={active ? '#E8521A' : '#9A8570'} />
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: active ? 'rgba(232,82,26,0.2)' : T.surface, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name={cat.icon} size={18} color={active ? '#E8521A' : T.ink2} />
                   </View>
-                  <Text style={{ flex: 1, fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: active ? '#E8521A' : '#FDF6EC' }}>{cat.label}</Text>
+                  <Text style={{ flex: 1, fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: active ? T.primaryInk : T.ink }}>{cat.label}</Text>
                   {savingCategory && active && <ActivityIndicator size="small" color="#E8521A" />}
                   {active && !savingCategory && <Ionicons name="checkmark-circle" size={20} color="#E8521A" />}
                 </TouchableOpacity>
@@ -814,26 +816,26 @@ export default function StoreDashboardScreen() {
       {/* ── Delete Store Modal ── */}
       <Modal visible={showDeleteStore} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
-          <View style={{ backgroundColor: '#1A1208', borderRadius: 24, borderWidth: 1, borderColor: '#3D3026', padding: 24 }}>
+          <View style={{ backgroundColor: T.surface, borderRadius: 24, borderWidth: 1, borderColor: T.lineStrong, padding: 24 }}>
             <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(232,85,85,0.12)', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 16 }}>
-              <Ionicons name="trash" size={26} color="#E85555" />
+              <Ionicons name="trash" size={26} color="#DC2626" />
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', textAlign: 'center', marginBottom: 8 }}>Delete Store?</Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
-              This will permanently delete <Text style={{ color: '#FDF6EC', fontFamily: 'SpaceGrotesk_600SemiBold' }}>{store?.shop_name}</Text>, all its products, and conversation history.
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, textAlign: 'center', marginBottom: 8 }}>Delete Store?</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+              This will permanently delete <Text style={{ color: T.ink, fontFamily: 'PlusJakartaSans_600SemiBold' }}>{store?.shop_name}</Text>, all its products, and conversation history.
             </Text>
 
             <View style={{ marginBottom: 20 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#6B5E50', marginBottom: 8 }}>
-                Type <Text style={{ color: '#FDF6EC' }}>{store?.shop_name}</Text> to confirm:
+              <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: T.ink3, marginBottom: 8 }}>
+                Type <Text style={{ color: T.ink }}>{store?.shop_name}</Text> to confirm:
               </Text>
               <TextInput
                 value={deleteConfirmText}
                 onChangeText={setDeleteConfirmText}
                 placeholder={store?.shop_name}
-                placeholderTextColor="#3D3026"
+                placeholderTextColor={T.ink4}
                 autoCapitalize="none"
-                style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#0F0A06', borderWidth: 1, borderColor: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? '#E85555' : '#3D3026', borderRadius: 14, paddingHorizontal: 16, height: 52 }}
+                style={{ fontFamily: 'PlusJakartaSans_400Regular', color: T.ink, fontSize: 15, backgroundColor: T.canvas, borderWidth: 1, borderColor: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? '#DC2626' : T.lineStrong, borderRadius: 14, paddingHorizontal: 16, height: 52 }}
               />
             </View>
 
@@ -841,15 +843,15 @@ export default function StoreDashboardScreen() {
               <TouchableOpacity
                 onPress={handleDeleteStore}
                 disabled={deletingStore || deleteConfirmText.trim().toLowerCase() !== store?.shop_name.toLowerCase()}
-                style={{ backgroundColor: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? '#E85555' : '#2A1F14', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' }}
+                style={{ backgroundColor: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? '#DC2626' : T.line, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' }}
               >
                 {deletingStore
                   ? <ActivityIndicator size="small" color="white" />
-                  : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? 'white' : '#6B5E50' }}>Delete Store</Text>
+                  : <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: deleteConfirmText.trim().toLowerCase() === store?.shop_name.toLowerCase() ? 'white' : T.ink3 }}>Delete Store</Text>
                 }
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowDeleteStore(false)} style={{ backgroundColor: '#0F0A06', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2A1F14' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Cancel</Text>
+              <TouchableOpacity onPress={() => setShowDeleteStore(false)} style={{ backgroundColor: T.canvas, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: T.line }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink2 }}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>

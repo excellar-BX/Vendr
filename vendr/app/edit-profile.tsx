@@ -13,8 +13,10 @@ import { useVendrAlert } from '../components/ui/VendrAlert';
 import * as ImagePicker from 'expo-image-picker';
 import { apiFetch } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { T, useTheme } from '../constants/theme';
 
 export default function EditProfileScreen() {
+  useTheme();
   const { user, setUser } = useAuthStore();
   const { alert, alertElement } = useVendrAlert();
 
@@ -141,20 +143,20 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
       {alertElement}
 
       {/* Header */}
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-xl flex-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Edit Profile</Text>
+        <Text className="text-ink text-xl flex-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>Edit Profile</Text>
         <TouchableOpacity onPress={handleSave} disabled={loading}>
           {loading
             ? <ActivityIndicator size="small" color="#E8521A" />
-            : <Text className="text-orange text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Save</Text>
+            : <Text className="text-orange-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Save</Text>
           }
         </TouchableOpacity>
       </View>
@@ -172,46 +174,46 @@ export default function EditProfileScreen() {
               <Image source={{ uri: avatarUri }} style={{ width: 96, height: 96, borderRadius: 24 }} resizeMode="cover" />
             ) : (
               <View className="w-24 h-24 rounded-3xl bg-orange/20 border border-orange/30 items-center justify-center">
-                <Text className="text-orange text-3xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{initials}</Text>
+                <Text className="text-orange-ink text-3xl" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>{initials}</Text>
               </View>
             )}
             <View style={{
               position: 'absolute', bottom: -6, right: -6,
               width: 28, height: 28, borderRadius: 14,
               backgroundColor: '#E8521A', alignItems: 'center', justifyContent: 'center',
-              borderWidth: 2, borderColor: '#0F0A06',
+              borderWidth: 2, borderColor: T.canvas,
             }}>
               <Ionicons name="camera" size={13} color="white" />
             </View>
           </TouchableOpacity>
-          <Text className="text-muted text-xs">Tap to change photo</Text>
+          <Text className="text-ink-2 text-xs">Tap to change photo</Text>
         </View>
 
         {/* Fields */}
         <View className="gap-4">
           <View>
-            <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Full Name</Text>
+            <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Full Name</Text>
             <TextInput
               value={name} onChangeText={setName}
-              placeholder="Your full name" placeholderTextColor="#6B5E50"
+              placeholder="Your full name" placeholderTextColor={T.ink3}
               autoCapitalize="words"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#3D3026', borderRadius: 16, paddingHorizontal: 16, height: 56 }}
+              style={{ fontFamily: 'PlusJakartaSans_400Regular', color: T.ink, fontSize: 15, backgroundColor: T.surface, borderWidth: 1, borderColor: T.lineStrong, borderRadius: 16, paddingHorizontal: 16, height: 56 }}
             />
           </View>
           <View>
-            <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Email</Text>
-            <View className="bg-dark-2 border border-faint rounded-2xl px-4 h-14 justify-center opacity-50">
-              <Text className="text-muted text-base">{user?.email}</Text>
+            <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Email</Text>
+            <View className="bg-surface border border-line rounded-2xl px-4 h-14 justify-center opacity-50">
+              <Text className="text-ink-2 text-base">{user?.email}</Text>
             </View>
-            <Text className="text-muted text-xs mt-1.5 px-1">Email cannot be changed</Text>
+            <Text className="text-ink-2 text-xs mt-1.5 px-1">Email cannot be changed</Text>
           </View>
           <View>
-            <Text className="text-muted text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>Phone Number</Text>
+            <Text className="text-ink-2 text-xs tracking-widest uppercase mb-2" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>Phone Number</Text>
             <TextInput
               value={phone} onChangeText={setPhone}
-              placeholder="+234 800 000 0000" placeholderTextColor="#6B5E50"
+              placeholder="+234 800 000 0000" placeholderTextColor={T.ink3}
               keyboardType="phone-pad"
-              style={{ fontFamily: 'SpaceGrotesk_400Regular', color: '#FDF6EC', fontSize: 15, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#3D3026', borderRadius: 16, paddingHorizontal: 16, height: 56 }}
+              style={{ fontFamily: 'PlusJakartaSans_400Regular', color: T.ink, fontSize: 15, backgroundColor: T.surface, borderWidth: 1, borderColor: T.lineStrong, borderRadius: 16, paddingHorizontal: 16, height: 56 }}
             />
           </View>
         </View>

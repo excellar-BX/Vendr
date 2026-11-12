@@ -1,49 +1,185 @@
+//vendr-backend/src/services/chat/chat.service.ts
 import prisma from '../../lib/prisma'
 import * as WalletService from '../wallet/wallet.service'
 import * as VendorAnalyticsService from '../vendor-analytics/vendor-analytics.service'
 import type {
-  CreateConversationInput,
   ConversationOutput,
   SendMessageInput,
   MessageOutput,
   ReactionOutput,
-  ConversationListItem,
-  EnrichedConversation,
-  AddReactionInput,
 } from './chat.schema'
 import crypto from 'crypto'
 
-// Socket.io import for real-time events
-const { getSocketIO } = require('../../lib/socket')
+// Socket helpers are required lazily to avoid a circular import at boot
+// (lib/socket is initialised after routes are registered).
+function realtime(): typeof import('../../lib/socket') {
+  return require('../../lib/socket')
+}
+
+function emit(userIds: Array<string | null | undefined>, event: string, payload: unknown) {
+  try {
+    realtime().emitToUsers(userIds, event, payload)
+  } catch (err) {
+    console.error(`[Chat] Socket emit error for ${event}:`, err)
+  }
+}
 
 // Notification service
 const { createNotification } = require('../notification/notification.service')
 
 // Haversine formula to calculate distance between two coordinates (in km)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const R = 6371 // Earth's radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180)
+  const dLon = (lon2 - lon1) * (Math.PI / 180)
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) *
     Math.cos(lat2 * (Math.PI / 180)) *
     Math.sin(dLon / 2) *
-    Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+    Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+// ─── Serializers ────────────────────────────────────────────────────────────
+
+const replyToSelect = {
+  select: {
+    id: true,
+    sender_id: true,
+    sender: { select: { full_name: true } },
+    content: true,
+    image_url: true,
+    type: true,
+    deleted: true,
+  },
+} as const
+
+const reactionsSelect = {
+  select: {
+    id: true,
+    message_id: true,
+    user_id: true,
+    emoji: true,
+    created_at: true,
+  },
+} as const
+
+const messageInclude = {
+  reply_to: replyToSelect,
+  reactions: reactionsSelect,
+} as const
+
+function serializePaymentRequest(pr: any) {
+  if (!pr) return null
+  return {
+    id: pr.id,
+    vendor_id: pr.vendor_id,
+    buyer_id: pr.buyer_id,
+    conversation_id: pr.conversation_id,
+    amount: pr.amount,
+    delivery_fee: pr.delivery_fee ?? 0,
+    is_delivery: pr.is_delivery ?? false,
+    delivery_address: pr.delivery_address ?? null,
+    description: pr.description,
+    status: pr.status,
+    paid_at: pr.paid_at?.toISOString() ?? null,
+    created_at: pr.created_at.toISOString(),
+  }
+}
+
+function previewText(type: string, content: string | null): string {
+  if (type === 'payment_request') return 'Payment request'
+  if (type === 'image') return 'Photo'
+  return content ?? ''
+}
+
+function serializeMessage(m: any, paymentRequest: any = null, clientId?: string | null): MessageOutput & { client_id?: string | null } {
+  return {
+    id: m.id,
+    conversation_id: m.conversation_id,
+    sender_id: m.sender_id,
+    content: m.deleted ? null : m.content,
+    image_url: m.deleted ? null : m.image_url,
+    type: m.type as 'text' | 'image' | 'payment_request',
+    is_read: m.is_read,
+    delivered: m.delivered,
+    edited: m.edited,
+    deleted: m.deleted,
+    reply_to_id: m.reply_to_id ?? null,
+    reply_to: m.reply_to ? {
+      id: m.reply_to.id,
+      sender_id: m.reply_to.sender_id,
+      sender_name: m.reply_to.sender?.full_name ?? null,
+      content: m.reply_to.deleted ? null : m.reply_to.content,
+      image_url: m.reply_to.deleted ? null : m.reply_to.image_url,
+      type: m.reply_to.type,
+    } : null,
+    reactions: (m.reactions ?? []).map((r: any) => ({
+      id: r.id,
+      message_id: r.message_id,
+      user_id: r.user_id,
+      emoji: r.emoji,
+      created_at: r.created_at.toISOString(),
+    })),
+    created_at: m.created_at.toISOString(),
+    payment_request: serializePaymentRequest(paymentRequest),
+    ...(clientId ? { client_id: clientId } : {}),
+  }
 }
 
 /**
- * Check if user is trying to chat with themselves
+ * Load a conversation and confirm the user is a participant.
+ * Returns the ids of both sides so callers can emit to them.
  */
-async function isSelfChat(buyerId: string, vendorId: string): Promise<boolean> {
-  const vendor = await prisma.vendor.findUnique({
-    where: { id: vendorId },
-    select: { user_id: true }
+async function requireParticipant(conversationId: string, userId: string) {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    include: { vendor: { select: { id: true, user_id: true } } },
   })
-  return vendor?.user_id === buyerId
+  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
+
+  const isVendor = conv.vendor.user_id === userId
+  const isBuyer = conv.buyer_id === userId
+  if (!isVendor && !isBuyer) throw { statusCode: 403, message: 'Not authorized' }
+
+  return {
+    conv,
+    isVendor,
+    otherUserId: isVendor ? conv.buyer_id : conv.vendor.user_id,
+  }
 }
+
+/** Recompute the conversation preview after an edit/delete changes the latest message. */
+async function refreshConversationPreview(conversationId: string) {
+  const lastMsg = await prisma.message.findFirst({
+    where: { conversation_id: conversationId, deleted: false },
+    orderBy: { created_at: 'desc' },
+  })
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: {
+      last_message: lastMsg ? previewText(lastMsg.type, lastMsg.content) : null,
+      ...(lastMsg ? { last_message_at: lastMsg.created_at } : {}),
+    },
+  })
+}
+
+function conversationOutput(c: any): ConversationOutput {
+  return {
+    id: c.id,
+    buyer_id: c.buyer_id,
+    vendor_id: c.vendor_id,
+    last_message: c.last_message,
+    last_message_at: c.last_message_at.toISOString(),
+    buyer_unread: c.buyer_unread,
+    vendor_unread: c.vendor_unread,
+    created_at: c.created_at.toISOString(),
+  }
+}
+
+// ─── Conversations ──────────────────────────────────────────────────────────
 
 /**
  * Get or create conversation between buyer and vendor
@@ -53,7 +189,6 @@ export async function getOrCreateConversation(
   buyerId: string,
   vendorId: string
 ): Promise<ConversationOutput> {
-  // Check if vendor exists
   const vendor = await prisma.vendor.findUnique({
     where: { id: vendorId },
     select: { id: true, user_id: true, is_active: true }
@@ -72,55 +207,38 @@ export async function getOrCreateConversation(
     throw { statusCode: 403, message: 'You cannot chat with your own store' }
   }
 
-  // Check if conversation already exists
   const existing = await prisma.conversation.findUnique({
-    where: {
-      buyer_id_vendor_id: {
+    where: { buyer_id_vendor_id: { buyer_id: buyerId, vendor_id: vendorId } }
+  })
+  if (existing) return conversationOutput(existing)
+
+  try {
+    const conversation = await prisma.conversation.create({
+      data: {
         buyer_id: buyerId,
         vendor_id: vendorId,
+        last_message: null,
+        last_message_at: new Date(),
+        buyer_unread: 0,
+        vendor_unread: 0,
       }
+    })
+
+    // Record inquiry analytics (fire and forget, don't block response)
+    VendorAnalyticsService.recordInquiry(vendorId).catch(err => {
+      console.error('[Analytics] Failed to record inquiry:', err)
+    })
+
+    return conversationOutput(conversation)
+  } catch (err: any) {
+    // Two taps raced each other — the other request created it.
+    if (err?.code === 'P2002') {
+      const again = await prisma.conversation.findUnique({
+        where: { buyer_id_vendor_id: { buyer_id: buyerId, vendor_id: vendorId } }
+      })
+      if (again) return conversationOutput(again)
     }
-  })
-
-  if (existing) {
-    return {
-      id: existing.id,
-      buyer_id: existing.buyer_id,
-      vendor_id: existing.vendor_id,
-      last_message: existing.last_message,
-      last_message_at: existing.last_message_at.toISOString(),
-      buyer_unread: existing.buyer_unread,
-      vendor_unread: existing.vendor_unread,
-      created_at: existing.created_at.toISOString(),
-    }
-  }
-
-  // Create new conversation
-  const conversation = await prisma.conversation.create({
-    data: {
-      buyer_id: buyerId,
-      vendor_id: vendorId,
-      last_message: null,
-      last_message_at: new Date(),
-      buyer_unread: 0,
-      vendor_unread: 0,
-    }
-  })
-
-  // Record inquiry analytics (fire and forget, don't block response)
-  VendorAnalyticsService.recordInquiry(vendorId).catch(err => {
-    console.error('[Analytics] Failed to record inquiry:', err);
-  });
-
-  return {
-    id: conversation.id,
-    buyer_id: conversation.buyer_id,
-    vendor_id: conversation.vendor_id,
-    last_message: conversation.last_message,
-    last_message_at: conversation.last_message_at.toISOString(),
-    buyer_unread: conversation.buyer_unread,
-    vendor_unread: conversation.vendor_unread,
-    created_at: conversation.created_at.toISOString(),
+    throw err
   }
 }
 
@@ -160,7 +278,6 @@ export async function getConversation(
     throw { statusCode: 404, message: 'Conversation not found' }
   }
 
-  // Check if user is participant
   const isBuyer = conversation.buyer_id === userId
   const actingAsVendor = conversation.vendor.user_id === userId
 
@@ -168,12 +285,12 @@ export async function getConversation(
     throw { statusCode: 403, message: 'Not authorized' }
   }
 
-  // Transform vendor to match mobile expectations
   const vendorOutput = conversation.vendor ? {
     id: conversation.vendor.id,
     business_name: conversation.vendor.shop_name, // alias
     is_verified: conversation.vendor.user?.is_vendor_verified,
     user_id: conversation.vendor.user_id,
+    logo_url: conversation.vendor.logo_url ?? null,
     ...(conversation.vendor.user && {
       owner_name: conversation.vendor.user.full_name,
       owner_avatar: conversation.vendor.user.avatar_url,
@@ -187,16 +304,7 @@ export async function getConversation(
   } : null
 
   return {
-    conversation: {
-      id: conversation.id,
-      buyer_id: conversation.buyer_id,
-      vendor_id: conversation.vendor_id,
-      last_message: conversation.last_message,
-      last_message_at: conversation.last_message_at.toISOString(),
-      buyer_unread: conversation.buyer_unread,
-      vendor_unread: conversation.vendor_unread,
-      created_at: conversation.created_at.toISOString(),
-    },
+    conversation: conversationOutput(conversation),
     vendor: vendorOutput,
     buyer: buyerOutput,
     actingAsVendor,
@@ -208,14 +316,6 @@ export async function getConversation(
  * Returns enriched conversation list with all needed data
  */
 export async function getUserConversations(userId: string): Promise<any[]> {
-  // Get vendor IDs owned by user
-  const myVendors = await prisma.vendor.findMany({
-    where: { user_id: userId },
-    select: { id: true, user_id: true }
-  })
-  const myVendorIds = myVendors.map(v => v.id)
-
-  // Fetch conversations where user is buyer OR vendor owner
   const [buyerConvs, vendorConvs] = await Promise.all([
     prisma.conversation.findMany({
       where: { buyer_id: userId },
@@ -236,26 +336,21 @@ export async function getUserConversations(userId: string): Promise<any[]> {
           },
         },
       },
-      orderBy: { last_message_at: 'desc' },
     }),
-    myVendorIds.length > 0
-      ? prisma.conversation.findMany({
-          where: { vendor_id: { in: myVendorIds } },
-          include: {
-            buyer: {
-              select: {
-                id: true,
-                full_name: true,
-                avatar_url: true,
-              }
-            }
-          },
-          orderBy: { last_message_at: 'desc' },
-        })
-      : Promise.resolve([])
+    prisma.conversation.findMany({
+      where: { vendor: { user_id: userId } },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            full_name: true,
+            avatar_url: true,
+          }
+        }
+      },
+    }),
   ])
 
-  // Build merged list first
   const buyerList: any[] = buyerConvs.map(c => ({
     id: c.id,
     buyer_id: c.buyer_id,
@@ -274,6 +369,7 @@ export async function getUserConversations(userId: string): Promise<any[]> {
     } : null,
     buyer: null,
     iAmVendor: false,
+    other_user_id: c.vendor?.user_id ?? null,
   }))
 
   const vendorList: any[] = vendorConvs.map(c => ({
@@ -291,63 +387,51 @@ export async function getUserConversations(userId: string): Promise<any[]> {
       avatar_url: c.buyer.avatar_url,
     } : null,
     iAmVendor: true,
+    other_user_id: c.buyer_id,
   }))
 
-  // Merge and deduplicate, then sort by last_message_at desc
-  const allConvs: any[] = []
-  const seenIds = new Set<string>()
-
-  for (const conv of [...vendorList, ...buyerList]) {
-    if (!seenIds.has(conv.id)) {
-      seenIds.add(conv.id)
-      allConvs.push(conv)
-    } else {
-      const existing = allConvs.find(c => c.id === conv.id)
-      if (existing) {
-        existing.iAmVendor = existing.iAmVendor || conv.iAmVendor
-      }
-    }
-  }
-
+  // Self-chat is blocked, so a conversation can't appear in both lists.
+  const allConvs = [...vendorList, ...buyerList]
   allConvs.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
 
-  // Now enrich with presence and last message details
   if (allConvs.length === 0) return allConvs
 
-  // Get all other user IDs for presence
-  const otherUserIds = allConvs.map(c =>
-    c.iAmVendor ? c.buyer_id : c.vendor?.user_id
-  ).filter(Boolean) as string[]
+  const otherUserIds = allConvs.map(c => c.other_user_id).filter(Boolean) as string[]
 
-  const presenceMap = await getUserPresence(otherUserIds)
+  // Only the newest message per conversation (was: every message ever sent)
+  const [presenceMap, lastMsgs] = await Promise.all([
+    getUserPresence(otherUserIds),
+    prisma.message.findMany({
+      where: { conversation_id: { in: allConvs.map(c => c.id) } },
+      orderBy: { created_at: 'desc' },
+      distinct: ['conversation_id'],
+      select: { id: true, conversation_id: true, sender_id: true, type: true, delivered: true, is_read: true, deleted: true },
+    }),
+  ])
 
-  // Get last message for each conversation
-  const lastMsgs = await prisma.message.findMany({
-    where: { conversation_id: { in: allConvs.map(c => c.id) } },
-    orderBy: { created_at: 'desc' },
-  })
+  const lastMsgMap: Record<string, (typeof lastMsgs)[number]> = {}
+  lastMsgs.forEach(m => { lastMsgMap[m.conversation_id] = m })
 
-  const lastMsgMap: Record<string, any> = {}
-  lastMsgs.forEach(m => {
-    if (!lastMsgMap[m.conversation_id]) {
-      lastMsgMap[m.conversation_id] = m
-    }
-  })
-
-  // Combine all data
   return allConvs.map(c => {
-    const otherUserId = c.iAmVendor ? c.buyer_id : c.vendor?.user_id
     const lastMsg = lastMsgMap[c.id]
+    const presence = presenceMap[c.other_user_id]
 
     return {
       ...c,
-      other_online: presenceMap[otherUserId]?.is_online ?? false,
+      unread: c.iAmVendor ? c.vendor_unread : c.buyer_unread,
+      other_online: presence?.is_online ?? false,
+      other_last_seen: presence?.last_seen ?? null,
+      last_message_id: lastMsg?.id ?? null,
+      last_message_type: lastMsg?.type ?? null,
       last_message_mine: lastMsg?.sender_id === userId,
       last_message_delivered: lastMsg?.delivered ?? false,
       last_message_read: lastMsg?.is_read ?? false,
+      last_message_deleted: lastMsg?.deleted ?? false,
     }
   })
 }
+
+// ─── Messages ───────────────────────────────────────────────────────────────
 
 /**
  * Get a single message by ID
@@ -358,88 +442,25 @@ export async function getMessage(
 ): Promise<MessageOutput> {
   const message = await prisma.message.findUnique({
     where: { id: messageId },
-    include: {
-      conversation: {
-        select: { buyer_id: true, vendor_id: true }
-      },
-      reply_to: {
-        select: {
-          id: true,
-          sender_id: true,
-          sender: {
-            select: {
-              full_name: true,
-            }
-          },
-          content: true,
-          image_url: true,
-          type: true,
-          deleted: true,
-        }
-      },
-      reactions: {
-        select: {
-          id: true,
-          message_id: true,
-          user_id: true,
-          emoji: true,
-          created_at: true,
-        }
-      }
-    }
+    include: messageInclude,
   })
 
   if (!message) {
     throw { statusCode: 404, message: 'Message not found' }
   }
 
-  // Verify access
-  const vendor = await prisma.vendor.findUnique({
-    where: { id: message.conversation.vendor_id },
-    select: { user_id: true }
-  })
+  await requireParticipant(message.conversation_id, userId)
 
-  const isBuyer = message.conversation.buyer_id === userId
-  const isVendor = vendor?.user_id === userId
+  const pr = message.type === 'payment_request' && message.content
+    ? await prisma.paymentRequest.findUnique({ where: { id: message.content } })
+    : null
 
-  if (!isBuyer && !isVendor) {
-    throw { statusCode: 403, message: 'Not authorized' }
-  }
-
-  return {
-    id: message.id,
-    conversation_id: message.conversation_id,
-    sender_id: message.sender_id,
-    content: message.deleted ? null : message.content,
-    image_url: message.deleted ? null : message.image_url,
-    type: message.type as 'text' | 'image' | 'payment_request',
-    is_read: message.is_read,
-    delivered: message.delivered,
-    edited: message.edited,
-    deleted: message.deleted,
-    reply_to_id: message.reply_to_id ?? null,
-    reply_to: message.reply_to ? {
-      id: message.reply_to.id,
-      sender_id: message.reply_to.sender_id,
-      sender_name: message.reply_to.sender?.full_name ?? null,
-      content: message.reply_to.deleted ? null : message.reply_to.content,
-      image_url: message.reply_to.deleted ? null : message.reply_to.image_url,
-      type: message.reply_to.type,
-    } : null,
-    reactions: message.reactions.map(r => ({
-      id: r.id,
-      message_id: r.message_id,
-      user_id: r.user_id,
-      emoji: r.emoji,
-      created_at: r.created_at.toISOString(),
-    })),
-    created_at: message.created_at.toISOString(),
-    payment_request: null,
-  }
+  return serializeMessage(message, pr)
 }
 
 /**
- * Get messages for a conversation
+ * Get messages for a conversation.
+ * Returns the NEWEST `limit` messages (optionally older than `before`), oldest → newest.
  */
 export async function getConversationMessages(
   conversationId: string,
@@ -447,124 +468,52 @@ export async function getConversationMessages(
   limit?: number,
   before?: string
 ): Promise<MessageOutput[]> {
-  // First verify access
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: { buyer_id: true, vendor_id: true }
-  })
+  await requireParticipant(conversationId, userId)
 
-  if (!conv) {
-    throw { statusCode: 404, message: 'Conversation not found' }
-  }
-
-  const vendor = await prisma.vendor.findUnique({
-    where: { id: conv.vendor_id },
-    select: { user_id: true }
-  })
-
-  const isBuyer = conv.buyer_id === userId
-  const isVendor = vendor?.user_id === userId
-
-  if (!isBuyer && !isVendor) {
-    throw { statusCode: 403, message: 'Not authorized' }
-  }
-
-  // Build query
+  const take = Math.min(Math.max(limit ?? 50, 1), 100)
   const where: any = { conversation_id: conversationId }
   if (before) {
-    where.created_at = { lt: new Date(before) }
+    const beforeDate = new Date(before)
+    if (!isNaN(beforeDate.getTime())) where.created_at = { lt: beforeDate }
   }
 
-  const messages = await prisma.message.findMany({
+  const newestFirst = await prisma.message.findMany({
     where,
-    orderBy: { created_at: 'asc' },
-    take: limit ?? 100,
-    include: {
-      reply_to: {
-        select: {
-          id: true,
-          sender_id: true,
-          sender: {
-            select: {
-              full_name: true,
-            }
-          },
-          content: true,
-          image_url: true,
-          type: true,
-          deleted: true,
-        }
-      },
-      reactions: {
-        select: {
-          id: true,
-          message_id: true,
-          user_id: true,
-          emoji: true,
-          created_at: true,
-        }
-      }
-    }
+    orderBy: { created_at: 'desc' },
+    take,
+    include: messageInclude,
   })
+  const messages = newestFirst.reverse()
 
-  // Fetch payment request details for payment_request type messages
   const paymentRequestIds = messages
     .filter(m => m.type === 'payment_request' && m.content)
     .map(m => m.content!)
-    .filter(Boolean)
 
   const paymentRequestsMap: Record<string, any> = {}
   if (paymentRequestIds.length > 0) {
     const paymentRequests = await prisma.paymentRequest.findMany({
       where: { id: { in: paymentRequestIds } },
     })
-    paymentRequests.forEach(pr => {
-      paymentRequestsMap[pr.id] = {
-        id: pr.id,
-        vendor_id: pr.vendor_id,
-        buyer_id: pr.buyer_id,
-        conversation_id: pr.conversation_id,
-        amount: pr.amount,
-        description: pr.description,
-        status: pr.status,
-        paid_at: pr.paid_at?.toISOString() ?? null,
-        created_at: pr.created_at.toISOString(),
-      }
-    })
+    paymentRequests.forEach(pr => { paymentRequestsMap[pr.id] = pr })
   }
 
-  return messages.map(m => ({
-    id: m.id,
-    conversation_id: m.conversation_id,
-    sender_id: m.sender_id,
-    content: m.deleted ? null : m.content,
-    image_url: m.deleted ? null : m.image_url,
-    type: m.type as 'text' | 'image' | 'payment_request',
-    is_read: m.is_read,
-    delivered: m.delivered,
-    edited: m.edited,
-    deleted: m.deleted,
-    reply_to_id: m.reply_to_id ?? null,
-    reply_to: m.reply_to ? {
-      id: m.reply_to.id,
-      sender_id: m.reply_to.sender_id,
-      sender_name: m.reply_to.sender?.full_name ?? null,
-      content: m.reply_to.deleted ? null : m.reply_to.content,
-      image_url: m.reply_to.deleted ? null : m.reply_to.image_url,
-      type: m.reply_to.type,
-    } : null,
-    reactions: m.reactions.map(r => ({
-      id: r.id,
-      message_id: r.message_id,
-      user_id: r.user_id,
-      emoji: r.emoji,
-      created_at: r.created_at.toISOString(),
-    })),
-    created_at: m.created_at.toISOString(),
-    payment_request: m.type === 'payment_request' && m.content
-      ? paymentRequestsMap[m.content]
-      : null,
-  }))
+  return messages.map(m => serializeMessage(
+    m,
+    m.type === 'payment_request' && m.content ? paymentRequestsMap[m.content] : null
+  ))
+}
+
+// Offline clients retry sends. If the server stored a message but the reply was lost,
+// the retry carries the same client_id — return the original instead of duplicating it.
+const recentClientIds = new Map<string, { messageId: string; at: number }>()
+const CLIENT_ID_TTL_MS = 30 * 60 * 1000
+
+function rememberClientId(key: string, messageId: string) {
+  const now = Date.now()
+  if (recentClientIds.size > 2000) {
+    for (const [k, v] of recentClientIds) if (now - v.at > CLIENT_ID_TTL_MS) recentClientIds.delete(k)
+  }
+  recentClientIds.set(key, { messageId, at: now })
 }
 
 /**
@@ -575,31 +524,30 @@ export async function sendMessage(
   senderId: string,
   input: SendMessageInput
 ): Promise<MessageOutput> {
-  const { content, type, image_url, payment_request_id, reply_to_id } = input
+  const { content, type, image_url, reply_to_id, client_id } = input
 
-  // Verify conversation exists and user is participant
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    include: {
-      vendor: {
-        select: { user_id: true }
-      }
-    }
-  })
-
-  if (!conv) {
-    throw { statusCode: 404, message: 'Conversation not found' }
+  if (type === 'payment_request') {
+    throw { statusCode: 400, message: 'Use the payment request endpoint' }
+  }
+  const trimmed = content?.trim() ?? ''
+  if (type === 'text' && !trimmed) {
+    throw { statusCode: 400, message: 'Message cannot be empty' }
+  }
+  if (type === 'image' && !image_url) {
+    throw { statusCode: 400, message: 'image_url is required for image messages' }
   }
 
-  const isBuyer = conv.buyer_id === senderId
-  const isVendor = conv.vendor.user_id === senderId
+  const { conv, isVendor, otherUserId } = await requireParticipant(conversationId, senderId)
 
-  if (!isBuyer && !isVendor) {
-    throw { statusCode: 403, message: 'Not authorized' }
+  const dedupeKey = client_id ? `${senderId}:${client_id}` : null
+  const seen = dedupeKey ? recentClientIds.get(dedupeKey) : undefined
+  if (seen && Date.now() - seen.at < CLIENT_ID_TTL_MS) {
+    const existing = await prisma.message.findUnique({ where: { id: seen.messageId }, include: messageInclude })
+    if (existing) return serializeMessage(existing, null, client_id)
   }
 
   // CRITICAL: Additional check - cannot send message if trying to self-chat
-  if (isVendor && conv.vendor.user_id === conv.buyer_id) {
+  if (conv.vendor.user_id === conv.buyer_id) {
     throw { statusCode: 403, message: 'Cannot message in your own store' }
   }
 
@@ -613,114 +561,43 @@ export async function sendMessage(
     }
   }
 
-  // Create message
-  const message = await prisma.message.create({
-    data: {
-      conversation_id: conversationId,
-      sender_id: senderId,
-      content: type === 'image' ? null : (content ?? null),
-      image_url: type === 'image' ? image_url : null,
-      type,
-      is_read: false,
-      delivered: false,
-      edited: false,
-      deleted: false,
-      reply_to_id: reply_to_id ?? null,
-    },
-    include: {
-      reply_to: {
-        select: {
-          id: true,
-          sender_id: true,
-          sender: {
-            select: {
-              full_name: true,
-            }
-          },
-          content: true,
-          image_url: true,
-          type: true,
-          deleted: true,
-        }
-      },
-      reactions: true,
-    }
-  })
+  // If the recipient has the app open right now, it's delivered on arrival.
+  let recipientOnline = false
+  try { recipientOnline = await realtime().isUserConnected(otherUserId) } catch { /* socket not ready */ }
 
-  // Update conversation last message
-  const lastMessageText = type === 'payment_request'
-    ? 'Payment request'
-    : type === 'image'
-    ? 'Photo'
-    : (content ?? '')
-
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: {
-      last_message: lastMessageText,
-      last_message_at: new Date(),
-    }
-  })
-
-  // Increment unread count for the other party
   const unreadField = isVendor ? 'buyer_unread' : 'vendor_unread'
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: {
-      [unreadField]: { increment: 1 }
-    }
-  })
+  const [message] = await prisma.$transaction([
+    prisma.message.create({
+      data: {
+        conversation_id: conversationId,
+        sender_id: senderId,
+        content: type === 'image' ? (trimmed || null) : trimmed,
+        image_url: type === 'image' ? image_url : null,
+        type,
+        is_read: false,
+        delivered: recipientOnline,
+        edited: false,
+        deleted: false,
+        reply_to_id: reply_to_id ?? null,
+      },
+      include: messageInclude,
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        last_message: previewText(type, trimmed),
+        last_message_at: new Date(),
+        [unreadField]: { increment: 1 },
+      }
+    }),
+  ])
 
-  const messageOutput: MessageOutput = {
-    id: message.id,
-    conversation_id: message.conversation_id,
-    sender_id: message.sender_id,
-    content: message.content,
-    image_url: message.image_url,
-    type: message.type as 'text' | 'image' | 'payment_request',
-    is_read: message.is_read,
-    delivered: message.delivered,
-    edited: message.edited,
-    deleted: message.deleted,
-    reply_to_id: message.reply_to_id ?? null,
-    reply_to: message.reply_to ? {
-      id: message.reply_to.id,
-      sender_id: message.reply_to.sender_id,
-      sender_name: message.reply_to.sender?.full_name ?? null,
-      content: message.reply_to.deleted ? null : message.reply_to.content,
-      image_url: message.reply_to.deleted ? null : message.reply_to.image_url,
-      type: message.reply_to.type,
-    } : null,
-    reactions: message.reactions.map(r => ({
-      id: r.id,
-      message_id: r.message_id,
-      user_id: r.user_id,
-      emoji: r.emoji,
-      created_at: r.created_at.toISOString(),
-    })),
-    created_at: message.created_at.toISOString(),
-    payment_request: null,
-  }
+  if (dedupeKey) rememberClientId(dedupeKey, message.id)
+  const messageOutput = serializeMessage(message, null, client_id)
 
-  // Emit Socket.io event for new message (non-blocking)
-  try {
-    const io = getSocketIO()
+  // Both sides: the recipient sees it, the sender's other devices stay in sync.
+  emit([senderId, otherUserId], 'new_message', messageOutput)
 
-    if (io) {
-      // Emit to the conversation room (includes both parties)
-      io.to(`conversation:${conversationId}`).emit('new_message', messageOutput)
-
-      // Also emit to the other party's personal room (ensures they receive it even if not in conversation room)
-      const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
-      io.to(`user:${otherUserId}`).emit('new_message', messageOutput)
-    }
-  } catch (socketError) {
-    console.error('[Chat] Socket.io emit error:', socketError)
-    // Don't throw - message was successfully saved to DB
-  }
-
-  // Create notification for the recipient (non-blocking)
-  const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
   try {
     await createNotification({
       userId: otherUserId,
@@ -728,142 +605,75 @@ export async function sendMessage(
       title: 'New message',
       body: reply_to_id
         ? '↩️ Replied to your message'
-        : (content || (type === 'image' ? 'Sent a photo' : 'Sent you a message')),
+        : (trimmed || (type === 'image' ? '📷 Sent a photo' : 'Sent you a message')),
       data: { conversation_id: conversationId, message_id: messageOutput.id },
     })
   } catch (notifError) {
     console.error('[Chat] Notification error:', notifError)
-    // Don't throw - message was successfully sent
   }
 
   return messageOutput
 }
 
 /**
- * Mark messages as delivered
- * When a user opens a conversation, mark messages from the other party as delivered
+ * Mark messages from the other party as delivered
  */
 export async function markMessagesDelivered(
   conversationId: string,
   userId: string
-): Promise<void> {
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    include: { vendor: { select: { user_id: true } } }
+): Promise<{ messageIds: string[] }> {
+  const { otherUserId } = await requireParticipant(conversationId, userId)
+
+  const pending = await prisma.message.findMany({
+    where: { conversation_id: conversationId, sender_id: otherUserId, delivered: false },
+    select: { id: true },
   })
+  const messageIds = pending.map(m => m.id)
+  if (messageIds.length === 0) return { messageIds }
 
-  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
-
-  const isVendor = conv.vendor.user_id === userId
-  if (!isVendor && conv.buyer_id !== userId) {
-    throw { statusCode: 403, message: 'Not authorized' }
-  }
-
-  // Mark all messages from other party as delivered (not read yet)
   await prisma.message.updateMany({
-    where: {
-      conversation_id: conversationId,
-      sender_id: { not: userId },
-      delivered: false,
-    },
-    data: { delivered: true }
+    where: { id: { in: messageIds } },
+    data: { delivered: true },
   })
 
-  // Emit Socket.io event for messages delivered (non-blocking)
-  try {
-    const io = getSocketIO()
-
-    if (io) {
-      // Emit to the conversation room
-      io.to(`conversation:${conversationId}`).emit('message_delivered', {
-        conversationId,
-        userId
-      })
-
-      // Also emit to the other party's personal room (the sender of the messages)
-      const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
-      io.to(`user:${otherUserId}`).emit('message_delivered', {
-        conversationId,
-        userId
-      })
-    }
-  } catch (socketError) {
-    console.error('[Chat] Socket.io emit error for message_delivered:', socketError)
-    // Don't throw - messages were successfully marked as delivered in DB
-  }
+  emit([otherUserId, userId], 'message_delivered', { conversationId, messageIds, userId })
+  return { messageIds }
 }
 
 /**
- * Mark messages as read
- * When a user reads messages, mark them as read and emit Socket.io event to sender
+ * Mark messages as read (also implies delivered) and clear the reader's unread counter.
  */
 export async function markMessagesAsRead(
   conversationId: string,
   userId: string
 ): Promise<{ messageIds: string[]; senderId: string }> {
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    include: { vendor: { select: { user_id: true } } }
-  })
+  const { isVendor, otherUserId } = await requireParticipant(conversationId, userId)
 
-  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
-
-  const isVendor = conv.vendor.user_id === userId
-  if (!isVendor && conv.buyer_id !== userId) {
-    throw { statusCode: 403, message: 'Not authorized' }
-  }
-
-  // Get the other party's user ID
-  const otherUserId = isVendor ? conv.buyer_id : conv.vendor.user_id
-
-  // Mark all unread messages from other party as read
-  const updatedMessages = await prisma.message.updateMany({
-    where: {
-      conversation_id: conversationId,
-      sender_id: otherUserId,
-      is_read: false,
-    },
-    data: { is_read: true }
-  })
-
-  // Get the IDs of messages that were marked as read
-  const messages = await prisma.message.findMany({
-    where: {
-      conversation_id: conversationId,
-      sender_id: otherUserId,
-      is_read: true,
-    },
+  const unread = await prisma.message.findMany({
+    where: { conversation_id: conversationId, sender_id: otherUserId, is_read: false },
     select: { id: true },
   })
+  const messageIds = unread.map(m => m.id)
 
-  // Emit Socket.io event for messages read (non-blocking)
-  try {
-    const io = getSocketIO()
+  await prisma.$transaction([
+    prisma.message.updateMany({
+      where: { id: { in: messageIds } },
+      data: { is_read: true, delivered: true },
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: { [isVendor ? 'vendor_unread' : 'buyer_unread']: 0 },
+    }),
+  ])
 
-    if (io) {
-      // Emit to the conversation room
-      io.to(`conversation:${conversationId}`).emit('messages_read', {
-        conversationId,
-        messageIds: messages.map(m => m.id),
-        readBy: userId
-      })
+  // Always tell the reader's own devices (clears badges); tell the sender only if something changed.
+  emit(messageIds.length > 0 ? [otherUserId, userId] : [userId], 'messages_read', {
+    conversationId,
+    messageIds,
+    readBy: userId,
+  })
 
-      // Also emit to the other party's personal room
-      io.to(`user:${otherUserId}`).emit('messages_read', {
-        conversationId,
-        messageIds: messages.map(m => m.id),
-        readBy: userId
-      })
-    }
-  } catch (socketError) {
-    console.error('[Chat] Socket.io emit error for messages_read:', socketError)
-    // Don't throw - messages were successfully marked as read in DB
-  }
-
-  return {
-    messageIds: messages.map(m => m.id),
-    senderId: otherUserId,
-  }
+  return { messageIds, senderId: otherUserId }
 }
 
 /**
@@ -873,62 +683,30 @@ export async function resetUnreadCount(
   conversationId: string,
   userId: string
 ): Promise<void> {
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    include: { vendor: { select: { user_id: true } } }
-  })
-
-  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
-
-  const isVendor = conv.vendor.user_id === userId
-  if (!isVendor && conv.buyer_id !== userId) {
-    throw { statusCode: 403, message: 'Not authorized' }
-  }
-
-  const field = isVendor ? 'vendor_unread' : 'buyer_unread'
-
+  const { isVendor } = await requireParticipant(conversationId, userId)
   await prisma.conversation.update({
     where: { id: conversationId },
-    data: { [field]: 0 }
+    data: { [isVendor ? 'vendor_unread' : 'buyer_unread']: 0 }
   })
 }
 
+// ─── Presence ───────────────────────────────────────────────────────────────
+
 /**
- * Update user presence
+ * Update user presence. Presence is normally driven by the socket connection;
+ * this exists for clients that still call POST /presence.
  */
 export async function updateUserPresence(
   userId: string,
   isOnline: boolean
 ): Promise<void> {
-  await prisma.userPresence.upsert({
-    where: { user_id: userId },
-    update: {
-      is_online: isOnline,
-      last_seen: new Date(),
-    },
-    create: {
-      user_id: userId,
-      is_online: isOnline,
-      last_seen: new Date(),
-    },
-  })
-
-  // Emit Socket.io event for user presence update (non-blocking)
-  try {
-    const io = getSocketIO()
-
-    if (io) {
-      // Emit to all connected clients (they will filter for relevant user IDs)
-       io.emit('user_presence', {
-         userId,
-         isOnline,
-         lastSeen: new Date().toISOString(),
-       })
-    }
-  } catch (socketError) {
-    console.error('[Chat] Socket.io emit error for user_presence:', socketError)
-    // Don't throw - presence was successfully updated in DB
+  // Never let a stale "offline" call override a live socket connection.
+  if (!isOnline) {
+    try {
+      if (await realtime().isUserConnected(userId)) return
+    } catch { /* socket not ready */ }
   }
+  await realtime().setPresence(userId, isOnline)
 }
 
 /**
@@ -947,6 +725,8 @@ export async function getUserPresence(userIds: string[]): Promise<Record<string,
   )
 }
 
+// ─── Payment requests ───────────────────────────────────────────────────────
+
 /**
  * Create a payment request (vendor only)
  */
@@ -960,38 +740,11 @@ export async function createPaymentRequest(
   deliveryLat?: number,
   deliveryLng?: number,
   deliveryFee?: number
-): Promise<{
-  id: string;
-  conversation_id: string;
-  sender_id: string;
-  content: string | null;
-  image_url: string | null;
-  type: 'text' | 'image' | 'payment_request';
-  is_read: boolean;
-  delivered: boolean;
-  created_at: string;
-  // payment request data
-  payment_request?: {
-    id: string;
-    vendor_id: string;
-    buyer_id: string;
-    conversation_id: string | null;
-    amount: number;
-    delivery_fee: number;
-    is_delivery: boolean;
-    delivery_address: string | null;
-    description: string | null;
-    status: string;
-    paid_at: string | null;
-    created_at: string;
-  };
-}> {
-  // Validate amount
-  if (amount <= 0) {
+): Promise<MessageOutput> {
+  if (!Number.isFinite(amount) || amount <= 0) {
     throw { statusCode: 400, message: 'Invalid amount' }
   }
 
-  // Get conversation with vendor
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -1005,7 +758,6 @@ export async function createPaymentRequest(
     throw { statusCode: 404, message: 'Conversation not found' }
   }
 
-  // Ensure sender is the vendor of this conversation
   if (conv.vendor.user_id !== senderId) {
     throw { statusCode: 403, message: 'Only the vendor can create payment requests' }
   }
@@ -1019,20 +771,13 @@ export async function createPaymentRequest(
   }
 
   // Calculate delivery fee if delivery is requested and not provided
-  let calculatedDeliveryFee = deliveryFee || 0;
+  let calculatedDeliveryFee = deliveryFee || 0
   if (isDelivery && !deliveryFee && deliveryLat && deliveryLng && conv.vendor.lat && conv.vendor.lng) {
-    // Simple distance calculation (Haversine formula)
-    const distanceKm = calculateDistance(
-      conv.vendor.lat,
-      conv.vendor.lng,
-      deliveryLat,
-      deliveryLng
-    );
+    const distanceKm = calculateDistance(conv.vendor.lat, conv.vendor.lng, deliveryLat, deliveryLng)
     // Base fee ₦200 + ₦100 per km
-    calculatedDeliveryFee = 200 + (distanceKm * 100);
+    calculatedDeliveryFee = 200 + (distanceKm * 100)
   }
 
-  // Create payment request
   const paymentRequest = await prisma.paymentRequest.create({
     data: {
       vendor_id: conv.vendor.id,
@@ -1050,38 +795,36 @@ export async function createPaymentRequest(
     },
   })
 
-  // Create a message to represent the payment request in chat
-  const message = await prisma.message.create({
-    data: {
-      conversation_id: conversationId,
-      sender_id: senderId,
-      content: paymentRequest.id, // Store payment request ID as content for type payment_request
-      image_url: null,
-      type: 'payment_request',
-      is_read: false,
-      delivered: false,
-      edited: false,
-    }
-  })
+  let buyerOnline = false
+  try { buyerOnline = await realtime().isUserConnected(conv.buyer_id) } catch { /* socket not ready */ }
 
-  // Update conversation last message
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: {
-      last_message: 'Payment request',
-      last_message_at: new Date(),
-    }
-  })
+  const [message] = await prisma.$transaction([
+    prisma.message.create({
+      data: {
+        conversation_id: conversationId,
+        sender_id: senderId,
+        content: paymentRequest.id, // payment request ID stored as content
+        image_url: null,
+        type: 'payment_request',
+        is_read: false,
+        delivered: buyerOnline,
+        edited: false,
+      },
+      include: messageInclude,
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        last_message: 'Payment request',
+        last_message_at: new Date(),
+        buyer_unread: { increment: 1 },
+      }
+    }),
+  ])
 
-  // Increment buyer's unread count
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: {
-      buyer_unread: { increment: 1 }
-    }
-  })
+  const output = serializeMessage(message, paymentRequest)
+  emit([senderId, conv.buyer_id], 'new_message', output)
 
-  // Create notification for the buyer (non-blocking)
   try {
     await createNotification({
       userId: conv.buyer_id,
@@ -1092,31 +835,19 @@ export async function createPaymentRequest(
     })
   } catch (notifError) {
     console.error('[Chat] Notification error for payment request:', notifError)
-    // Don't throw - payment request was successfully created
   }
 
-  return {
-    id: message.id,
-    conversation_id: message.conversation_id,
-    sender_id: message.sender_id,
-    content: message.content,
-    image_url: message.image_url,
-    type: message.type as 'text' | 'image' | 'payment_request',
-    is_read: message.is_read,
-    delivered: message.delivered,
-    created_at: message.created_at.toISOString(),
-    payment_request: {
-      id: paymentRequest.id,
-      vendor_id: paymentRequest.vendor_id,
-      buyer_id: paymentRequest.buyer_id,
-      conversation_id: paymentRequest.conversation_id,
-      amount: paymentRequest.amount,
-      description: paymentRequest.description,
-      status: paymentRequest.status,
-      paid_at: paymentRequest.paid_at?.toISOString() ?? null,
-      created_at: paymentRequest.created_at.toISOString(),
-    }
-  }
+  return output
+}
+
+/** Push the latest payment-request state to both sides of its conversation. */
+async function broadcastPaymentRequest(paymentRequestId: string) {
+  const pr = await prisma.paymentRequest.findUnique({ where: { id: paymentRequestId } })
+  if (!pr?.conversation_id) return
+  emit([pr.buyer_id, pr.vendor_user_id], 'payment_request_updated', {
+    conversationId: pr.conversation_id,
+    paymentRequest: serializePaymentRequest(pr),
+  })
 }
 
 /**
@@ -1127,7 +858,6 @@ export async function payPaymentRequest(
   buyerId: string,
   options?: { order_type?: 'pickup' | 'delivery'; delivery_address?: string }
 ): Promise<{ success: boolean; message: string; orderId?: string | null }> {
-  // Get payment request with vendor details
   const pr = await prisma.paymentRequest.findUnique({
     where: { id: paymentRequestId },
     include: {
@@ -1141,23 +871,19 @@ export async function payPaymentRequest(
     throw { statusCode: 404, message: 'Payment request not found' }
   }
 
-  // Check buyer is authorized
   if (pr.buyer_id !== buyerId) {
     throw { statusCode: 403, message: 'Not authorized to pay this request' }
   }
 
-  // Check status
   if (pr.status !== 'pending') {
     throw { statusCode: 400, message: `Payment request is already ${pr.status}` }
   }
 
-  // Determine order type based on payment request or options
-  const isDelivery = pr.is_delivery || options?.order_type === 'delivery';
-  const orderType = isDelivery ? 'delivery' : 'pickup';
-  const deliveryAddress = pr.delivery_address || options?.delivery_address;
-  const deliveryFee = pr.delivery_fee || 0;
+  const isDelivery = pr.is_delivery || options?.order_type === 'delivery'
+  const orderType = isDelivery ? 'delivery' : 'pickup'
+  const deliveryAddress = pr.delivery_address || options?.delivery_address
+  const deliveryFee = pr.delivery_fee || 0
 
-  // Process the payment via wallet service
   const payResult = await WalletService.processPayment(
     buyerId,
     pr.vendor.user_id,
@@ -1173,22 +899,24 @@ export async function payPaymentRequest(
     }
   )
 
-  // If it's a delivery order, create DeliveryJob and generate QR codes
-  if (isDelivery && payResult.orderId) {
+  // A runner job only makes sense with a real fee and real pickup/drop-off points.
+  // (Buyer-chosen delivery without them used to post a ₦0 job dropping off at 0,0 —
+  // no runner would take it.) Otherwise the vendor delivers and verifies the buyer's code.
+  const runnerDelivery = isDelivery && deliveryFee > 0
+    && pr.delivery_lat != null && pr.delivery_lng != null
+    && pr.vendor.lat != null && pr.vendor.lng != null
+  if (runnerDelivery && payResult.orderId) {
     try {
-      // Get vendor location for pickup
-      const pickupLat = pr.vendor.lat || 0;
-      const pickupLng = pr.vendor.lng || 0;
-      const pickupAddress = pr.vendor.address || 'Vendor location';
+      const pickupLat = pr.vendor.lat || 0
+      const pickupLng = pr.vendor.lng || 0
+      const pickupAddress = pr.vendor.address || 'Vendor location'
 
-      // Calculate distance and estimated time
       const distanceKm = pr.delivery_lat && pr.delivery_lng
         ? calculateDistance(pickupLat, pickupLng, pr.delivery_lat, pr.delivery_lng)
-        : 0;
-      const estimatedTime = Math.ceil(distanceKm * 15) + ' min'; // Rough estimate: 15 min per km
+        : 0
+      const estimatedTime = Math.ceil(distanceKm * 15) + ' min' // Rough estimate: 15 min per km
 
-      // Create DeliveryJob
-      const deliveryJob = await prisma.deliveryJob.create({
+      const job = await prisma.deliveryJob.create({
         data: {
           order_id: payResult.orderId,
           seller_id: pr.vendor.user_id,
@@ -1203,15 +931,17 @@ export async function payPaymentRequest(
           delivery_fee: deliveryFee,
           items: [{ name: pr.description || 'Items', quantity: 1 }],
           status: 'pending',
-          expires_at: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
+          // Paid orders don't expire from the runner board; this is informational only
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
         },
-      });
+      })
 
-      // Generate QR codes for the order
-      const pickupToken = crypto.randomBytes(16).toString('hex');
-      const deliveryToken = crypto.randomBytes(16).toString('hex');
-      const qrExpiresAt = new Date();
-      qrExpiresAt.setHours(qrExpiresAt.getHours() + 24);
+      // Seller reads this 6-digit code to the runner at pickup; the buyer's delivery
+      // code (otp_code) confirms drop-off. delivery_qr stays for future QR scanning.
+      const pickupToken = String(crypto.randomInt(100000, 1000000))
+      const deliveryToken = crypto.randomBytes(16).toString('hex')
+      const qrExpiresAt = new Date()
+      qrExpiresAt.setHours(qrExpiresAt.getHours() + 24)
 
       await prisma.order.update({
         where: { id: payResult.orderId },
@@ -1222,12 +952,19 @@ export async function payPaymentRequest(
           delivery_lat: pr.delivery_lat,
           delivery_lng: pr.delivery_lng,
         },
-      });
+      })
+
+      const { notifyRunnersOfJob } = require('../runner/runner.service')
+      notifyRunnersOfJob(job.id).catch((err: any) => console.error('[Chat] runner alert failed:', err?.message))
     } catch (error) {
-      console.error('Failed to create delivery job:', error);
+      console.error('Failed to create delivery job:', error)
       // Don't fail the payment if delivery job creation fails
     }
   }
+
+  broadcastPaymentRequest(pr.id).catch(err =>
+    console.error('[Chat] payment_request_updated emit failed:', err)
+  )
 
   return {
     success: true,
@@ -1243,21 +980,15 @@ export async function cancelPaymentRequest(
   paymentRequestId: string,
   userId: string
 ): Promise<void> {
-  // Get payment request with vendor check
   const pr = await prisma.paymentRequest.findUnique({
     where: { id: paymentRequestId },
-    include: {
-      vendor: {
-        select: { user_id: true }
-      }
-    }
+    include: { vendor: { select: { user_id: true } } }
   })
 
   if (!pr) {
     throw { statusCode: 404, message: 'Payment request not found' }
   }
 
-  // Only the vendor who created it can cancel
   if (pr.vendor.user_id !== userId) {
     throw { statusCode: 403, message: 'Not authorized to cancel this payment request' }
   }
@@ -1270,136 +1001,68 @@ export async function cancelPaymentRequest(
     where: { id: paymentRequestId },
     data: { status: 'cancelled' },
   })
+
+  broadcastPaymentRequest(paymentRequestId).catch(err =>
+    console.error('[Chat] payment_request_updated emit failed:', err)
+  )
 }
 
+// ─── Edit / delete ──────────────────────────────────────────────────────────
+
 /**
- * Update a message (only sender can edit, within some time window maybe)
+ * Edit a text message (sender only)
  */
 export async function updateMessage(
   messageId: string,
   userId: string,
   content: string
 ): Promise<MessageOutput> {
-  // Find message
-  const message = await prisma.message.findUnique({
-    where: { id: messageId },
-    include: {
-      conversation: {
-        include: {
-          vendor: { select: { user_id: true } }
-        }
-      }
-    }
-  })
+  const trimmed = content.trim()
+  if (!trimmed) throw { statusCode: 400, message: 'Message cannot be empty' }
+  if (trimmed.length > 2000) throw { statusCode: 400, message: 'Message is too long' }
+
+  const message = await prisma.message.findUnique({ where: { id: messageId } })
 
   if (!message) {
     throw { statusCode: 404, message: 'Message not found' }
   }
 
-  // Check ownership - only sender can edit
   if (message.sender_id !== userId) {
     throw { statusCode: 403, message: 'Not authorized to edit this message' }
   }
 
-  // Check if it's a text message (can't edit payment requests or images)
+  if (message.deleted) {
+    throw { statusCode: 400, message: 'Cannot edit a deleted message' }
+  }
+
   if (message.type !== 'text') {
     throw { statusCode: 400, message: 'Cannot edit this type of message' }
   }
 
-  // Update
+  const { otherUserId } = await requireParticipant(message.conversation_id, userId)
+
   const updated = await prisma.message.update({
     where: { id: messageId },
-    data: { content, edited: true },
-    include: {
-      reply_to: {
-        select: {
-          id: true,
-          sender_id: true,
-          content: true,
-          image_url: true,
-          type: true,
-          deleted: true,
-        }
-      },
-      reactions: {
-        select: {
-          id: true,
-          message_id: true,
-          user_id: true,
-          emoji: true,
-          created_at: true,
-        }
-      }
-    }
+    data: { content: trimmed, edited: true },
+    include: messageInclude,
   })
 
-  // Fetch any payment request data if needed
-  let paymentRequestData = null
-  if (updated.type === 'payment_request' && updated.content) {
-    const pr = await prisma.paymentRequest.findUnique({
-      where: { id: updated.content },
-    })
-    if (pr) {
-      paymentRequestData = {
-        id: pr.id,
-        vendor_id: pr.vendor_id,
-        buyer_id: pr.buyer_id,
-        conversation_id: pr.conversation_id,
-        amount: pr.amount,
-        description: pr.description,
-        status: pr.status,
-        paid_at: pr.paid_at?.toISOString() ?? null,
-        created_at: pr.created_at.toISOString(),
-      }
-    }
-  }
-
-  // If this is the last message in the conversation, update conversation last_message
-  const conv = await prisma.conversation.findUnique({
-    where: { id: message.conversation_id },
+  // Keep the chat-list preview in sync if this is the latest message
+  const lastMsg = await prisma.message.findFirst({
+    where: { conversation_id: message.conversation_id, deleted: false },
+    orderBy: { created_at: 'desc' },
+    select: { id: true },
   })
-  if (conv) {
-    const lastMsg = await prisma.message.findFirst({
-      where: { conversation_id: message.conversation_id },
-      orderBy: { created_at: 'desc' },
+  if (lastMsg?.id === messageId) {
+    await prisma.conversation.update({
+      where: { id: message.conversation_id },
+      data: { last_message: trimmed },
     })
-    if (lastMsg?.id === messageId) {
-      await prisma.conversation.update({
-        where: { id: message.conversation_id },
-        data: { last_message: content },
-      })
-    }
   }
 
-  return {
-    id: updated.id,
-    conversation_id: updated.conversation_id,
-    sender_id: updated.sender_id,
-    content: updated.content,
-    image_url: updated.image_url,
-    type: updated.type as 'text' | 'image' | 'payment_request',
-    is_read: updated.is_read,
-    delivered: updated.delivered,
-    edited: updated.edited,
-    deleted: updated.deleted,
-    reply_to_id: updated.reply_to_id ?? null,
-    reply_to: updated.reply_to ? {
-      id: updated.reply_to.id,
-      sender_id: updated.reply_to.sender_id,
-      content: updated.reply_to.deleted ? null : updated.reply_to.content,
-      image_url: updated.reply_to.deleted ? null : updated.reply_to.image_url,
-      type: updated.reply_to.type,
-    } : null,
-    reactions: updated.reactions.map(r => ({
-      id: r.id,
-      message_id: r.message_id,
-      user_id: r.user_id,
-      emoji: r.emoji,
-      created_at: r.created_at.toISOString(),
-    })),
-    created_at: updated.created_at.toISOString(),
-    payment_request: paymentRequestData,
-  }
+  const output = serializeMessage(updated)
+  emit([userId, otherUserId], 'message_updated', output)
+  return output
 }
 
 /**
@@ -1421,7 +1084,14 @@ export async function deleteMessage(
     throw { statusCode: 403, message: 'Not authorized to delete this message' }
   }
 
+  if (message.type === 'payment_request') {
+    throw { statusCode: 400, message: 'Cancel the payment request instead' }
+  }
+
+  if (message.deleted) return
+
   const conversationId = message.conversation_id
+  const { otherUserId } = await requireParticipant(conversationId, userId)
 
   await prisma.message.update({
     where: { id: messageId },
@@ -1433,86 +1103,32 @@ export async function deleteMessage(
     }
   })
 
-  // Update conversation last message if this was the last
-  const lastMsg = await prisma.message.findFirst({
-    where: {
-      conversation_id: conversationId,
-      deleted: false,
-    },
-    orderBy: { created_at: 'desc' },
-  })
+  await refreshConversationPreview(conversationId)
 
-  if (lastMsg) {
-    const lastMessageText = lastMsg.type === 'image' ? 'Photo' : (lastMsg.content ?? '')
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        last_message: lastMessageText,
-        last_message_at: lastMsg.created_at,
-      },
-    })
-  } else {
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        last_message: null,
-        last_message_at: new Date(),
-      },
-    })
-  }
-
-  // Emit deletion via socket
-  try {
-    const io = getSocketIO()
-    if (io) {
-      io.to(`conversation:${conversationId}`).emit('message_deleted', { messageId })
-    }
-  } catch (socketError) {
-    console.error('[Chat] Socket.io emit error for message_deleted:', socketError)
-  }
+  emit([userId, otherUserId], 'message_deleted', { conversationId, messageId })
 }
 
-// ─── REACTIONS ────────────────────────────────────────────────────────────
+// ─── Reactions ──────────────────────────────────────────────────────────────
 
 export async function addReaction(
   messageId: string,
   userId: string,
   emoji: string
 ): Promise<ReactionOutput> {
-  // Check message exists
   const message = await prisma.message.findUnique({
     where: { id: messageId },
-    select: { conversation_id: true, sender_id: true }
+    select: { conversation_id: true, deleted: true }
   })
 
   if (!message) throw { statusCode: 404, message: 'Message not found' }
+  if (message.deleted) throw { statusCode: 400, message: 'Cannot react to a deleted message' }
 
-  // Verify user is part of conversation
-  const conv = await prisma.conversation.findUnique({
-    where: { id: message.conversation_id },
-    include: { vendor: { select: { user_id: true } } }
-  })
+  const { otherUserId } = await requireParticipant(message.conversation_id, userId)
 
-  if (!conv) throw { statusCode: 404, message: 'Conversation not found' }
-
-  const isBuyer = conv.buyer_id === userId
-  const isVendor = conv.vendor.user_id === userId
-  if (!isBuyer && !isVendor) throw { statusCode: 403, message: 'Not authorized' }
-
-  // Upsert reaction
   const reaction = await prisma.messageReaction.upsert({
-    where: {
-      message_id_user_id: {
-        message_id: messageId,
-        user_id: userId,
-      }
-    },
+    where: { message_id_user_id: { message_id: messageId, user_id: userId } },
     update: { emoji },
-    create: {
-      message_id: messageId,
-      user_id: userId,
-      emoji,
-    }
+    create: { message_id: messageId, user_id: userId, emoji }
   })
 
   const output: ReactionOutput = {
@@ -1523,18 +1139,11 @@ export async function addReaction(
     created_at: reaction.created_at.toISOString(),
   }
 
-  // Emit via socket
-  try {
-    const io = getSocketIO()
-    if (io) {
-      io.to(`conversation:${message.conversation_id}`).emit('reaction_added', {
-        messageId,
-        reaction: output,
-      })
-    }
-  } catch (socketError) {
-    console.error('[Chat] Reaction socket error:', socketError)
-  }
+  emit([userId, otherUserId], 'reaction_added', {
+    conversationId: message.conversation_id,
+    messageId,
+    reaction: output,
+  })
 
   return output
 }
@@ -1544,36 +1153,18 @@ export async function removeReaction(
   userId: string
 ): Promise<void> {
   const existing = await prisma.messageReaction.findUnique({
-    where: {
-      message_id_user_id: {
-        message_id: messageId,
-        user_id: userId,
-      }
-    },
+    where: { message_id_user_id: { message_id: messageId, user_id: userId } },
     select: { id: true, message: { select: { conversation_id: true } } }
   })
 
-  if (!existing) throw { statusCode: 404, message: 'Reaction not found' }
+  if (!existing) return // already gone — idempotent
 
   await prisma.messageReaction.delete({
-    where: {
-      message_id_user_id: {
-        message_id: messageId,
-        user_id: userId,
-      }
-    }
+    where: { message_id_user_id: { message_id: messageId, user_id: userId } }
   })
 
-  // Emit via socket
-  try {
-    const io = getSocketIO()
-    if (io) {
-      io.to(`conversation:${existing.message.conversation_id}`).emit('reaction_removed', {
-        messageId,
-        userId,
-      })
-    }
-  } catch (socketError) {
-    console.error('[Chat] Reaction remove socket error:', socketError)
-  }
+  const conversationId = existing.message.conversation_id
+  const { otherUserId } = await requireParticipant(conversationId, userId)
+
+  emit([userId, otherUserId], 'reaction_removed', { conversationId, messageId, userId })
 }

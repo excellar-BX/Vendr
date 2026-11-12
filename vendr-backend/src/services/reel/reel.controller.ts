@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import * as ReelService from './reel.service'
-import {
+import { updateReelSchema,
   createReelSchema,
   reelEnrichedSchema,
   toggleResponseSchema
@@ -15,14 +15,16 @@ export async function getReelsController(request: FastifyRequest, reply: Fastify
     const query = request.query as Record<string, any>
 
     // Extract optional vendor_id, include_all, limit, offset
-    const { vendor_id, include_all, limit, offset } = query
+    const { vendor_id, include_all, limit, offset, hashtag, mode, lat, lng } = query
     const userId = request.user?.id // Auth optional; if present, we'll include personalization
 
     const limitNum = limit ? parseInt(String(limit), 10) : 20
     const offsetNum = offset ? parseInt(String(offset), 10) : 0
 
     let reels
-    if (vendor_id) {
+    if (hashtag) {
+      reels = await ReelService.getReelsByHashtag(String(hashtag), { userId, limit: limitNum, offset: offsetNum })
+    } else if (vendor_id) {
       // Vendor-specific reels
       reels = await ReelService.getReelsByVendor(vendor_id, {
         includeAll: include_all === 'true',
@@ -36,6 +38,9 @@ export async function getReelsController(request: FastifyRequest, reply: Fastify
         userId,
         limit: limitNum,
         offset: offsetNum,
+        mode: mode === 'following' ? 'following' : 'for_you',
+        lat: lat != null && lat !== '' ? Number(lat) : null,
+        lng: lng != null && lng !== '' ? Number(lng) : null,
       })
     }
 
@@ -93,7 +98,8 @@ export async function getReelController(request: FastifyRequest, reply: FastifyR
 export async function incrementViewController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
-    await ReelService.incrementReelViewCount(id)
+    // One view per person (the feed also uses this to know what you've already seen)
+    await ReelService.incrementReelViewCount(id, request.user?.id)
     return reply.status(200).send({ success: true, message: 'View counted' })
   } catch (err: any) {
     console.error('[Reel] incrementView error:', err)
@@ -104,6 +110,21 @@ export async function incrementViewController(request: FastifyRequest, reply: Fa
 // ─────────────────────────────────────────────────────────────────────────────
 // Delete Reel
 // ─────────────────────────────────────────────────────────────────────────────
+
+export async function updateReelController(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = updateReelSchema.safeParse(request.body)
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, errors: parsed.error.flatten().fieldErrors })
+  }
+  try {
+    const { id } = request.params as { id: string }
+    const reel = await ReelService.updateReel(id, request.user.id, parsed.data)
+    return reply.status(200).send({ success: true, data: reelEnrichedSchema.parse(reel) })
+  } catch (err: any) {
+    console.error('[Reel] updateReel error:', err)
+    return reply.status(err.statusCode ?? 500).send({ success: false, message: err.message })
+  }
+}
 
 export async function deleteReelController(request: FastifyRequest, reply: FastifyReply) {
   try {

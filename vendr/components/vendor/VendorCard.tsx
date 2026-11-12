@@ -4,15 +4,16 @@ import { router } from 'expo-router';
 import { Text } from '../ui/StyledText';
 import { Vendor } from '../../types';
 import { formatDistance } from '../../lib/utils';
+import { T, useTheme } from '../../constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
 const categoryConfig: Record<string, { color: string; icon: IoniconsName }> = {
   'Food & Drinks':  { color: '#E8521A', icon: 'fast-food-outline' },
-  'Fashion':        { color: '#F5A623', icon: 'shirt-outline' },
-  'Accessories':    { color: '#9A8570', icon: 'diamond-outline' },
-  'Beauty & Hair':  { color: '#E85599', icon: 'cut-outline' },
-  'Electronics':    { color: '#5599E8', icon: 'phone-portrait-outline' },
+  'Fashion':        { color: '#D97706', icon: 'shirt-outline' },
+  'Accessories':    { color: '#78716C', icon: 'diamond-outline' },
+  'Beauty & Hair':  { color: '#DB2777', icon: 'cut-outline' },
+  'Electronics':    { color: '#2563EB', icon: 'phone-portrait-outline' },
   'Groceries':      { color: '#2D8653', icon: 'basket-outline' },
 };
 
@@ -21,23 +22,24 @@ interface VendorCardProps {
 }
 
 export function VendorCard({ vendor }: VendorCardProps) {
+  useTheme();
   const config = categoryConfig[vendor.category] ?? { color: '#E8521A', icon: 'storefront-outline' };
 
   return (
     <TouchableOpacity
       onPress={() => router.push({ pathname: '/vendor/[id]', params: { id: vendor.id } })}
       activeOpacity={0.88}
-      className="bg-dark-2 rounded-3xl overflow-hidden border border-faint mb-4"
+      className="bg-surface rounded-3xl overflow-hidden border border-line mb-4"
       style={{
-        shadowColor: '#000',
+        shadowColor: '#1C1917',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.08,
         shadowRadius: 12,
         elevation: 4,
       }}
     >
       {/* Banner */}
-      <View className="h-36 bg-dark-3 items-center justify-center relative">
+      <View className="h-36 bg-surface-2 items-center justify-center relative">
         {vendor.banner_url ? (
           <Image
             source={{ uri: vendor.banner_url }}
@@ -58,7 +60,7 @@ export function VendorCard({ vendor }: VendorCardProps) {
           style={{ position: 'absolute', top: 10, left: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: config.color, flexDirection: 'row', alignItems: 'center', gap: 4 }}
         >
           <Ionicons name={config.icon} size={11} color="white" />
-          <Text style={{ color: 'white', fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11 }}>
+          <Text style={{ color: 'white', fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11 }}>
             {vendor.category}
           </Text>
         </View>
@@ -67,7 +69,7 @@ export function VendorCard({ vendor }: VendorCardProps) {
         {vendor.user?.is_vendor_verified && (
           <View className="absolute top-3 right-3 bg-brand-green/60 border border-brand-green/40 px-2 py-1 rounded-full flex-row items-center gap-1">
             <Ionicons name="shield-checkmark" size={12} color="#fff" />
-            <Text className="text-xs text-white" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+            <Text className="text-xs text-white" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               Verified
             </Text>
           </View>
@@ -78,7 +80,7 @@ export function VendorCard({ vendor }: VendorCardProps) {
           <View style={{ position: 'absolute', bottom: -18, left: 16 }}>
             <Image
               source={{ uri: vendor.logo_url }}
-              style={{ width: 44, height: 44, borderRadius: 12, borderWidth: 2, borderColor: '#1A1208' }}
+              style={{ width: 44, height: 44, borderRadius: 12, borderWidth: 2, borderColor: T.surface }}
               resizeMode="cover"
             />
           </View>
@@ -89,8 +91,8 @@ export function VendorCard({ vendor }: VendorCardProps) {
       <View style={{ paddingHorizontal: 16, paddingTop: vendor.logo_url ? 24 : 12, paddingBottom: 12 }}>
         <View className="flex-row items-center justify-between mb-1">
           <Text
-            className="text-cream text-base flex-1 mr-2"
-            style={{ fontFamily: 'SpaceGrotesk_700Bold' }}
+            className="text-ink text-base flex-1 mr-2"
+            style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
             numberOfLines={1}
           >
             {vendor.shop_name}
@@ -98,30 +100,30 @@ export function VendorCard({ vendor }: VendorCardProps) {
 
           <View className="flex-row items-center gap-1">
             <Ionicons name="star" size={13} color="#F5A623" />
-            <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
+            <Text className="text-ink text-sm" style={{ fontFamily: 'PlusJakartaSans_600SemiBold' }}>
               {vendor.rating > 0 ? vendor.rating.toFixed(1) : 'New'}
             </Text>
             {vendor.review_count > 0 && (
-              <Text className="text-muted text-xs">({vendor.review_count})</Text>
+              <Text className="text-ink-2 text-xs">({vendor.review_count})</Text>
             )}
           </View>
         </View>
 
         {vendor.description && (
-          <Text className="text-muted text-sm mb-2" numberOfLines={1}>
+          <Text className="text-ink-2 text-sm mb-2" numberOfLines={1}>
             {vendor.description}
           </Text>
         )}
 
         <View className="flex-row items-center justify-between mt-1">
           <View className="flex-row items-center gap-1">
-            <Ionicons name="location-outline" size={13} color="#9A8570" />
-            <Text className="text-muted text-xs">
+            <Ionicons name="location-outline" size={13} color={T.ink2} />
+            <Text className="text-ink-2 text-xs">
               {vendor.distance != null ? formatDistance(vendor.distance) : vendor.address ?? 'Nearby'}
             </Text>
           </View>
 
-          <View className={`w-2 h-2 rounded-full ${vendor.is_active ? 'bg-brand-green' : 'bg-subtle'}`} />
+          <View className={`w-2 h-2 rounded-full ${vendor.is_active ? 'bg-brand-green' : 'bg-ink-4'}`} />
         </View>
       </View>
     </TouchableOpacity>

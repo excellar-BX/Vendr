@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { userApi, orderApi, reviewApi, savedVendorApi, vendorApi, reelApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
+import { T, useTheme } from '../constants/theme';
 
 const { width: SW } = Dimensions.get('window');
 const REEL_SIZE = (SW - 48) / 3;
@@ -24,6 +25,7 @@ interface ReelThumb {
 }
 
 function ReelGrid({ reels, vendorId, onDelete }: { reels: ReelThumb[]; vendorId: string; onDelete?: (reel: ReelThumb) => void }) {
+  useTheme();
   const { width: SW } = Dimensions.get('window');
   const REEL_SIZE = (SW - 48) / 3;
   return (
@@ -38,18 +40,23 @@ function ReelGrid({ reels, vendorId, onDelete }: { reels: ReelThumb[]; vendorId:
           })}
           onLongPress={() => onDelete?.(reel)}
           delayLongPress={400}
-          style={{ width: REEL_SIZE, height: REEL_SIZE * 1.5, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1A1208' }}
+          style={{ width: REEL_SIZE, height: REEL_SIZE * 1.5, borderRadius: 14, overflow: 'hidden', backgroundColor: T.surface }}
         >
           {reel.thumbnail_url ? (
             <Image source={{ uri: reel.thumbnail_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
           ) : (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="play-circle-outline" size={28} color="#3D3026" />
+              <Ionicons name="play-circle-outline" size={28} color={T.ink4} />
+            </View>
+          )}
+          {(reel as any).media_type === 'photo' && (
+            <View style={{ position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 8, padding: 4 }}>
+              <Ionicons name="albums" size={13} color="white" />
             </View>
           )}
           <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 7, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Ionicons name="eye-outline" size={10} color="white" />
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: 'white' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 10, color: 'white' }}>
               {reel.view_count > 999 ? `${(reel.view_count / 1000).toFixed(1)}k` : reel.view_count}
             </Text>
           </View>
@@ -61,6 +68,7 @@ function ReelGrid({ reels, vendorId, onDelete }: { reels: ReelThumb[]; vendorId:
 }
 
 export default function ProfileViewScreen() {
+  useTheme();
   const { user } = useAuthStore();
   const [profile, setProfile] = useState<any>(null);
   const [reels, setReels] = useState<ReelThumb[]>([]);
@@ -146,30 +154,30 @@ export default function ProfileViewScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#E8521A" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16 }}>
         <TouchableOpacity
           onPress={() => router.back()}
-          style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}
+          style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center', marginRight: 14 }}
         >
-          <Ionicons name="arrow-back" size={20} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={20} color={T.ink} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC', flex: 1 }}>My Profile</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink, flex: 1 }}>My Profile</Text>
         <TouchableOpacity
           onPress={() => router.push('/edit-profile')}
-          style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Ionicons name="pencil-outline" size={18} color="#9A8570" />
+          <Ionicons name="pencil-outline" size={18} color={T.ink2} />
         </TouchableOpacity>
       </View>
 
@@ -188,12 +196,12 @@ export default function ProfileViewScreen() {
               backgroundColor: 'rgba(232,82,26,0.15)', borderWidth: 2, borderColor: 'rgba(232,82,26,0.3)',
               alignItems: 'center', justifyContent: 'center', marginBottom: 14,
             }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 32, color: '#E8521A' }}>{initials}</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 32, color: T.primaryInk }}>{initials}</Text>
             </View>
           )}
 
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', marginBottom: 4 }}>{name}</Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', marginBottom: 12 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink, marginBottom: 4 }}>{name}</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, marginBottom: 12 }}>
             {user?.email}
           </Text>
 
@@ -201,11 +209,11 @@ export default function ProfileViewScreen() {
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 4,
             paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
-            backgroundColor: isVendor ? 'rgba(245,166,35,0.15)' : '#1A1208',
-            borderWidth: 1, borderColor: isVendor ? 'rgba(245,166,35,0.3)' : '#3D3026',
+            backgroundColor: isVendor ? 'rgba(245,166,35,0.15)' : T.surface,
+            borderWidth: 1, borderColor: isVendor ? 'rgba(245,166,35,0.3)' : T.lineStrong,
           }}>
-            <Ionicons name={isVendor ? 'storefront-outline' : 'person-outline'} size={12} color={isVendor ? '#F5A623' : '#9A8570'} />
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: isVendor ? '#F5A623' : '#9A8570' }}>
+            <Ionicons name={isVendor ? 'storefront-outline' : 'person-outline'} size={12} color={isVendor ? '#F5A623' : T.ink2} />
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: isVendor ? T.goldInk : T.ink2 }}>
               {isVendor ? 'Vendor' : 'Buyer'}
             </Text>
           </View>
@@ -224,13 +232,13 @@ export default function ProfileViewScreen() {
               onPress={() => stat.route && router.push(stat.route as any)}
               activeOpacity={stat.route ? 0.75 : 1}
               style={{
-                flex: 1, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+                flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
                 borderRadius: 18, padding: 12, alignItems: 'center', gap: 4,
               }}
             >
-              <Ionicons name={stat.icon} size={18} color="#9A8570" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>{stat.value}</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#6B5E50' }}>{stat.label}</Text>
+              <Ionicons name={stat.icon} size={18} color={T.ink2} />
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink }}>{stat.value}</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink3 }}>{stat.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -240,16 +248,16 @@ export default function ProfileViewScreen() {
           <TouchableOpacity
             onPress={() => router.push('/edit-profile')}
             activeOpacity={0.85}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 18, padding: 16 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 18, padding: 16 }}
           >
             <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(245,166,35,0.15)', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="person-outline" size={20} color="#F5A623" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Edit Profile</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 1 }}>Update name, photo and phone</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>Edit Profile</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 1 }}>Update name, photo and phone</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#3D3026" />
+            <Ionicons name="chevron-forward" size={16} color={T.ink4} />
           </TouchableOpacity>
 
           {isVendor && vendorId && (
@@ -263,8 +271,8 @@ export default function ProfileViewScreen() {
                   <Ionicons name="storefront-outline" size={20} color="#E8521A" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Manage Store</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 1 }}>Products, orders and store settings</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>Manage Store</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 1 }}>Products, orders and store settings</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color="#E8521A" />
               </TouchableOpacity>
@@ -279,8 +287,8 @@ export default function ProfileViewScreen() {
                   <Ionicons name="diamond-outline" size={20} color="#2D8653" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>Upgrade to Pro</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 1 }}>Unlock premium features & boost visibility</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>Upgrade to Pro</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 1 }}>Unlock premium features & boost visibility</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color="#2D8653" />
               </TouchableOpacity>
@@ -301,15 +309,15 @@ export default function ProfileViewScreen() {
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 6,
                     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 12,
-                    backgroundColor: reelTab === 'mine' ? '#E8521A' : '#1A1208',
-                    borderWidth: 1, borderColor: reelTab === 'mine' ? '#E8521A' : '#2A1F14',
+                    backgroundColor: reelTab === 'mine' ? '#E8521A' : T.surface,
+                    borderWidth: 1, borderColor: reelTab === 'mine' ? '#E8521A' : T.line,
                   }}
                 >
-                  <Ionicons name="play-circle-outline" size={14} color={reelTab === 'mine' ? 'white' : '#9A8570'} />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: reelTab === 'mine' ? 'white' : '#9A8570' }}>My Reels</Text>
+                  <Ionicons name="play-circle-outline" size={14} color={reelTab === 'mine' ? 'white' : T.ink2} />
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: reelTab === 'mine' ? 'white' : T.ink2 }}>My Reels</Text>
                   {reels.length > 0 && (
                     <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, backgroundColor: reelTab === 'mine' ? 'rgba(255,255,255,0.25)' : 'rgba(232,82,26,0.15)' }}>
-                      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 10, color: reelTab === 'mine' ? 'white' : '#E8521A' }}>{reels.length}</Text>
+                      <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 10, color: reelTab === 'mine' ? 'white' : T.primaryInk }}>{reels.length}</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -322,15 +330,15 @@ export default function ProfileViewScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 6,
                   paddingHorizontal: 14, paddingVertical: 7, borderRadius: 12,
-                  backgroundColor: reelTab === 'saved' ? '#E8521A' : '#1A1208',
-                  borderWidth: 1, borderColor: reelTab === 'saved' ? '#E8521A' : '#2A1F14',
+                  backgroundColor: reelTab === 'saved' ? '#E8521A' : T.surface,
+                  borderWidth: 1, borderColor: reelTab === 'saved' ? '#E8521A' : T.line,
                 }}
               >
-                <Ionicons name="bookmark-outline" size={14} color={reelTab === 'saved' ? 'white' : '#9A8570'} />
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: reelTab === 'saved' ? 'white' : '#9A8570' }}>Saved</Text>
+                <Ionicons name="bookmark-outline" size={14} color={reelTab === 'saved' ? 'white' : T.ink2} />
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: reelTab === 'saved' ? 'white' : T.ink2 }}>Saved</Text>
                 {savedReels.length > 0 && (
                   <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, backgroundColor: reelTab === 'saved' ? 'rgba(255,255,255,0.25)' : 'rgba(232,82,26,0.15)' }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 10, color: reelTab === 'saved' ? 'white' : '#E8521A' }}>{savedReels.length}</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 10, color: reelTab === 'saved' ? 'white' : T.primaryInk }}>{savedReels.length}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -347,7 +355,7 @@ export default function ProfileViewScreen() {
                   }}
                 >
                   <Ionicons name="add" size={15} color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12, color: '#E8521A' }}>Post</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12, color: T.primaryInk }}>Post</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -360,15 +368,15 @@ export default function ProfileViewScreen() {
                   activeOpacity={0.85}
                   style={{
                     alignItems: 'center', justifyContent: 'center',
-                    borderWidth: 1.5, borderColor: '#2A1F14', borderRadius: 20,
+                    borderWidth: 1.5, borderColor: T.line, borderRadius: 20,
                     borderStyle: 'dashed', paddingVertical: 40, gap: 12,
                   }}
                 >
-                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="videocam-outline" size={26} color="#3D3026" />
+                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="videocam-outline" size={26} color={T.ink4} />
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }}>Post your first reel</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', textAlign: 'center', paddingHorizontal: 20 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink }}>Post your first reel</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, textAlign: 'center', paddingHorizontal: 20 }}>
                     Share short videos of your products to attract buyers
                   </Text>
                 </TouchableOpacity>
@@ -379,11 +387,11 @@ export default function ProfileViewScreen() {
               /* ── Saved Reels grid ── */
               savedReels.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
-                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="bookmark-outline" size={26} color="#3D3026" />
+                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="bookmark-outline" size={26} color={T.ink4} />
                   </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }}>No saved reels yet</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', textAlign: 'center' }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink }}>No saved reels yet</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, textAlign: 'center' }}>
                     Bookmark reels you like and they will appear here
                   </Text>
                 </View>

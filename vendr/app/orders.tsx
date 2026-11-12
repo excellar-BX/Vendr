@@ -8,10 +8,11 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Text } from '../components/ui/StyledText';
-import { orderApi, disputeApi } from '../lib/api';
+import { orderApi, disputeApi, runnerApi } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import { uploadFile } from '../lib/storage';
 import { useVendrAlert } from '../components/ui/VendrAlert';
+import { T, useTheme } from '../constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 type OrderTab = 'bought' | 'sold';
@@ -37,14 +38,14 @@ interface Order {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: IoniconsName }> = {
-  pending: { label: 'Pending', color: '#F5A623', icon: 'time-outline' },
+  pending: { label: 'Pending', color: '#D97706', icon: 'time-outline' },
   confirmed: { label: 'Confirmed', color: '#2D8653', icon: 'checkmark-circle-outline' },
-  preparing: { label: 'Preparing', color: '#5599E8', icon: 'restaurant-outline' },
-  ready: { label: 'Ready', color: '#9B59B6', icon: 'cube-outline' },
+  preparing: { label: 'Preparing', color: '#2563EB', icon: 'restaurant-outline' },
+  ready: { label: 'Ready', color: '#7C3AED', icon: 'cube-outline' },
   delivered: { label: 'Delivered', color: '#27AE60', icon: 'checkmark-done-circle-outline' },
-  cancelled: { label: 'Cancelled', color: '#E74C3C', icon: 'close-circle-outline' },
-  refunded: { label: 'Refunded', color: '#5599E8', icon: 'refresh-circle-outline' },
-  disputed: { label: 'Disputed', color: '#E85555', icon: 'alert-circle-outline' },
+  cancelled: { label: 'Cancelled', color: '#DC2626', icon: 'close-circle-outline' },
+  refunded: { label: 'Refunded', color: '#2563EB', icon: 'refresh-circle-outline' },
+  disputed: { label: 'Disputed', color: '#DC2626', icon: 'alert-circle-outline' },
   completed: { label: 'Completed', color: '#2D8653', icon: 'checkmark-circle-outline' },
 };
 
@@ -79,6 +80,7 @@ function groupByDate(orders: Order[]) {
 const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'delivered'];
 
 function OrderStatusStepper({ status }: { status: string }) {
+  useTheme();
   const currentIndex = STATUS_FLOW.indexOf(status);
   const isCancelled = status === 'cancelled';
   const isRefunded = status === 'refunded';
@@ -102,9 +104,9 @@ function OrderStatusStepper({ status }: { status: string }) {
                 width: 24,
                 height: 24,
                 borderRadius: 12,
-                backgroundColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#2A1F14',
+                backgroundColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : T.line,
                 borderWidth: 2,
-                borderColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#3D3026',
+                borderColor: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : T.lineStrong,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -112,16 +114,16 @@ function OrderStatusStepper({ status }: { status: string }) {
               {isCompleted ? (
                 <Ionicons name="checkmark" size={12} color="white" />
               ) : (
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10, color: isCurrent ? '#E8521A' : '#6B5E50' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 10, color: isCurrent ? T.primaryInk : T.ink3 }}>
                   {index + 1}
                 </Text>
               )}
             </View>
             <Text
               style={{
-                fontFamily: 'SpaceGrotesk_500Medium',
+                fontFamily: 'PlusJakartaSans_500Medium',
                 fontSize: 9,
-                color: isCompleted ? '#2D8653' : isCurrent ? '#E8521A' : '#6B5E50',
+                color: isCompleted ? T.successInk : isCurrent ? T.primaryInk : T.ink3,
                 marginTop: 4,
                 textTransform: 'capitalize',
               }}
@@ -136,7 +138,7 @@ function OrderStatusStepper({ status }: { status: string }) {
                   left: '50%',
                   width: '100%',
                   height: 2,
-                  backgroundColor: isCompleted ? '#2D8653' : '#3D3026',
+                  backgroundColor: isCompleted ? '#2D8653' : T.line,
                 }}
               />
             )}
@@ -144,6 +146,46 @@ function OrderStatusStepper({ status }: { status: string }) {
         );
       })}
     </View>
+  );
+}
+
+/** Seller-side: reveal the 6-digit code a runner enters when collecting the order. */
+function RunnerPickupCode({ orderId }: { orderId: string }) {
+  useTheme();
+  const [state, setState] = useState<'idle' | 'loading' | 'shown' | 'none' | 'error'>('idle');
+  const [code, setCode] = useState<string | null>(null);
+
+  const reveal = async () => {
+    setState('loading');
+    try {
+      const { data } = await runnerApi.sellerPickupCode(orderId);
+      if (data?.qr_code && /^\d{6}$/.test(data.qr_code)) { setCode(data.qr_code); setState('shown'); }
+      else setState('none'); // self-delivery (no runner job) or older order
+    } catch {
+      setState('error');
+    }
+  };
+
+  if (state === 'none') return null;
+  return (
+    <TouchableOpacity
+      onPress={state === 'shown' ? undefined : reveal}
+      activeOpacity={0.85}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(232,82,26,0.08)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.25)' }}
+    >
+      <Ionicons name="bicycle" size={18} color="#E8521A" />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 12.5, color: T.ink }}>Runner pickup code</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11.5, color: T.ink3 }}>
+          {state === 'shown' ? 'Read this to the runner when they collect the order' : state === 'error' ? "Couldn't load — tap to retry" : 'Tap to show the code for the runner'}
+        </Text>
+      </View>
+      {state === 'loading' ? <ActivityIndicator size="small" color="#E8521A" /> : state === 'shown' ? (
+        <Text style={{ fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 22, letterSpacing: 3, color: '#C2410C' }}>{code}</Text>
+      ) : (
+        <Ionicons name="eye-outline" size={18} color="#E8521A" />
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -174,6 +216,7 @@ function OrderCard({
   actionLoading: string | null;
   deliveryCode: string | null;
 }) {
+  useTheme();
   const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending;
   const isBought = mode === 'bought';
   const isHeld = order.escrow_status === 'held';
@@ -219,15 +262,15 @@ function OrderCard({
 
   return (
     <View style={{
-      backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
+      backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
       borderRadius: 20, padding: 16, gap: 12,
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#FDF6EC' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: T.ink }}>
             {isBought ? order.vendor_name : order.buyer_name ?? 'A buyer'}
           </Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3 }}>
             {isPickup ? 'Pickup' : 'Delivery'} · {formatTime(order.created_at)}
           </Text>
         </View>
@@ -237,7 +280,7 @@ function OrderCard({
           backgroundColor: cfg.color + '18', borderWidth: 1, borderColor: cfg.color + '30',
         }}>
           <Ionicons name={cfg.icon} size={12} color={cfg.color} />
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: cfg.color }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11, color: cfg.color }}>
             {cfg.label}
           </Text>
         </View>
@@ -253,10 +296,15 @@ function OrderCard({
           paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
         }}>
           <Ionicons name="shield-checkmark-outline" size={12} color="#2D8653" />
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#2D8653', flex: 1 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.successInk, flex: 1 }}>
             {escrowHint}
           </Text>
         </View>
+      ) : null}
+
+      {/* Seller: code the runner needs at pickup (only for runner-delivered orders) */}
+      {!isBought && isDelivery && isHeld && !order.otp_confirmed && !['in_transit', 'delivered', 'completed', 'cancelled'].includes(order.status) ? (
+        <RunnerPickupCode orderId={order.id} />
       ) : null}
 
       {/* Auto-release countdown */}
@@ -277,7 +325,7 @@ function OrderCard({
               paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
             }}>
               <Ionicons name="timer-outline" size={12} color="#FFA500" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#FFA500', flex: 1 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.goldInk, flex: 1 }}>
                 Auto‑releases in {timeLeft}
               </Text>
             </View>
@@ -286,40 +334,40 @@ function OrderCard({
       ) : null}
 
       {isDelivery && order.delivery_address ? (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570' }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink2 }}>
           {order.delivery_address}
         </Text>
       ) : null}
 
       {showDeliveryCode && deliveryCode ? (
         <View style={{
-          backgroundColor: '#0F0A06', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E8521A40',
+          backgroundColor: T.canvas, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E8521A40',
           alignItems: 'center', gap: 4,
         }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 11, color: '#9A8570' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, color: T.ink2 }}>
             Your delivery code
           </Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 28, color: '#E8521A', letterSpacing: 8 }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 28, color: T.primaryInk, letterSpacing: 8 }}>
             {deliveryCode}
           </Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#6B5E50', textAlign: 'center' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 10, color: T.ink3, textAlign: 'center' }}>
             Tell this to the rider at delivery. Do not share before then.
           </Text>
         </View>
       ) : null}
 
       {order.description ? (
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570', lineHeight: 18 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2, lineHeight: 18 }}>
           {order.description}
         </Text>
       ) : null}
 
-      <View style={{ height: 1, backgroundColor: '#2A1F14' }} />
+      <View style={{ height: 1, backgroundColor: T.line }} />
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{
-          fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18,
-          color: isBought ? '#E8521A' : '#2D8653',
+          fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18,
+          color: isBought ? T.primaryInk : T.successInk,
         }}>
           {isBought ? '−' : '+'}{formatAmount(order.amount)}
         </Text>
@@ -333,7 +381,7 @@ function OrderCard({
             }}
           >
             <Ionicons name="chatbubble-outline" size={14} color="#E8521A" />
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Chat</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.primaryInk }}>Chat</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -389,7 +437,7 @@ function OrderCard({
           <ActionBtn
             label="Dispute"
             icon="alert-circle-outline"
-            color="#E85555"
+            color="#DC2626"
             onPress={() => onDispute(order)}
           />
         ) : null}
@@ -407,6 +455,7 @@ function ActionBtn({
   onPress: () => void;
   loading?: boolean;
 }) {
+  useTheme();
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -418,12 +467,13 @@ function ActionBtn({
       }}
     >
       {loading ? <ActivityIndicator size="small" color={color} /> : <Ionicons name={icon} size={14} color={color} />}
-      <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color }}>{label}</Text>
+      <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color }}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 export default function OrdersScreen() {
+  useTheme();
   const { user, isVendor } = useAuthStore();
   const { showAlert, alertElement } = useVendrAlert();
   const [tab, setTab] = useState<OrderTab>('bought');
@@ -671,27 +721,27 @@ export default function OrdersScreen() {
   const groups = groupByDate(activeOrders);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
       {alertElement}
-      <StatusBar style="light" />
+      <StatusBar style={T.statusBar} />
 
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16,
-        borderBottomWidth: 1, borderBottomColor: '#1A1208', gap: 12,
+        borderBottomWidth: 1, borderBottomColor: T.line, gap: 12,
       }}>
         <TouchableOpacity onPress={() => router.back()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC' }}>Orders</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink }}>Orders</Text>
         </View>
       </View>
 
       {showTabs && (
         <View style={{
           flexDirection: 'row', marginHorizontal: 20, marginTop: 16, marginBottom: 4,
-          backgroundColor: '#1A1208', borderRadius: 16, padding: 4, borderWidth: 1, borderColor: '#2A1F14',
+          backgroundColor: T.surface, borderRadius: 16, padding: 4, borderWidth: 1, borderColor: T.line,
         }}>
           {(['bought', 'sold'] as OrderTab[]).map((t) => (
             <TouchableOpacity
@@ -703,8 +753,8 @@ export default function OrdersScreen() {
                 backgroundColor: tab === t ? '#E8521A' : 'transparent',
               }}
             >
-              <Ionicons name={t === 'bought' ? 'bag-outline' : 'storefront-outline'} size={15} color={tab === t ? 'white' : '#6B5E50'} />
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: tab === t ? 'white' : '#6B5E50' }}>
+              <Ionicons name={t === 'bought' ? 'bag-outline' : 'storefront-outline'} size={15} color={tab === t ? 'white' : T.ink3} />
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: tab === t ? 'white' : T.ink3 }}>
                 {t === 'bought' ? 'Purchases' : 'Sales'}
               </Text>
             </TouchableOpacity>
@@ -718,8 +768,8 @@ export default function OrdersScreen() {
         </View>
       ) : activeOrders.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 40 }}>
-          <Ionicons name="bag-outline" size={30} color="#3D3026" />
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>No orders yet</Text>
+          <Ionicons name="bag-outline" size={30} color={T.ink4} />
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink }}>No orders yet</Text>
         </View>
       ) : (
         <FlatList
@@ -732,7 +782,7 @@ export default function OrdersScreen() {
           renderItem={({ item: group }) => (
             <View>
               <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#6B5E50', textTransform: 'uppercase' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11, color: T.ink3, textTransform: 'uppercase' }}>
                   {group.label}
                 </Text>
               </View>
@@ -763,11 +813,11 @@ export default function OrdersScreen() {
       {/* Vendor OTP entry */}
       <Modal visible={!!otpModalOrder} transparent animationType="fade" onRequestClose={() => setOtpModalOrder(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#1A1208', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#2A1F14' }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 8 }}>
+          <View style={{ backgroundColor: T.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: T.line }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, marginBottom: 8 }}>
               Enter delivery code
             </Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', marginBottom: 16 }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, marginBottom: 16 }}>
               Ask the buyer for their 4-digit code at handoff.
             </Text>
             <TextInput
@@ -776,11 +826,11 @@ export default function OrdersScreen() {
               keyboardType="number-pad"
               maxLength={4}
               placeholder="0000"
-              placeholderTextColor="#6B5E50"
+              placeholderTextColor={T.ink3}
               style={{
-                fontFamily: 'SpaceGrotesk_700Bold', fontSize: 32, color: '#FDF6EC',
-                backgroundColor: '#0F0A06', borderRadius: 12, padding: 16, textAlign: 'center',
-                letterSpacing: 12, borderWidth: 1, borderColor: '#2A1F14',
+                fontFamily: 'PlusJakartaSans_700Bold', fontSize: 32, color: T.ink,
+                backgroundColor: T.canvas, borderRadius: 12, padding: 16, textAlign: 'center',
+                letterSpacing: 12, borderWidth: 1, borderColor: T.line,
               }}
             />
             <TouchableOpacity
@@ -791,11 +841,11 @@ export default function OrdersScreen() {
               {actionLoading === otpModalOrder?.id ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>Verify delivery</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: 'white' }}>Verify delivery</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setOtpModalOrder(null)} style={{ marginTop: 12, alignItems: 'center' }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#9A8570' }}>Cancel</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink2 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -812,28 +862,28 @@ export default function OrdersScreen() {
             activeOpacity={1}
             onPress={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: '#1A1208',
+              backgroundColor: T.surface,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               padding: 24,
               paddingBottom: 32,
               borderWidth: 1,
-              borderColor: '#2A1F14',
+              borderColor: T.line,
             }}
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC' }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink }}>
                 Update Order Status
               </Text>
               <TouchableOpacity onPress={() => setStatusModalOrder(null)}>
-                <Ionicons name="close" size={24} color="#6B5E50" />
+                <Ionicons name="close" size={24} color={T.ink3} />
               </TouchableOpacity>
             </View>
 
             {statusModalOrder && (
               <>
-                <View style={{ backgroundColor: '#0F0A06', borderRadius: 16, padding: 16, marginBottom: 20 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginBottom: 4 }}>
+                <View style={{ backgroundColor: T.canvas, borderRadius: 16, padding: 16, marginBottom: 20 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginBottom: 4 }}>
                     Current Status
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -842,13 +892,13 @@ export default function OrdersScreen() {
                       size={20}
                       color={STATUS_CONFIG[statusModalOrder.status]?.color || '#F5A623'}
                     />
-                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 16, color: '#FDF6EC' }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 16, color: T.ink }}>
                       {STATUS_CONFIG[statusModalOrder.status]?.label || statusModalOrder.status}
                     </Text>
                   </View>
                 </View>
 
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#9A8570', marginBottom: 12 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink2, marginBottom: 12 }}>
                   Select new status
                 </Text>
 
@@ -876,11 +926,11 @@ export default function OrdersScreen() {
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 12,
-                          backgroundColor: '#0F0A06',
+                          backgroundColor: T.canvas,
                           borderRadius: 16,
                           padding: 16,
                           borderWidth: 1,
-                          borderColor: '#2A1F14',
+                          borderColor: T.line,
                         }}
                       >
                         <View
@@ -900,10 +950,10 @@ export default function OrdersScreen() {
                           />
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }}>
+                          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink }}>
                             {STATUS_CONFIG[status]?.label || status}
                           </Text>
-                          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>
+                          <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 2 }}>
                             {status === 'confirmed' && 'Confirm the order and start processing'}
                             {status === 'preparing' && 'Order is being prepared'}
                             {status === 'ready' && 'Order is ready for pickup/delivery'}
@@ -913,7 +963,7 @@ export default function OrdersScreen() {
                         {actionLoading === `${statusModalOrder.id}-${status}` ? (
                           <ActivityIndicator size="small" color="#E8521A" />
                         ) : (
-                          <Ionicons name="chevron-forward" size={20} color="#6B5E50" />
+                          <Ionicons name="chevron-forward" size={20} color={T.ink3} />
                         )}
                       </TouchableOpacity>
                     ));
@@ -928,13 +978,13 @@ export default function OrdersScreen() {
       {/* Dispute modal */}
       <Modal visible={!!disputeOrder} transparent animationType="fade" onRequestClose={resetDispute}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#1A1208', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#2A1F14', maxHeight: '85%' }}>
+          <View style={{ backgroundColor: T.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: T.line, maxHeight: '85%' }}>
             {disputeStep === 'reason' ? (
               <>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 8 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, marginBottom: 8 }}>
                   Dispute order
                 </Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50', marginBottom: 16 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink3, marginBottom: 16 }}>
                   Funds stay in escrow until our team reviews your case.
                 </Text>
                 {['Product not received', 'Product not as described', 'Quality issues', 'Other'].map((reason) => (
@@ -945,21 +995,21 @@ export default function OrdersScreen() {
                       setDisputeStep('details');
                     }}
                     style={{
-                      backgroundColor: '#0F0A06', borderRadius: 12, padding: 14,
-                      borderWidth: 1, borderColor: '#2A1F14', marginBottom: 8,
+                      backgroundColor: T.canvas, borderRadius: 12, padding: 14,
+                      borderWidth: 1, borderColor: T.line, marginBottom: 8,
                     }}
                   >
-                    <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#FDF6EC' }}>{reason}</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14, color: T.ink }}>{reason}</Text>
                   </TouchableOpacity>
                 ))}
               </>
             ) : (
               <>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 4 }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, marginBottom: 4 }}>
                   {disputeReason}
                 </Text>
                 {needsEvidence ? (
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#E85555', marginBottom: 12 }}>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.dangerInk, marginBottom: 12 }}>
                     Delivery was verified with your code — photo evidence and a detailed explanation are required.
                   </Text>
                 ) : null}
@@ -967,19 +1017,19 @@ export default function OrdersScreen() {
                   value={disputeDescription}
                   onChangeText={setDisputeDescription}
                   placeholder="Describe what went wrong..."
-                  placeholderTextColor="#6B5E50"
+                  placeholderTextColor={T.ink3}
                   multiline
                   style={{
-                    fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC',
-                    backgroundColor: '#0F0A06', borderRadius: 12, padding: 12, minHeight: 100,
-                    borderWidth: 1, borderColor: '#2A1F14', textAlignVertical: 'top', marginBottom: 12,
+                    fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink,
+                    backgroundColor: T.canvas, borderRadius: 12, padding: 12, minHeight: 100,
+                    borderWidth: 1, borderColor: T.line, textAlignVertical: 'top', marginBottom: 12,
                   }}
                 />
                 {needsEvidence ? (
                   <TouchableOpacity
                     onPress={pickEvidence}
                     style={{
-                      borderRadius: 12, borderWidth: 1, borderColor: '#2A1F14', borderStyle: 'dashed',
+                      borderRadius: 12, borderWidth: 1, borderColor: T.line, borderStyle: 'dashed',
                       padding: 16, alignItems: 'center', marginBottom: 12,
                     }}
                   >
@@ -987,8 +1037,8 @@ export default function OrdersScreen() {
                       <Image source={{ uri: disputeEvidenceUri }} style={{ width: 120, height: 120, borderRadius: 8 }} />
                     ) : (
                       <>
-                        <Ionicons name="camera-outline" size={24} color="#9A8570" />
-                        <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570', marginTop: 6 }}>
+                        <Ionicons name="camera-outline" size={24} color={T.ink2} />
+                        <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink2, marginTop: 6 }}>
                           Add photo evidence
                         </Text>
                       </>
@@ -998,17 +1048,17 @@ export default function OrdersScreen() {
                 <TouchableOpacity
                   onPress={submitDispute}
                   disabled={!!actionLoading?.startsWith('dispute-')}
-                  style={{ backgroundColor: '#E85555', borderRadius: 14, padding: 14, alignItems: 'center' }}
+                  style={{ backgroundColor: '#DC2626', borderRadius: 14, padding: 14, alignItems: 'center' }}
                 >
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>Submit dispute</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: 'white' }}>Submit dispute</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setDisputeStep('reason')} style={{ marginTop: 12, alignItems: 'center' }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#9A8570' }}>Back</Text>
+                  <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink2 }}>Back</Text>
                 </TouchableOpacity>
               </>
             )}
             <TouchableOpacity onPress={resetDispute} style={{ marginTop: 12, alignItems: 'center' }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#9A8570' }}>Cancel</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink2 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>

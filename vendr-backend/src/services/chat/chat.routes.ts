@@ -1,3 +1,4 @@
+//vendr-backend/src/services/chat/chat.route.ts
 import { FastifyInstance } from 'fastify'
 import { authenticate } from '../../middlewares/authenticate'
 import {

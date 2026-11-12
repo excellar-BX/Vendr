@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
 import { useAuthStore } from '../stores/authStore';
 import { walletApi } from '../lib/api';
+import { T, useTheme } from '../constants/theme';
 
 // Withdrawal fee configuration
 const WITHDRAWAL_FEE = 60; // ₦60 total fee (₦35 Monnify + ₦25 Vendr)
@@ -27,6 +28,7 @@ function formatAmount(n: number) {
 }
 
 export default function WithdrawScreen() {
+  useTheme();
   const { user } = useAuthStore();
   const params = useLocalSearchParams();
   const [amount, setAmount] = useState('');
@@ -103,48 +105,48 @@ export default function WithdrawScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#E8521A" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F0A06' }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
 
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, gap: 12 }}>
         <TouchableOpacity onPress={() => router.back()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', flex: 1 }}>Withdraw</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink, flex: 1 }}>Withdraw</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} showsVerticalScrollIndicator={false}>
 
         {/* Balance pill */}
-        <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#9A8570' }}>Available Balance</Text>
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC' }}>{formatAmount(balance)}</Text>
+        <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink2 }}>Available Balance</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink }}>{formatAmount(balance)}</Text>
         </View>
 
         {/* Amount input */}
         <View>
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#9A8570', marginBottom: 10 }}>AMOUNT</Text>
-          <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: error ? '#E85555' : '#3D3026', borderRadius: 18, paddingHorizontal: 20, height: 64, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#6B5E50' }}>₦</Text>
+          <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink2, marginBottom: 10 }}>AMOUNT</Text>
+          <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: error ? '#DC2626' : T.lineStrong, borderRadius: 18, paddingHorizontal: 20, height: 64, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink3 }}>₦</Text>
             <RNTextInput
               value={amount}
               onChangeText={t => { setAmount(t); setError(''); }}
               placeholder="0.00"
-              placeholderTextColor="#3D3026"
+              placeholderTextColor={T.ink4}
               keyboardType="numeric"
-              style={{ flex: 1, fontFamily: 'SpaceGrotesk_700Bold', fontSize: 26, color: '#FDF6EC', backgroundColor: 'transparent' }}
+              style={{ flex: 1, fontFamily: 'PlusJakartaSans_700Bold', fontSize: 26, color: T.ink, backgroundColor: 'transparent' }}
             />
           </View>
           {error ? (
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#E85555', marginTop: 6 }}>{error}</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.dangerInk, marginTop: 6 }}>{error}</Text>
           ) : null}
         </View>
 
@@ -157,20 +159,20 @@ export default function WithdrawScreen() {
                 onPress={() => setAmount(String(a))}
                 style={{
                   paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12,
-                  backgroundColor: parsedAmount === a ? '#E8521A' : '#1A1208',
-                  borderWidth: 1, borderColor: parsedAmount === a ? '#E8521A' : '#2A1F14',
+                  backgroundColor: parsedAmount === a ? '#E8521A' : T.surface,
+                  borderWidth: 1, borderColor: parsedAmount === a ? '#E8521A' : T.line,
                 }}
               >
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: parsedAmount === a ? 'white' : '#9A8570' }}>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: parsedAmount === a ? 'white' : T.ink2 }}>
                   ₦{a.toLocaleString()}
                 </Text>
               </TouchableOpacity>
             ))}
             <TouchableOpacity
               onPress={() => setAmount(String(balance))}
-              style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14' }}
+              style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}
             >
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#F5A623' }}>All</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.goldInk }}>All</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -178,20 +180,20 @@ export default function WithdrawScreen() {
         {/* Bank account selector */}
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#9A8570' }}>WITHDRAW TO</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink2 }}>WITHDRAW TO</Text>
             <TouchableOpacity onPress={() => router.push({ pathname: '/add-bank-account', params: { mode: 'select' } })}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>+ Add Account</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.primaryInk }}>+ Add Account</Text>
             </TouchableOpacity>
           </View>
 
           {bankAccounts.length === 0 ? (
             <TouchableOpacity
               onPress={() => router.push({ pathname: '/add-bank-account', params: { mode: 'select' } })}
-              style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderStyle: 'dashed', borderRadius: 18, padding: 20, alignItems: 'center', gap: 8 }}
+              style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderStyle: 'dashed', borderRadius: 18, padding: 20, alignItems: 'center', gap: 8 }}
             >
-              <Ionicons name="card-outline" size={28} color="#3D3026" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#6B5E50' }}>No bank accounts yet</Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Add one now</Text>
+              <Ionicons name="card-outline" size={28} color={T.ink4} />
+              <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13, color: T.ink3 }}>No bank accounts yet</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.primaryInk }}>Add one now</Text>
             </TouchableOpacity>
           ) : (
             <View style={{ gap: 10 }}>
@@ -200,17 +202,17 @@ export default function WithdrawScreen() {
                   key={bank.id}
                   onPress={() => setSelectedBank(bank)}
                   style={{
-                    backgroundColor: '#1A1208', borderWidth: 1,
-                    borderColor: selectedBank?.id === bank.id ? '#E8521A' : '#2A1F14',
+                    backgroundColor: T.surface, borderWidth: 1,
+                    borderColor: selectedBank?.id === bank.id ? '#E8521A' : T.line,
                     borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
                   }}
                 >
-                  <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: selectedBank?.id === bank.id ? 'rgba(232,82,26,0.15)' : '#0F0A06', alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="card-outline" size={20} color={selectedBank?.id === bank.id ? '#E8521A' : '#9A8570'} />
+                  <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: selectedBank?.id === bank.id ? 'rgba(232,82,26,0.15)' : T.canvas, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="card-outline" size={20} color={selectedBank?.id === bank.id ? '#E8521A' : T.ink2} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{bank.bank_name}</Text>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#9A8570', marginTop: 2 }}>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink }}>{bank.bank_name}</Text>
+                    <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink2, marginTop: 2 }}>
                       {bank.account_name} • ••••{bank.account_number.slice(-4)}
                     </Text>
                   </View>
@@ -226,12 +228,12 @@ export default function WithdrawScreen() {
           onPress={() => { if (validate()) setShowConfirm(true); }}
           activeOpacity={0.85}
           style={{
-            backgroundColor: parsedAmount > 0 && selectedBank ? '#E8521A' : '#2A1F14',
+            backgroundColor: parsedAmount > 0 && selectedBank ? '#E8521A' : T.line,
             borderRadius: 18, height: 60, alignItems: 'center', justifyContent: 'center',
             shadowColor: '#E8521A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: parsedAmount > 0 ? 0.3 : 0, shadowRadius: 12, elevation: parsedAmount > 0 ? 6 : 0,
           }}
         >
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: parsedAmount > 0 && selectedBank ? 'white' : '#6B5E50' }}>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: parsedAmount > 0 && selectedBank ? 'white' : T.ink3 }}>
             Withdraw {parsedAmount > 0 ? formatAmount(parsedAmount) : ''}
           </Text>
         </TouchableOpacity>
@@ -240,34 +242,34 @@ export default function WithdrawScreen() {
       {/* Confirm Modal */}
       <Modal visible={showConfirm} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
-          <View style={{ backgroundColor: '#1A1208', borderRadius: 24, borderWidth: 1, borderColor: '#2A1F14', padding: 24, gap: 16 }}>
+          <View style={{ backgroundColor: T.surface, borderRadius: 24, borderWidth: 1, borderColor: T.line, padding: 24, gap: 16 }}>
             <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(232,82,26,0.12)', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }}>
               <Ionicons name="arrow-up-circle-outline" size={28} color="#E8521A" />
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 20, color: '#FDF6EC', textAlign: 'center' }}>Confirm Withdrawal</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 20, color: T.ink, textAlign: 'center' }}>Confirm Withdrawal</Text>
 
-            <View style={{ backgroundColor: '#0F0A06', borderRadius: 16, borderWidth: 1, borderColor: '#2A1F14', padding: 16, gap: 10 }}>
+            <View style={{ backgroundColor: T.canvas, borderRadius: 16, borderWidth: 1, borderColor: T.line, padding: 16, gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Withdrawal amount</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#FDF6EC' }}>{formatAmount(parsedAmount)}</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>Withdrawal amount</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13, color: T.ink }}>{formatAmount(parsedAmount)}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Vendr withdrawal fee</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#F5A623' }}>{formatAmount(WITHDRAWAL_FEE)}</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>Vendr withdrawal fee</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.goldInk }}>{formatAmount(WITHDRAWAL_FEE)}</Text>
               </View>
-              <View style={{ height: 1, backgroundColor: '#1A1208' }} />
+              <View style={{ height: 1, backgroundColor: T.surface }} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>Total deducted</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: '#E8521A' }}>{formatAmount(totalDeduction)}</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink }}>Total deducted</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: T.primaryInk }}>{formatAmount(totalDeduction)}</Text>
               </View>
-              <View style={{ height: 1, backgroundColor: '#1A1208' }} />
+              <View style={{ height: 1, backgroundColor: T.surface }} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>To</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>{selectedBank?.bank_name}</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>To</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink }}>{selectedBank?.bank_name}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#9A8570' }}>Account</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#FDF6EC' }}>{selectedBank?.account_name}</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 13, color: T.ink2 }}>Account</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink }}>{selectedBank?.account_name}</Text>
               </View>
             </View>
 
@@ -277,13 +279,13 @@ export default function WithdrawScreen() {
                 disabled={withdrawing}
                 style={{ backgroundColor: '#E8521A', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center' }}
               >
-                {withdrawing ? <ActivityIndicator size="small" color="white" /> : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>Confirm & Withdraw</Text>}
+                {withdrawing ? <ActivityIndicator size="small" color="white" /> : <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: 'white' }}>Confirm & Withdraw</Text>}
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setShowConfirm(false)}
-                style={{ backgroundColor: '#0F0A06', borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2A1F14' }}
+                style={{ backgroundColor: T.canvas, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: T.line }}
               >
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#9A8570' }}>Cancel</Text>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 15, color: T.ink2 }}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -293,19 +295,19 @@ export default function WithdrawScreen() {
       {/* Success Modal */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
-          <View style={{ backgroundColor: '#1A1208', borderRadius: 24, borderWidth: 1, borderColor: '#2A1F14', padding: 32, alignItems: 'center', gap: 16 }}>
+          <View style={{ backgroundColor: T.surface, borderRadius: 24, borderWidth: 1, borderColor: T.line, padding: 32, alignItems: 'center', gap: 16 }}>
             <View style={{ width: 72, height: 72, borderRadius: 22, backgroundColor: 'rgba(45,134,83,0.15)', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="checkmark-circle" size={40} color="#2D8653" />
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#FDF6EC', textAlign: 'center' }}>Withdrawal Initiated</Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#9A8570', textAlign: 'center', lineHeight: 22 }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 22, color: T.ink, textAlign: 'center' }}>Withdrawal Initiated</Text>
+            <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14, color: T.ink2, textAlign: 'center', lineHeight: 22 }}>
               {formatAmount(parsedAmount)} is on its way to {selectedBank?.bank_name}. This usually takes a few minutes.
             </Text>
             <TouchableOpacity
               onPress={() => { setShowSuccess(false); router.replace('/wallet'); }}
               style={{ backgroundColor: '#E8521A', borderRadius: 14, height: 52, width: '100%', alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>Back to Wallet</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: 'white' }}>Back to Wallet</Text>
             </TouchableOpacity>
           </View>
         </View>

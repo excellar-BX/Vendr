@@ -15,8 +15,10 @@ import { apiFetch, saveTokens } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useVendrAlert } from '../../components/ui/VendrAlert'
 import { useGoogleAuth } from '../../hooks/useGoogleAuth'
+import { T, useTheme } from '../../constants/theme';
 
 function GoogleIcon() {
+  useTheme();
   return (
     <Svg width={20} height={20} viewBox="0 0 48 48">
       <Path fill="#FFC107" d="M43.6 20H24v8h11.3C33.7 32.8 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.1 8 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z" />
@@ -28,6 +30,7 @@ function GoogleIcon() {
 }
 
 export default function RegisterScreen() {
+  useTheme();
   const { setUser } = useAuthStore()
   const { showAlert, alertElement } = useVendrAlert()
   const { signInWithGoogle, isAvailable: googleAvailable } = useGoogleAuth()
@@ -88,10 +91,10 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-dark"
+      className="flex-1 bg-canvas"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="light" />
+      <StatusBar style={T.statusBar} />
       <View className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-orange opacity-[0.07]" />
 
       <ScrollView
@@ -101,65 +104,65 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TouchableOpacity
-          className="mt-14 w-10 h-10 rounded-xl bg-dark-2 border border-faint items-center justify-center"
+          className="mt-14 w-10 h-10 rounded-xl bg-surface border border-line items-center justify-center"
           onPress={() => router.back()}
         >
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
 
         <View className="mt-7 mb-8">
-          <Text className="text-muted text-sm font-medium mb-2">New here?</Text>
-          <Text style={{ fontWeight: '600' }} className="text-cream text-4xl tracking-tight leading-tight mb-2">
+          <Text className="text-ink-2 text-sm font-medium mb-2">New here?</Text>
+          <Text style={{ fontWeight: '600' }} className="text-ink text-4xl tracking-tight leading-tight mb-2">
             Create your{'\n'}account
           </Text>
-          <Text className="text-subtle text-base">Join thousands discovering local vendors.</Text>
+          <Text className="text-ink-3 text-base">Join thousands discovering local vendors.</Text>
         </View>
 
         {googleAvailable && (
           <TouchableOpacity
-            className="flex-row items-center justify-center gap-3 bg-dark-2 border border-faint rounded-2xl py-4 mb-6"
+            className="flex-row items-center justify-center gap-3 bg-surface border border-line rounded-2xl py-4 mb-6"
             activeOpacity={0.85}
             onPress={handleGoogleSignUp}
             disabled={googleLoading}
           >
             {googleLoading
-              ? <ActivityIndicator color="#FDF6EC" size="small" />
-              : <><GoogleIcon /><Text className="text-cream text-base font-semibold ml-2">Continue with Google</Text></>
+              ? <ActivityIndicator color={T.ink} size="small" />
+              : <><GoogleIcon /><Text className="text-ink text-base font-semibold ml-2">Continue with Google</Text></>
             }
           </TouchableOpacity>
         )}
 
         <View className="flex-row items-center gap-3 mb-7">
-          <View className="flex-1 h-px bg-faint" />
-          <Text className="text-subtle text-xs font-medium">{googleAvailable ? 'or sign up with email' : 'Sign up with email'}</Text>
-          <View className="flex-1 h-px bg-faint" />
+          <View className="flex-1 h-px bg-line" />
+          <Text className="text-ink-3 text-xs font-medium">{googleAvailable ? 'or sign up with email' : 'Sign up with email'}</Text>
+          <View className="flex-1 h-px bg-line" />
         </View>
 
         <View className="gap-5 mb-4">
           <View className="gap-2">
-            <Text className="text-muted text-xs font-semibold tracking-widest uppercase">Full Name</Text>
-            <View className={`flex-row items-center bg-dark-2 rounded-2xl border px-4 h-14 ${errors.name ? 'border-brand-red' : 'border-faint'}`}>
-              <Ionicons name="person-outline" size={18} color="#6B5E50" style={{ marginRight: 10 }} />
+            <Text className="text-ink-2 text-xs font-semibold tracking-widest uppercase">Full Name</Text>
+            <View className={`flex-row items-center bg-surface rounded-2xl border px-4 h-14 ${errors.name ? 'border-brand-red' : 'border-line'}`}>
+              <Ionicons name="person-outline" size={18} color={T.ink3} style={{ marginRight: 10 }} />
               <RNTextInput
-                className="flex-1 text-cream text-base"
+                className="flex-1 text-ink text-base"
                 placeholder="Your full name"
-                placeholderTextColor="#6B5E50"
+                placeholderTextColor={T.ink3}
                 value={name}
                 onChangeText={(t: string) => { setName(t); setErrors(e => ({ ...e, name: '' })) }}
                 autoCapitalize="words"
               />
             </View>
-            {errors.name ? <Text className="text-brand-red text-xs font-medium">{errors.name}</Text> : null}
+            {errors.name ? <Text className="text-danger text-xs font-medium">{errors.name}</Text> : null}
           </View>
 
           <View className="gap-2">
-            <Text className="text-muted text-xs font-semibold tracking-widest uppercase">Email</Text>
-            <View className={`flex-row items-center bg-dark-2 rounded-2xl border px-4 h-14 ${errors.email ? 'border-brand-red' : 'border-faint'}`}>
-              <Ionicons name="mail-outline" size={18} color="#6B5E50" style={{ marginRight: 10 }} />
+            <Text className="text-ink-2 text-xs font-semibold tracking-widest uppercase">Email</Text>
+            <View className={`flex-row items-center bg-surface rounded-2xl border px-4 h-14 ${errors.email ? 'border-brand-red' : 'border-line'}`}>
+              <Ionicons name="mail-outline" size={18} color={T.ink3} style={{ marginRight: 10 }} />
               <RNTextInput
-                className="flex-1 text-cream text-base"
+                className="flex-1 text-ink text-base"
                 placeholder="you@example.com"
-                placeholderTextColor="#6B5E50"
+                placeholderTextColor={T.ink3}
                 value={email}
                 onChangeText={(t: string) => { setEmail(t); setErrors(e => ({ ...e, email: '' })) }}
                 keyboardType="email-address"
@@ -167,35 +170,35 @@ export default function RegisterScreen() {
                 autoCorrect={false}
               />
             </View>
-            {errors.email ? <Text className="text-brand-red text-xs font-medium">{errors.email}</Text> : null}
+            {errors.email ? <Text className="text-danger text-xs font-medium">{errors.email}</Text> : null}
           </View>
 
           <View className="gap-2">
-            <Text className="text-muted text-xs font-semibold tracking-widest uppercase">Password</Text>
-            <View className={`flex-row items-center bg-dark-2 rounded-2xl border px-4 h-14 ${errors.password ? 'border-brand-red' : 'border-faint'}`}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B5E50" style={{ marginRight: 10 }} />
+            <Text className="text-ink-2 text-xs font-semibold tracking-widest uppercase">Password</Text>
+            <View className={`flex-row items-center bg-surface rounded-2xl border px-4 h-14 ${errors.password ? 'border-brand-red' : 'border-line'}`}>
+              <Ionicons name="lock-closed-outline" size={18} color={T.ink3} style={{ marginRight: 10 }} />
               <RNTextInput
-                className="flex-1 text-cream text-base"
+                className="flex-1 text-ink text-base"
                 placeholder="Min. 8 characters"
-                placeholderTextColor="#6B5E50"
+                placeholderTextColor={T.ink3}
                 value={password}
                 onChangeText={(t: string) => { setPassword(t); setErrors(e => ({ ...e, password: '' })) }}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
               />
               <TouchableOpacity className="p-1" onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6B5E50" />
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={T.ink3} />
               </TouchableOpacity>
             </View>
-            {errors.password ? <Text className="text-brand-red text-xs font-medium">{errors.password}</Text> : null}
+            {errors.password ? <Text className="text-danger text-xs font-medium">{errors.password}</Text> : null}
           </View>
         </View>
 
-        <Text className="text-subtle text-xs text-center leading-relaxed mb-6">
+        <Text className="text-ink-3 text-xs text-center leading-relaxed mb-6">
           By creating an account you agree to our{' '}
-          <Text className="text-orange font-semibold">Terms of Service</Text>
+          <Text className="text-orange-ink font-semibold">Terms of Service</Text>
           {' '}and{' '}
-          <Text className="text-orange font-semibold">Privacy Policy</Text>
+          <Text className="text-orange-ink font-semibold">Privacy Policy</Text>
         </Text>
 
         <View className="mt-5">
@@ -203,9 +206,9 @@ export default function RegisterScreen() {
         </View>
 
         <TouchableOpacity className="items-center py-5" onPress={() => router.replace('/(auth)/login')}>
-          <Text className="text-subtle text-sm">
+          <Text className="text-ink-3 text-sm">
             Already have an account?{' '}
-            <Text className="text-orange font-semibold">Sign in</Text>
+            <Text className="text-orange-ink font-semibold">Sign in</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>

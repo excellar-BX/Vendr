@@ -57,6 +57,10 @@ model User {
   disputes                   Dispute[]
   reelsPosted                Reel[]
   reelLikes                  ReelLike[]
+  reelViews                  ReelView[]
+  reelComments               ReelComment[]
+  reelReports                ReelReport[]
+  vendorFollows              VendorFollow[]
   reelSaves                  ReelSave[]
   messages                   Message[]
   conversations              Conversation[] @relation("ConversationParticipants")
@@ -138,6 +142,7 @@ model Vendor {
   suspended_reason   String?
   rating             Float    @default(0)
   review_count       Int      @default(0)
+  follower_count     Int      @default(0)
   is_fraud_flagged   Boolean  @default(false)
   fraud_flag_reason  String?
   fraud_flagged_at   DateTime?
@@ -154,6 +159,7 @@ model Vendor {
   savedBy           SavedVendor[]
   conversations     Conversation[]
   reels             Reel[]
+  followers         VendorFollow[]
   paymentRequests   PaymentRequest[]
   verificationRequests VerificationRequest[]
   walletTransactions WalletTransaction[]
@@ -201,7 +207,12 @@ model Order {
   delivery_address String?
   delivery_lat     Float?
   delivery_lng     Float?
-  // QR-based handoff (replaces OTP)
+  // Delivery code the buyer gives at handoff (vendor self-delivery + runner fallback).
+  // Restored: payment/escrow/dispute code depends on these; dropping them broke every payment.
+  otp_code         String?  // 4-digit; exposed to buyer only via API
+  otp_confirmed    Boolean  @default(false)
+  otp_confirmed_at DateTime?
+  // Runner handoff codes
   pickup_qr        String?  // QR code for seller→runner handoff
   delivery_qr      String?  // QR code for runner→buyer handoff
   qr_expires_at    DateTime?
@@ -443,22 +454,34 @@ model Reel {
   id            String   @id @default(uuid())
   vendor_id     String
   user_id       String  // Who posted the reel (can be vendor or buyer?)
-  video_url     String
-  thumbnail_url String?
+  media_type    String   @default("video") // "video" | "photo" (swipeable photo stack, TikTok-style)
+  video_url     String?                    // set for media_type = "video"
+  image_urls    String[] @default([])      // ordered photos for media_type = "photo" (1–10)
+  thumbnail_url String?                    // video poster, or the first photo
   caption       String?
+  hashtags      String[] @default([])      // lowercase tags parsed from the caption, without "#"
   product_id    String?
   view_count    Int      @default(0)
   like_count    Int      @default(0)
   save_count    Int      @default(0)
+  comment_count Int      @default(0)
+  share_count   Int      @default(0)
+  chat_count    Int      @default(0)      // "Chat to buy" / "Message vendor" taps (vendor insights)
+  report_count  Int      @default(0)
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
+  edited_at     DateTime?                  // last edit (posts are editable for 15 min after posting)
 
   vendor  Vendor       @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
   user    User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
   product Product?     @relation(fields: [product_id], references: [id], onDelete: SetNull)
   likes   ReelLike[]
   saves   ReelSave[]
+  comments ReelComment[]
+  views   ReelView[]
+  reports ReelReport[]
 
+  @@index([hashtags], type: Gin)
   @@map("reels")
 }
 
@@ -486,6 +509,72 @@ model ReelSave {
 
   @@unique([user_id, reel_id])
   @@map("reel_saves")
+}
+
+// One row per person per post: unique view counts, and "already seen" for the feed
+model ReelView {
+  id         String   @id @default(uuid())
+  reel_id    String
+  user_id    String
+  created_at DateTime @default(now())
+
+  reel Reel @relation(fields: [reel_id], references: [id], onDelete: Cascade)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, reel_id])
+  @@index([reel_id])
+  @@map("reel_views")
+}
+
+model ReelComment {
+  id          String   @id @default(uuid())
+  reel_id     String
+  user_id     String
+  parent_id   String?  // one level of replies
+  body        String
+  reply_count Int      @default(0)
+  is_deleted  Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  reel    Reel          @relation(fields: [reel_id], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  parent  ReelComment?  @relation("CommentReplies", fields: [parent_id], references: [id], onDelete: Cascade)
+  replies ReelComment[] @relation("CommentReplies")
+
+  @@index([reel_id, created_at])
+  @@index([parent_id])
+  @@map("reel_comments")
+}
+
+model ReelReport {
+  id          String   @id @default(uuid())
+  reel_id     String
+  reporter_id String
+  reason      String   // scam, fake, inappropriate, spam, other
+  details     String?
+  status      String   @default("open") // open, reviewed, dismissed
+  created_at  DateTime @default(now())
+
+  reel     Reel @relation(fields: [reel_id], references: [id], onDelete: Cascade)
+  reporter User @relation(fields: [reporter_id], references: [id], onDelete: Cascade)
+
+  @@unique([reel_id, reporter_id])
+  @@index([status])
+  @@map("reel_reports")
+}
+
+model VendorFollow {
+  id         String   @id @default(uuid())
+  user_id    String
+  vendor_id  String
+  created_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, vendor_id])
+  @@index([vendor_id])
+  @@map("vendor_follows")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

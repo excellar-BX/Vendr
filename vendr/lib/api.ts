@@ -26,7 +26,18 @@ export async function clearTokens() {
 
 // ─── Token refresh ────────────────────────────────────────────────────────────
 
-async function refreshAccessToken(): Promise<string | null> {
+// Single-flight: concurrent 401s (REST + socket) share one refresh request,
+// so a rotated refresh token isn't used twice.
+let refreshInFlight: Promise<string | null> | null = null
+
+export function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefreshAccessToken().finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
+async function doRefreshAccessToken(): Promise<string | null> {
   const refreshToken = await getRefreshToken()
   if (!refreshToken) {
     // No refresh token means user is not logged in
@@ -162,6 +173,11 @@ export const vendorApi = {
   getMyVendor: () => apiFetch('/vendors/me'),
 
   /**
+   * All stores owned by the current user (a user can run several)
+   */
+  getMyStores: () => apiFetch('/vendors/me/all'),
+
+  /**
    * Get vendors list (with optional filters)
    */
   getVendors: (params?: {
@@ -258,6 +274,132 @@ export const storageApi = {
     apiFetch('/storage/files', { method: 'DELETE', body: { keys } }),
 }
 
+// ──────────────────────────────────────────────────────────────
+// Hashtags
+// ──────────────────────────────────────────────────────────────
+
+export interface HashtagSummary {
+  tag: string
+  post_count: number
+  view_count: number
+}
+
+export const hashtagApi = {
+  trending: (limit = 20) => apiFetch('/hashtags/trending', { query: { limit } }),
+  /** Autocomplete — tags starting with q */
+  search: (q: string, limit = 8) => apiFetch('/hashtags/search', { query: { q, limit } }),
+  stats: (tag: string) => apiFetch(`/hashtags/${encodeURIComponent(tag)}`),
+}
+
+export const REPORT_REASONS = [
+  { key: 'scam', label: 'Scam or fraud' },
+  { key: 'fake', label: 'Fake or counterfeit product' },
+  { key: 'inappropriate', label: 'Nudity or offensive content' },
+  { key: 'spam', label: 'Spam or misleading' },
+  { key: 'other', label: 'Something else' },
+] as const
+
+// ──────────────────────────────────────────────────────────────
+// Runner (delivery)
+// ──────────────────────────────────────────────────────────────
+
+export type RunnerJobFilter = 'all' | 'nearest' | 'highest_pay' | 'fastest'
+export type RunStatus = 'assigned' | 'picked_up' | 'in_transit' | 'delivered'
+
+export interface RunnerJob {
+  id: string
+  order_id: string | null
+  pickup_address: string
+  pickup_lat: number
+  pickup_lng: number
+  dropoff_address: string
+  dropoff_lat: number
+  dropoff_lng: number
+  trip_km: number
+  to_pickup_km: number
+  estimated_time: string
+  delivery_fee: number
+  items: Array<{ name: string; quantity: number }>
+  special_instructions: string | null
+  status: string
+  created_at: string
+  seller_name: string | null
+  is_available?: boolean
+  my_run_id?: string | null
+}
+
+export interface RunnerRun {
+  id: string
+  job_id: string
+  order_id: string | null
+  status: RunStatus
+  assigned_at: string
+  picked_up_at: string | null
+  delivered_at: string | null
+  pickup_address: string
+  pickup_lat: number
+  pickup_lng: number
+  dropoff_address: string
+  dropoff_lat: number
+  dropoff_lng: number
+  trip_km: number
+  estimated_time: string
+  delivery_fee: number
+  items: Array<{ name: string; quantity: number }>
+  special_instructions: string | null
+  order_description: string | null
+  seller_name: string
+  seller_phone: string | null
+  buyer_name: string
+  buyer_phone: string | null
+}
+
+export const runnerApi = {
+  register: (data: any) => apiFetch('/runner/register', { method: 'POST', body: data }),
+  profile: () => apiFetch('/runner/profile'),
+  setOnline: (is_online: boolean) => apiFetch('/runner/status', { method: 'PATCH', body: { is_online } }),
+  stats: () => apiFetch('/runner/dashboard/stats'),
+
+  jobs: (params: { filter?: RunnerJobFilter; lat?: number | null; lng?: number | null; limit?: number; offset?: number } = {}) =>
+    apiFetch('/runner/jobs', { query: params }),
+  job: (id: string) => apiFetch(`/runner/jobs/${id}`),
+  accept: (id: string) => apiFetch(`/runner/jobs/${id}/accept`, { method: 'POST', body: {} }),
+  decline: (id: string) => apiFetch(`/runner/jobs/${id}/decline`, { method: 'POST', body: {} }),
+
+  runs: (scope: 'active' | 'completed' = 'active') => apiFetch('/runner/runs', { query: { scope } }),
+  run: (id: string) => apiFetch(`/runner/runs/${id}`),
+  startDelivery: (id: string) => apiFetch(`/runner/runs/${id}/status`, { method: 'PATCH', body: { status: 'in_transit' } }),
+  /** Seller's 6-digit pickup code */
+  confirmPickup: (orderId: string, code: string) => apiFetch(`/runner/orders/${orderId}/scan-pickup`, { method: 'POST', body: { code } }),
+  /** Buyer's delivery code */
+  confirmDelivery: (orderId: string, code: string) => apiFetch(`/runner/orders/${orderId}/scan-delivery`, { method: 'POST', body: { code } }),
+
+  earnings: (filter: 'today' | 'week' | 'month' | 'all' = 'all', limit = 50) => apiFetch('/runner/earnings', { query: { filter, limit } }),
+  balance: () => apiFetch('/runner/earnings/balance'),
+  withdraw: () => apiFetch('/runner/earnings/withdraw', { method: 'POST', body: {} }),
+
+  /** Seller: the pickup code to read to the runner (null when no runner job) */
+  sellerPickupCode: (orderId: string) => apiFetch(`/orders/${orderId}/qr`, { query: { role: 'seller' } }),
+}
+
+export const reelSocialApi = {
+  comments: (reelId: string, params?: { parent_id?: string; before?: string; limit?: number }) =>
+    apiFetch(`/reels/${reelId}/comments`, { query: params }),
+  addComment: (reelId: string, body: string, parent_id?: string | null) =>
+    apiFetch(`/reels/${reelId}/comments`, { method: 'POST', body: { body, parent_id: parent_id ?? null } }),
+  deleteComment: (commentId: string) => apiFetch(`/reel-comments/${commentId}`, { method: 'DELETE' }),
+  report: (reelId: string, reason: string, details?: string) =>
+    apiFetch(`/reels/${reelId}/report`, { method: 'POST', body: { reason, details } }),
+  share: (reelId: string) => apiFetch(`/reels/${reelId}/share`, { method: 'POST' }),
+  chatTap: (reelId: string) => apiFetch(`/reels/${reelId}/chat`, { method: 'POST' }),
+  insights: (vendorId?: string) => apiFetch('/reels/insights', { query: vendorId ? { vendor_id: vendorId } : undefined }),
+}
+
+export const followApi = {
+  toggle: (vendorId: string) => apiFetch(`/vendors/${vendorId}/follow`, { method: 'POST' }),
+  status: (vendorId: string) => apiFetch(`/vendors/${vendorId}/follow`),
+}
+
 export const reelApi = {
   /**
    * Get reels (feed or vendor-specific)
@@ -268,6 +410,13 @@ export const reelApi = {
    * Auth required for personalization (is_liked, is_saved)
    */
   getReels: (params?: {
+    /** Posts tagged with this hashtag (without "#") */
+    hashtag?: string
+    /** Main feed: ranked "for_you" (default) or "following" */
+    mode?: 'for_you' | 'following'
+    /** Viewer location — boosts nearby stores in "for_you" */
+    lat?: number | null
+    lng?: number | null
     vendor_id?: string
     include_all?: boolean
     limit?: number
@@ -278,8 +427,13 @@ export const reelApi = {
    * Create a reel
    */
   createReel: (data: {
-    video_url: string
+    /** 'video' (default) or 'photo' — a swipeable stack of up to 10 pictures */
+    media_type?: 'video' | 'photo'
+    video_url?: string | null
+    image_urls?: string[]
     thumbnail_url?: string | null
+    /** Which of my stores to post as */
+    vendor_id?: string | null
     caption?: string | null
     product_id?: string | null
   }) => apiFetch('/reels', { method: 'POST', body: data }),
@@ -288,6 +442,12 @@ export const reelApi = {
    * Get a single reel (enriched with vendor/product and like/save status)
    */
   getReel: (reelId: string) => apiFetch(`/reels/${reelId}`),
+
+  /**
+   * Edit caption / tagged product — owner only, within 15 minutes of posting
+   */
+  updateReel: (reelId: string, data: { caption?: string | null; product_id?: string | null }) =>
+    apiFetch(`/reels/${reelId}`, { method: 'PATCH', body: data }),
 
   /**
    * Increment view count
@@ -451,11 +611,12 @@ export const chatApi = {
    */
   sendMessage: (data: {
     conversation_id: string
-    content: string
-    type?: 'text' | 'image' | 'payment_request'
+    content?: string | null
+    type?: 'text' | 'image'
     image_url?: string
-    payment_request_id?: string | null
     reply_to_id?: string | null
+    /** Echoed back on the message so the optimistic bubble can be reconciled */
+    client_id?: string
   }) => apiFetch('/messages', { method: 'POST', body: data }),
 
   /**

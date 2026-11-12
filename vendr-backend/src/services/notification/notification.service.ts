@@ -4,6 +4,28 @@ import { env } from '../../config/env';
 // Expo Push API
 const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
 
+// Lazy require: lib/socket is initialised after the services load
+function emitToUser(userId: string, event: string, payload: unknown) {
+  try {
+    require('../../lib/socket').emitToUsers([userId], event, payload);
+  } catch (err) {
+    console.error(`[Notification] socket emit ${event} failed:`, err);
+  }
+}
+
+function serializeNotification(n: any) {
+  return {
+    id: n.id,
+    user_id: n.user_id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    is_read: n.is_read,
+    data: n.data,
+    created_at: n.created_at.toISOString(),
+  };
+}
+
 export interface CreateNotificationInput {
   userId: string;
   type: string;
@@ -25,6 +47,9 @@ export async function createNotification(input: CreateNotificationInput) {
       data: input.data || {},
     },
   });
+
+  // In-app, real time: lands instantly in the notifications screen and bell badge
+  emitToUser(input.userId, 'notification_new', serializeNotification(notification));
 
   // Send push notification if user has a push token
   await sendPushNotification(input.userId, input.title, input.body, input.data);
@@ -120,16 +145,7 @@ export async function getUserNotifications(userId: string, limit = 50) {
     take: limit,
   });
 
-  return notifications.map((n: any) => ({
-    id: n.id,
-    user_id: n.user_id,
-    type: n.type,
-    title: n.title,
-    body: n.body,
-    is_read: n.is_read,
-    data: n.data,
-    created_at: n.created_at.toISOString(),
-  }));
+  return notifications.map(serializeNotification);
 }
 
 /**
@@ -144,6 +160,7 @@ export async function markNotificationAsRead(notificationId: string, userId: str
     data: { is_read: true },
   });
 
+  if (notification.count > 0) emitToUser(userId, 'notifications_read', { ids: [notificationId] });
   return notification;
 }
 
@@ -159,6 +176,7 @@ export async function markAllNotificationsAsRead(userId: string) {
     data: { is_read: true },
   });
 
+  emitToUser(userId, 'notifications_read', { all: true });
   return result;
 }
 

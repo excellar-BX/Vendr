@@ -1,225 +1,187 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  View, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator,
-} from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { Text } from '../../components/ui/StyledText';
+import { useVendrAlert } from '../../components/ui/VendrAlert';
+import { RUNNER_GREEN, naira } from '../../components/runner/RunnerKit';
+import { runnerApi } from '../../lib/api';
+import { T, useTheme } from '../../constants/theme';
 
-type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+type Filter = 'today' | 'week' | 'month' | 'all';
+interface Earning { id: string; run_id: string; amount: number; status: 'pending' | 'available' | 'paid'; completed_at: string; paid_at: string | null }
+interface Balance { available: number; pending: number; paid: number; total: number }
 
-interface Earning {
-  id: string;
-  order_id: string;
-  amount: number;
-  status: 'pending' | 'available' | 'paid';
-  completed_at: string;
-  paid_at?: string;
-}
-
-const TIME_FILTERS = [
-  { label: 'Today', value: 'today' },
-  { label: 'This Week', value: 'week' },
-  { label: 'This Month', value: 'month' },
-  { label: 'All Time', value: 'all' },
-];
-
-const STATUS_CONFIG = {
-  pending: { label: 'Pending', color: '#F5A623', icon: 'time-outline' as IoniconsName },
-  available: { label: 'Available', color: '#2D8653', icon: 'wallet-outline' as IoniconsName },
-  paid: { label: 'Paid', color: '#9A8570', icon: 'checkmark-circle-outline' as IoniconsName },
+const STATUS_META: Record<Earning['status'], { label: string; color: string; bg: string }> = {
+  pending: { label: 'Pending', color: '#B45309', bg: '#FEF5E5' },
+  available: { label: 'Ready', color: '#2D8653', bg: '#EAF5EE' },
+  paid: { label: 'In wallet', color: '#57534E', bg: '#F5F5F4' },
 };
 
-function EarningCard({ earning }: { earning: Earning }) {
-  const status = STATUS_CONFIG[earning.status];
-
-  return (
-    <View className="mx-5 bg-dark-2 border border-faint rounded-2xl p-4 mb-3">
-      <View className="flex-row justify-between items-start mb-3">
-        <View className="flex-row items-center gap-2">
-          <View className={`w-8 h-8 rounded-full items-center justify-center`} style={{ backgroundColor: `${status.color}20` }}>
-            <Ionicons name={status.icon} size={16} color={status.color} />
-          </View>
-          <View>
-            <Text className="text-cream text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              Order #{earning.order_id.slice(-6)}
-            </Text>
-            <Text className="text-muted text-xs">{status.label}</Text>
-          </View>
-        </View>
-        <Text className="text-cream text-lg" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-          ₦{earning.amount.toLocaleString()}
-        </Text>
-      </View>
-
-      <View className="flex-row items-center justify-between pt-3 border-t border-faint">
-        <Text className="text-muted text-xs">
-          {new Date(earning.completed_at).toLocaleDateString('en-NG', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
-        {earning.status === 'available' && (
-          <TouchableOpacity className="bg-green-500/20 px-3 py-1.5 rounded-lg">
-            <Text className="text-green-500 text-xs" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              Withdraw
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-}
-
 export default function RunnerEarningsScreen() {
-  const [activeFilter, setActiveFilter] = useState('all');
-  const [refreshing, setRefreshing] = useState(false);
+  useTheme();
+  const insets = useSafeAreaInsets();
+  const { showAlert, alertElement } = useVendrAlert();
+  const [filter, setFilter] = useState<Filter>('week');
+  const [balance, setBalance] = useState<Balance | null>(null);
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    // TODO: Fetch earnings from API
-    setTimeout(() => {
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const [b, e] = await Promise.all([runnerApi.balance(), runnerApi.earnings(filter)]);
+      setBalance(b.data);
+      setEarnings(e.data ?? []);
+    } catch {
+      // keep what we have
+    } finally {
+      setLoading(false);
       setRefreshing(false);
-    }, 1000);
-  }, []);
+    }
+  }, [filter]);
 
-  // Mock data - replace with API call
-  const mockEarnings: Earning[] = [
-    {
-      id: '1',
-      order_id: 'ORD-1234567890',
-      amount: 2500,
-      status: 'available',
-      completed_at: new Date(Date.now() - 2 * 60000).toISOString(),
-    },
-    {
-      id: '2',
-      order_id: 'ORD-0987654321',
-      amount: 3500,
-      status: 'paid',
-      completed_at: new Date(Date.now() - 24 * 60000).toISOString(),
-      paid_at: new Date(Date.now() - 20 * 60000).toISOString(),
-    },
-    {
-      id: '3',
-      order_id: 'ORD-1122334455',
-      amount: 1800,
-      status: 'pending',
-      completed_at: new Date(Date.now() - 30 * 60000).toISOString(),
-    },
-  ];
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  useEffect(() => {
-    setEarnings(mockEarnings);
-    setLoading(false);
-  }, []);
+  const withdraw = () => {
+    if (!balance || balance.available <= 0) return;
+    showAlert({
+      title: `Move ${naira(balance.available)} to your wallet?`,
+      message: 'It lands in your Vendr wallet instantly. From there you can send it to your bank.',
+      type: 'question',
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Move to wallet', onPress: async () => {
+            setWithdrawing(true);
+            try {
+              const { data } = await runnerApi.withdraw();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              showAlert({
+                title: 'Done!', message: `${naira(data?.amount ?? 0)} is now in your wallet.`, type: 'success',
+                buttons: [{ text: 'Open wallet', onPress: () => router.push('/wallet') }, { text: 'OK', style: 'cancel' }],
+              });
+              load();
+            } catch (e: any) {
+              showAlert({ title: "Couldn't withdraw", message: e?.message ?? 'Please try again.', type: 'danger' });
+            } finally {
+              setWithdrawing(false);
+            }
+          },
+        },
+      ],
+    });
+  };
 
-  const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
-  const availableBalance = earnings
-    .filter(e => e.status === 'available')
-    .reduce((sum, e) => sum + e.amount, 0);
-  const pendingAmount = earnings
-    .filter(e => e.status === 'pending')
-    .reduce((sum, e) => sum + e.amount, 0);
+  const periodTotal = earnings.reduce((s, e) => s + e.amount, 0);
 
-  return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <View className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-green-500 opacity-[0.06]" />
-
-      <View className="flex-row items-center justify-between px-5 pt-14 pb-4">
-        <Text className="text-cream text-2xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Earnings</Text>
-      </View>
-
-      {/* Balance Card */}
-      <View className="mx-5 bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30 rounded-3xl p-5 mb-4">
-        <Text className="text-muted text-xs mb-1">Available Balance</Text>
-        <Text className="text-cream text-3xl" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-          ₦{availableBalance.toLocaleString()}
-        </Text>
-        <View className="flex-row items-center gap-4 mt-4 pt-4 border-t border-green-500/20">
+  const header = (
+    <View style={{ gap: 14, marginBottom: 12 }}>
+      <View style={{ backgroundColor: T.heroBg, borderRadius: 24, padding: 20, overflow: 'hidden' }}>
+        <View pointerEvents="none" style={{ position: 'absolute', width: 180, height: 180, borderRadius: 90, backgroundColor: 'rgba(45,134,83,0.35)', right: -50, top: -70 }} />
+        <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Ready to withdraw</Text>
+        <Text style={{ fontSize: 36, fontFamily: 'PlusJakartaSans_800ExtraBold', color: '#FFFFFF', letterSpacing: -0.8 }}>{naira(balance?.available ?? 0)}</Text>
+        <View style={{ flexDirection: 'row', gap: 18, marginTop: 6 }}>
           <View>
-            <Text className="text-muted text-xs">Total Earned</Text>
-            <Text className="text-green-500 text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              ₦{totalEarnings.toLocaleString()}
-            </Text>
+            <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#FDE68A' }}>{naira(balance?.pending ?? 0)}</Text>
+            <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.65)' }}>Pending</Text>
           </View>
           <View>
-            <Text className="text-muted text-xs">Pending</Text>
-            <Text className="text-orange text-sm" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-              ₦{pendingAmount.toLocaleString()}
-            </Text>
+            <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>{naira(balance?.total ?? 0)}</Text>
+            <Text style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.65)' }}>All-time</Text>
           </View>
         </View>
-        <TouchableOpacity className="bg-green-500 rounded-2xl py-3 mt-4 items-center">
-          <Text className="text-dark text-sm" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>
-            Withdraw to Wallet
-          </Text>
+        <TouchableOpacity
+          onPress={withdraw}
+          disabled={withdrawing || !balance || balance.available <= 0}
+          style={{ marginTop: 16, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: balance && balance.available > 0 ? RUNNER_GREEN : 'rgba(255,255,255,0.12)' }}
+        >
+          {withdrawing ? <ActivityIndicator color="#FFFFFF" /> : (
+            <>
+              <Ionicons name="wallet" size={17} color="#FFFFFF" />
+              <Text style={{ fontSize: 14.5, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>Move to wallet</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
 
-      {/* Time Filters */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        className="px-5 mb-4"
-        contentContainerStyle={{ gap: 8 }}
-      >
-        {TIME_FILTERS.map((filter) => (
-          <TouchableOpacity
-            key={filter.value}
-            onPress={() => setActiveFilter(filter.value)}
-            activeOpacity={0.75}
-            className={`px-4 py-2 rounded-full border ${
-              activeFilter === filter.value
-                ? 'bg-green-500/20 border-green-500/50'
-                : 'bg-dark-2 border-faint'
-            }`}
-          >
-            <Text
-              className={`text-xs ${
-                activeFilter === filter.value ? 'text-green-500' : 'text-muted'
-              }`}
-              style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}
-            >
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <Ionicons name="information-circle-outline" size={15} color={T.ink3} />
+        <Text style={{ flex: 1, fontSize: 12, color: T.ink3, lineHeight: 17 }}>
+          Fees are pending until the order settles (about 2 hours after delivery), then they're ready to withdraw.
+        </Text>
+      </View>
 
-      {/* Earnings List */}
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#2D8653" />
-        </View>
-      ) : earnings.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-5">
-          <Ionicons name="wallet-outline" size={48} color="#3D3026" />
-          <Text className="text-cream text-lg mt-4" style={{ fontFamily: 'SpaceGrotesk_600SemiBold' }}>
-            No earnings yet
-          </Text>
-          <Text className="text-muted text-sm mt-2 text-center">
-            Complete deliveries to start earning
-          </Text>
-        </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2D8653" />
-          }
-        >
-          {earnings.map((earning) => (
-            <EarningCard key={earning.id} earning={earning} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {(['today', 'week', 'month', 'all'] as Filter[]).map((f) => (
+            <TouchableOpacity key={f} onPress={() => setFilter(f)}
+              style={{ paddingHorizontal: 12, height: 32, borderRadius: 16, justifyContent: 'center', borderWidth: 1, borderColor: filter === f ? T.ink : T.line, backgroundColor: filter === f ? T.ink : T.surface }}>
+              <Text style={{ fontSize: 12.5, fontFamily: 'PlusJakartaSans_600SemiBold', color: filter === f ? T.canvas : T.ink2 }}>
+                {f === 'today' ? 'Today' : f === 'week' ? '7 days' : f === 'month' ? '30 days' : 'All'}
+              </Text>
+            </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
+        <Text style={{ fontSize: 13, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>{naira(periodTotal)}</Text>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: T.canvas }}>
+      <StatusBar style={T.statusBar} />
+      <View style={{ paddingTop: insets.top + 10, paddingHorizontal: 20, paddingBottom: 12 }}>
+        <Text style={{ fontSize: 26, fontFamily: 'PlusJakartaSans_800ExtraBold', color: T.ink, letterSpacing: -0.5 }}>Earnings</Text>
+      </View>
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={RUNNER_GREEN} /></View>
+      ) : (
+        <FlatList
+          data={earnings}
+          keyExtractor={(e) => e.id}
+          ListHeaderComponent={header}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 110 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={RUNNER_GREEN} colors={[RUNNER_GREEN]} />}
+          renderItem={({ item }) => {
+            const meta = STATUS_META[item.status] ?? STATUS_META.pending;
+            return (
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/runner-run/[id]', params: { id: item.run_id } })}
+                activeOpacity={0.8}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.line }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${RUNNER_GREEN}1A`, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="bicycle" size={19} color={RUNNER_GREEN} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14.5, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.ink }}>Delivery fee</Text>
+                  <Text style={{ fontSize: 12, color: T.ink3 }}>{new Date(item.completed_at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_800ExtraBold', color: T.ink }}>+{naira(item.amount)}</Text>
+                  <View style={{ backgroundColor: meta.bg, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10.5, fontFamily: 'PlusJakartaSans_700Bold', color: meta.color }}>{meta.label}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingVertical: 40, gap: 8 }}>
+              <Ionicons name="cash-outline" size={38} color={T.ink4} />
+              <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_700Bold', color: T.ink }}>No earnings in this period</Text>
+              <Text style={{ fontSize: 13, color: T.ink3 }}>Complete deliveries to start earning.</Text>
+            </View>
+          }
+        />
       )}
+      {alertElement}
     </View>
   );
 }

@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../components/ui/StyledText';
+import { T, useTheme } from '../constants/theme';
 
 const SECTIONS = [
   {
@@ -48,28 +49,29 @@ const SECTIONS = [
 ];
 
 export default function TermsOfServiceScreen() {
+  useTheme();
   return (
-    <View className="flex-1 bg-dark">
-      <StatusBar style="light" />
-      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-faint gap-3">
+    <View className="flex-1 bg-canvas">
+      <StatusBar style={T.statusBar} />
+      <View className="flex-row items-center px-5 pt-14 pb-4 border-b border-line gap-3">
         <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
-          <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
         </TouchableOpacity>
-        <Text className="text-cream text-xl flex-1" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>Terms of Service</Text>
+        <Text className="text-ink text-xl flex-1" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>Terms of Service</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
-        <Text className="text-muted text-xs mb-6" style={{ fontFamily: 'SpaceGrotesk_400Regular' }}>
+        <Text className="text-ink-2 text-xs mb-6" style={{ fontFamily: 'PlusJakartaSans_400Regular' }}>
           Last updated: March 2026
         </Text>
-        <Text className="text-muted text-sm mb-6" style={{ fontFamily: 'SpaceGrotesk_400Regular', lineHeight: 24 }}>
+        <Text className="text-ink-2 text-sm mb-6" style={{ fontFamily: 'PlusJakartaSans_400Regular', lineHeight: 24 }}>
           Welcome to Vendr. Please read these terms carefully before using our platform. By accessing or using the app, you agree to be bound by these terms.
         </Text>
 
         {SECTIONS.map((section, i) => (
           <View key={i} style={{ marginBottom: 24 }}>
-            <Text className="text-cream text-sm mb-2" style={{ fontFamily: 'SpaceGrotesk_700Bold' }}>{section.title}</Text>
-            <Text className="text-muted text-sm" style={{ fontFamily: 'SpaceGrotesk_400Regular', lineHeight: 24 }}>{section.body}</Text>
+            <Text className="text-ink text-sm mb-2" style={{ fontFamily: 'PlusJakartaSans_700Bold' }}>{section.title}</Text>
+            <Text className="text-ink-2 text-sm" style={{ fontFamily: 'PlusJakartaSans_400Regular', lineHeight: 24 }}>{section.body}</Text>
           </View>
         ))}
       </ScrollView>

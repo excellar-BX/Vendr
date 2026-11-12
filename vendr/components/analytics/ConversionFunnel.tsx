@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Text } from '../ui/StyledText';
 import { Ionicons } from '@expo/vector-icons';
+import { T, useTheme } from '../../constants/theme';
 
 interface Summary {
   unique_visitors: number;
@@ -13,30 +14,31 @@ const clamp = (value: number, min = 0, max = 100) =>
   Math.min(Math.max(value, min), max);
 
 export function ConversionFunnel({ summary }: { summary: Summary }) {
+  useTheme();
   const stages = [
     {
       label: 'Visitors',
       value: summary.unique_visitors ?? 0,
       icon: 'eye-outline',
-      color: '#5599E8',
+      color: T.infoInk,
     },
     {
       label: 'Product Views',
       value: summary.product_views ?? 0,
       icon: 'grid-outline',
-      color: '#F5A623',
+      color: T.goldInk,
     },
     {
       label: 'Inquiries',
       value: summary.inquiries ?? 0,
       icon: 'chatbubble-outline',
-      color: '#9B59B6',
+      color: '#7C3AED',
     },
     {
       label: 'Orders',
       value: summary.orders_count ?? 0,
       icon: 'bag-check-outline',
-      color: '#2D8653',
+      color: T.successInk,
     },
   ];
 
@@ -48,18 +50,18 @@ export function ConversionFunnel({ summary }: { summary: Summary }) {
       <View style={{ marginBottom: 12 }}>
         <Text
           style={{
-            fontFamily: 'SpaceGrotesk_700Bold',
+            fontFamily: 'PlusJakartaSans_700Bold',
             fontSize: 16,
-            color: '#FDF6EC',
+            color: T.ink,
           }}
         >
           Conversion Funnel
         </Text>
         <Text
           style={{
-            fontFamily: 'SpaceGrotesk_400Regular',
+            fontFamily: 'PlusJakartaSans_400Regular',
             fontSize: 12,
-            color: '#6B5E50',
+            color: T.ink3,
             marginTop: 2,
           }}
         >
@@ -69,9 +71,9 @@ export function ConversionFunnel({ summary }: { summary: Summary }) {
 
       <View
         style={{
-          backgroundColor: '#1A1208',
+          backgroundColor: T.surface,
           borderWidth: 1,
-          borderColor: '#2A1F14',
+          borderColor: T.line,
           borderRadius: 20,
           padding: 20,
           gap: 12,
@@ -110,13 +112,13 @@ export function ConversionFunnel({ summary }: { summary: Summary }) {
                   <Ionicons
                     name={isDropOff ? 'arrow-down' : 'arrow-up'}
                     size={12}
-                    color="#3D3026"
+                    color={T.ink4}
                   />
                   <Text
                     style={{
-                      fontFamily: 'SpaceGrotesk_400Regular',
+                      fontFamily: 'PlusJakartaSans_400Regular',
                       fontSize: 11,
-                      color: '#3D3026',
+                      color: T.ink3,
                     }}
                   >
                     {labelText}
@@ -158,9 +160,9 @@ export function ConversionFunnel({ summary }: { summary: Summary }) {
                       numberOfLines={1}
                       style={{
                         flex: 1,
-                        fontFamily: 'SpaceGrotesk_500Medium',
+                        fontFamily: 'PlusJakartaSans_500Medium',
                         fontSize: 12,
-                        color: '#9A8570',
+                        color: T.ink2,
                       }}
                     >
                       {stage.label}
@@ -169,9 +171,9 @@ export function ConversionFunnel({ summary }: { summary: Summary }) {
                     <Text
                       numberOfLines={1}
                       style={{
-                        fontFamily: 'SpaceGrotesk_700Bold',
+                        fontFamily: 'PlusJakartaSans_700Bold',
                         fontSize: 12,
-                        color: '#FDF6EC',
+                        color: T.ink,
                         flexShrink: 0,
                       }}
                     >
@@ -182,7 +184,7 @@ export function ConversionFunnel({ summary }: { summary: Summary }) {
                   <View
                     style={{
                       height: 8,
-                      backgroundColor: '#0F0A06',
+                      backgroundColor: T.canvas,
                       borderRadius: 4,
                       overflow: 'hidden', // important
                     }}

@@ -1,47 +1,36 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  View, FlatList, TouchableOpacity, TextInput, Image, Keyboard, Platform,
-  ActivityIndicator, Alert as NativeAlert, ScrollView, Dimensions,
-  Modal, KeyboardAvoidingView, Pressable, StatusBar,
+  View, FlatList, TouchableOpacity, TextInput, Image, Platform, Keyboard,
+  ActivityIndicator, Dimensions, Modal, KeyboardAvoidingView, Pressable, StatusBar, AppState,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Text } from '../../components/ui/StyledText';
-import { chatApi, analyticsApi } from '../../lib/api';
-import { useAuthStore } from '../../stores/authStore';
-import { usePresenceStore } from '../../stores/presenceStore';
-import { connectSocket, disconnectSocket, joinConversation, leaveConversation } from '../../lib/socket';
-import * as FileSystem from 'expo-file-system/legacy';
-import { useVendrAlert } from '../../components/ui/VendrAlert';
+import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withRepeat,
-  withTiming,
-  withDelay,
-  withSequence,
-  FadeIn,
-  FadeOut,
-  FadeInDown,
-  FadeOutDown,
-  SlideInRight,
-  SlideInLeft,
-  ZoomIn,
-  ZoomOut,
-  Layout,
-  runOnJS,
-  interpolate,
-  Extrapolate,
-  Easing,
+  useSharedValue, useAnimatedStyle, withSpring, withRepeat, withTiming, withDelay, withSequence,
+  FadeIn, FadeOut, FadeInDown, FadeOutDown, ZoomIn, runOnJS,
+  type SharedValue,
 } from 'react-native-reanimated';
-import {
-  GestureDetector,
-  Gesture,
-  GestureHandlerRootView,
-} from 'react-native-gesture-handler';
+import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Text } from '../../components/ui/StyledText';
+import { ChatAvatar } from '../../components/chat/ChatAvatar';
+import { useVendrAlert } from '../../components/ui/VendrAlert';
+import { chatApi, analyticsApi } from '../../lib/api';
+import { onSocketEvent, onSocketStatus, joinConversation, leaveConversation, emitTyping, SocketStatus } from '../../lib/socket';
+import { loadChat, peekChat, saveChatMeta, saveChatMessages, ChatMeta } from '../../lib/chatCache';
+import { enqueueOutbox, removeFromOutbox, pendingForConversation, subscribeOutbox, isTransientError } from '../../lib/chatOutbox';
+import { useAuthStore } from '../../stores/authStore';
+import { usePresenceStore, usePresence, useIsTyping, formatLastSeen, useNow } from '../../stores/presenceStore';
+import { markConversationReadLocally, conversationsKey, ConversationItem, getOtherName, getOtherAvatar, getOtherUserId } from '../../hooks/useConversations';
+import { T, useTheme } from '../../constants/theme';
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const REACTION_EMOJIS = ['❤️', '😂', '👍', '🔥', '😮', '😢'];
+const PAGE_SIZE = 40;
+const BUYER_QUICK_REPLIES = ['Hi! Is this available? 👋', 'How much is it?', 'Do you deliver?', 'Where are you located?'];
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Reaction {
@@ -61,11 +50,25 @@ interface ReplyPreview {
   type: string;
 }
 
+interface PaymentRequest {
+  id: string;
+  vendor_id: string;
+  buyer_id: string;
+  conversation_id: string | null;
+  amount: number;
+  delivery_fee?: number;
+  is_delivery?: boolean;
+  delivery_address?: string | null;
+  description: string | null;
+  status: 'pending' | 'paid' | 'cancelled' | 'expired' | string;
+  paid_at?: string | null;
+  created_at: string;
+}
+
 interface Message {
   id: string;
   conversation_id: string;
   sender_id: string;
-  sender_name: string | null;
   content: string | null;
   image_url: string | null;
   type: 'text' | 'image' | 'payment_request';
@@ -78,31 +81,24 @@ interface Message {
   reactions: Reaction[];
   created_at: string;
   payment_request?: PaymentRequest | null;
-}
-
-interface PaymentRequest {
-  id: string;
-  vendor_id: string;
-  buyer_id: string;
-  conversation_id: string | null;
-  amount: number;
-  description: string | null;
-  status: 'pending' | 'paid' | 'cancelled';
-  paid_at?: string;
-  created_at: string;
+  // client-only
+  client_id?: string | null;
+  failed?: boolean;
+  local_uri?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+const looksLikeConversationId = (s?: string) => !!s && s !== '[conversationId]' && s !== 'new' && s.includes('-');
+const newClientId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const isPending = (m: Message) => m.id.startsWith('temp-');
+
 function formatTime(iso: string) {
-  const date = new Date(iso);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatAmount(n: number) {
-  return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2 });
+  return '₦' + (n ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function getDateLabel(dateString: string) {
@@ -112,52 +108,95 @@ function getDateLabel(dateString: string) {
   yesterday.setDate(today.getDate() - 1);
   if (date.toDateString() === today.toDateString()) return 'Today';
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  const sameYear = date.getFullYear() === today.getFullYear();
+  return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
+}
+
+/** Confirmed messages in time order, with still-sending ones kept at the end. */
+function normalize(list: Message[]): Message[] {
+  const confirmed = list.filter((m) => !isPending(m)).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const pending = list.filter(isPending);
+  return [...confirmed, ...pending];
+}
+
+/** Insert or merge a message from the server, reconciling optimistic bubbles. */
+function upsertMessage(list: Message[], incoming: Message): Message[] {
+  const tempIdx = incoming.client_id ? list.findIndex((m) => m.id === incoming.client_id) : -1;
+  const realIdx = list.findIndex((m) => m.id === incoming.id);
+
+  if (tempIdx !== -1) {
+    const temp = list[tempIdx];
+    const next = list.filter((_, i) => i !== tempIdx && i !== realIdx);
+    next.push({
+      ...incoming,
+      reactions: incoming.reactions ?? [],
+      reply_to: incoming.reply_to ?? temp.reply_to,
+      failed: false,
+    });
+    return normalize(next);
+  }
+
+  if (realIdx !== -1) {
+    const cur = list[realIdx];
+    const next = [...list];
+    next[realIdx] = {
+      ...cur,
+      ...incoming,
+      reactions: incoming.reactions ?? cur.reactions,
+      reply_to: incoming.reply_to ?? cur.reply_to,
+      payment_request: incoming.payment_request ?? cur.payment_request,
+      // receipts never go backwards
+      is_read: cur.is_read || incoming.is_read,
+      delivered: cur.delivered || incoming.delivered,
+    };
+    return next;
+  }
+
+  return normalize([...list, { ...incoming, reactions: incoming.reactions ?? [] }]);
+}
+
+/** Merge the freshest page into what we have, keeping older pages and unsent bubbles. */
+function mergeLatest(prev: Message[], fresh: Message[]): Message[] {
+  const freshIds = new Set(fresh.map((m) => m.id));
+  const oldest = fresh[0]?.created_at;
+  const older = oldest ? prev.filter((m) => !isPending(m) && !freshIds.has(m.id) && m.created_at < oldest) : [];
+  const pending = prev.filter(isPending);
+  return [...older, ...fresh.map((m) => ({ ...m, reactions: m.reactions ?? [] })), ...pending];
+}
+
+function useStableCallback<A extends any[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args: A) => ref.current(...args), []);
 }
 
 // ── Typing Indicator ───────────────────────────────────────────────────────
 const TypingDot = memo(function TypingDot({ delay }: { delay: number }) {
+  useTheme();
   const y = useSharedValue(0);
   useEffect(() => {
     y.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(-4, { duration: 200 }),
-        withTiming(0, { duration: 200 })
-      ), -1, false
+      withSequence(withTiming(-4, { duration: 220 }), withTiming(0, { duration: 220 })),
+      -1, false
     ));
   }, [delay]);
   const style = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
-  return (
-    <Animated.View style={[{
-      width: 8, height: 8, borderRadius: 4,
-      backgroundColor: '#6B5E50', marginHorizontal: 2,
-    }, style]} />
-  );
+  return <Animated.View style={[{ width: 7, height: 7, borderRadius: 4, backgroundColor: T.ink4, marginHorizontal: 2 }, style]} />;
 });
 
 const TypingBubble = memo(function TypingBubble() {
+  useTheme();
   return (
     <Animated.View
-      entering={FadeInDown.duration(150).easing(Easing.out)}
-      exiting={FadeOut.duration(100).easing(Easing.in)}
-      style={{
-        flexDirection: 'row', alignItems: 'flex-end',
-        paddingHorizontal: 16, paddingBottom: 4,
-      }}
+      entering={FadeInDown.duration(160)}
+      exiting={FadeOut.duration(120)}
+      style={{ paddingHorizontal: 12, paddingTop: 2, paddingBottom: 6, alignItems: 'flex-start' }}
     >
       <View style={{
-        width: 28, height: 28, borderRadius: 14,
-        backgroundColor: '#2A1F14', alignItems: 'center',
-        justifyContent: 'center', marginRight: 6,
-      }}>
-        <Ionicons name="person" size={14} color="#6B5E50" />
-      </View>
-      <View style={{
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: '#1E1610',
-        borderRadius: 20, borderBottomLeftRadius: 4,
-        paddingHorizontal: 16, paddingVertical: 14,
-        borderWidth: 1, borderColor: '#2A1F14',
+        backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
+        borderRadius: 18, borderBottomLeftRadius: 6,
+        paddingHorizontal: 14, paddingVertical: 13,
       }}>
         <TypingDot delay={0} />
         <TypingDot delay={150} />
@@ -167,59 +206,54 @@ const TypingBubble = memo(function TypingBubble() {
   );
 });
 
-// ── Date Separator ─────────────────────────────────────────────────────────
+// ── Separators ─────────────────────────────────────────────────────────────
 const DateSeparator = memo(function DateSeparator({ label }: { label: string }) {
+  useTheme();
   return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center',
-      marginVertical: 16, paddingHorizontal: 16,
-    }}>
-      <View style={{ flex: 1, height: 1, backgroundColor: '#1E1610' }} />
-      <View style={{
-        backgroundColor: '#1E1610',
-        paddingHorizontal: 12, paddingVertical: 4,
-        borderRadius: 20, marginHorizontal: 8,
-        borderWidth: 1, borderColor: '#2A1F14',
-      }}>
-        <Text style={{
-          fontSize: 11, fontFamily: 'SpaceGrotesk_500Medium',
-          color: '#6B5E50', letterSpacing: 0.3,
-        }}>{label}</Text>
+    <View style={{ alignItems: 'center', marginVertical: 14 }}>
+      <View style={{ backgroundColor: T.surface, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: T.line }}>
+        <Text style={{ fontSize: 11.5, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.ink3 }}>{label}</Text>
       </View>
-      <View style={{ flex: 1, height: 1, backgroundColor: '#1E1610' }} />
+    </View>
+  );
+});
+
+const UnreadSeparator = memo(function UnreadSeparator() {
+  useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 10, paddingHorizontal: 16, gap: 10 }}>
+      <View style={{ flex: 1, height: 1, backgroundColor: T.primaryBorder }} />
+      <Text style={{ fontSize: 11.5, fontFamily: 'PlusJakartaSans_700Bold', color: T.primaryInk, letterSpacing: 0.3 }}>
+        UNREAD MESSAGES
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: T.primaryBorder }} />
     </View>
   );
 });
 
 // ── Reply Quote inside bubble ──────────────────────────────────────────────
-const ReplyQuote = memo(function ReplyQuote({ replyTo, isMine, myId }: {
-  replyTo: ReplyPreview; isMine: boolean; myId: string;
+const ReplyQuote = memo(function ReplyQuote({ replyTo, isMine, myId, otherName }: {
+  replyTo: ReplyPreview; isMine: boolean; myId: string; otherName: string;
 }) {
-  const isOwn = replyTo.sender_id === myId;
+  useTheme();
+  const who = replyTo.sender_id === myId ? 'You' : (replyTo.sender_name || otherName);
   return (
     <View style={{
-      backgroundColor: isMine ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.06)',
-      borderLeftWidth: 3, borderLeftColor: '#E8521A',
-      borderRadius: 8, borderBottomLeftRadius: 0,
-      padding: 8, marginBottom: 6,
+      backgroundColor: isMine ? 'rgba(255,255,255,0.18)' : T.surface2,
+      borderLeftWidth: 3, borderLeftColor: isMine ? '#FFFFFF' : T.primary,
+      borderRadius: 10, paddingHorizontal: 9, paddingVertical: 6, marginBottom: 6,
     }}>
-      <Text style={{
-        fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11,
-        color: '#E8521A', marginBottom: 2,
-      }}>
-        {isOwn ? 'You' : replyTo.sender_name || 'Unknown'}
+      <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 11.5, color: isMine ? '#FFFFFF' : T.primaryInk, marginBottom: 1 }}>
+        {who}
       </Text>
       {replyTo.type === 'image' ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="image-outline" size={11} color="#9A8570" />
-          <Text style={{ fontSize: 12, color: '#9A8570', fontFamily: 'SpaceGrotesk_400Regular' }}>Photo</Text>
+          <Ionicons name="image-outline" size={12} color={isMine ? 'rgba(255,255,255,0.85)' : T.ink3} />
+          <Text style={{ fontSize: 12.5, color: isMine ? 'rgba(255,255,255,0.85)' : T.ink3 }}>Photo</Text>
         </View>
       ) : (
-        <Text style={{
-          fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12,
-          color: isMine ? 'rgba(255,255,255,0.65)' : '#9A8570',
-        }} numberOfLines={2}>
-          {replyTo.content ?? 'Message deleted'}
+        <Text numberOfLines={2} style={{ fontSize: 12.5, color: isMine ? 'rgba(255,255,255,0.85)' : T.ink3 }}>
+          {replyTo.type === 'payment_request' ? 'Payment request' : replyTo.content ?? 'Message deleted'}
         </Text>
       )}
     </View>
@@ -228,38 +262,32 @@ const ReplyQuote = memo(function ReplyQuote({ replyTo, isMine, myId }: {
 
 // ── Reaction Pill Row ──────────────────────────────────────────────────────
 const ReactionRow = memo(function ReactionRow({ reactions, myId, onPress }: {
-  reactions: Reaction[]; myId: string;
-  onPress: (emoji: string) => void;
+  reactions: Reaction[]; myId: string; onPress: (emoji: string) => void;
 }) {
+  useTheme();
   if (!reactions?.length) return null;
   const grouped: Record<string, { count: number; mine: boolean }> = {};
-  reactions.forEach(r => {
+  reactions.forEach((r) => {
     if (!grouped[r.emoji]) grouped[r.emoji] = { count: 0, mine: false };
     grouped[r.emoji].count++;
     if (r.user_id === myId) grouped[r.emoji].mine = true;
   });
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: -6, paddingHorizontal: 6 }}>
       {Object.entries(grouped).map(([emoji, { count, mine }]) => (
         <TouchableOpacity
           key={emoji}
           onPress={() => onPress(emoji)}
           activeOpacity={0.7}
           style={{
-            flexDirection: 'row', alignItems: 'center',
-            backgroundColor: mine ? 'rgba(232,82,26,0.15)' : '#1A1208',
-            borderWidth: 1,
-            borderColor: mine ? 'rgba(232,82,26,0.4)' : '#2A1F14',
-            borderRadius: 20, paddingHorizontal: 7, paddingVertical: 3, gap: 3,
+            flexDirection: 'row', alignItems: 'center', gap: 3,
+            backgroundColor: mine ? T.primarySoft : T.surface,
+            borderWidth: 1, borderColor: mine ? T.primaryBorder : T.line,
+            borderRadius: 12, paddingHorizontal: 6, paddingVertical: 2,
           }}
         >
           <Text style={{ fontSize: 13 }}>{emoji}</Text>
-          {count > 1 && (
-            <Text style={{
-              fontSize: 11, fontFamily: 'SpaceGrotesk_600SemiBold',
-              color: mine ? '#E8521A' : '#6B5E50',
-            }}>{count}</Text>
-          )}
+          {count > 1 && <Text style={{ fontSize: 11, fontFamily: 'PlusJakartaSans_600SemiBold', color: mine ? T.primaryInk : T.ink3 }}>{count}</Text>}
         </TouchableOpacity>
       ))}
     </View>
@@ -268,63 +296,65 @@ const ReactionRow = memo(function ReactionRow({ reactions, myId, onPress }: {
 
 // ── Swipe Reply Indicator ──────────────────────────────────────────────────
 const SwipeReplyIcon = memo(function SwipeReplyIcon({ translateX, isMine }: {
-  translateX: Animated.SharedValue<number>; isMine: boolean;
+  translateX: SharedValue<number>; isMine: boolean;
 }) {
+  useTheme();
   const style = useAnimatedStyle(() => {
-    const progress = isMine
-      ? Math.min(1, Math.abs(translateX.value) / 55)
-      : Math.min(1, translateX.value / 55);
-    return {
-      opacity: progress,
-      transform: [{ scale: 0.6 + progress * 0.4 }],
-    };
+    const progress = Math.min(1, Math.abs(translateX.value) / 55);
+    return { opacity: progress, transform: [{ scale: 0.6 + progress * 0.4 }] };
   });
   return (
     <Animated.View style={[{
-      position: 'absolute',
-      [isMine ? 'right' : 'left']: -36,
-      top: '50%', marginTop: -14,
-      width: 28, height: 28, borderRadius: 14,
-      backgroundColor: '#2A1F14',
+      position: 'absolute', [isMine ? 'right' : 'left']: -38,
+      top: '50%', marginTop: -15, width: 30, height: 30, borderRadius: 15,
+      backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
       alignItems: 'center', justifyContent: 'center',
     }, style]}>
-      <Ionicons name="return-down-forward-outline" size={14} color="#E8521A" />
+      <Ionicons name="arrow-undo" size={14} color={T.primary} />
     </Animated.View>
   );
 });
 
+// ── Status ticks ───────────────────────────────────────────────────────────
+function Ticks({ msg, onBubble }: { msg: Message; onBubble: boolean }) {
+  useTheme();
+  if (msg.failed) return <Ionicons name="alert-circle" size={13} color={onBubble ? '#FFFFFF' : T.danger} />;
+  if (isPending(msg)) return <Ionicons name="time-outline" size={12} color={onBubble ? 'rgba(255,255,255,0.75)' : T.ink4} />;
+  const read = msg.is_read;
+  const double = read || msg.delivered;
+  const color = onBubble ? (read ? '#FFFFFF' : 'rgba(255,255,255,0.6)') : (read ? T.info : T.ink4);
+  return <Ionicons name={double ? 'checkmark-done' : 'checkmark'} size={14} color={color} />;
+}
+
 // ── Message Bubble ─────────────────────────────────────────────────────────
 const MessageBubble = memo(function MessageBubble({
-  msg, isMine, isFirstInGroup, isLastInGroup, myId,
-  onLongPress, onImagePress, onSwipeReply, onReactionPress,
-  isSelected, selectionMode, onSelect,
+  msg, isMine, isFirstInGroup, isLastInGroup, myId, otherName, animate,
+  onLongPress, onPress, onImagePress, onSwipeReply, onReactionPress,
+  isSelected, selectionMode,
 }: {
   msg: Message; isMine: boolean;
   isFirstInGroup: boolean; isLastInGroup: boolean;
-  myId: string;
+  myId: string; otherName: string; animate: boolean;
   onLongPress: (msg: Message, pageY: number) => void;
+  onPress: (msg: Message) => void;
   onImagePress: (url: string) => void;
   onSwipeReply: (msg: Message) => void;
   onReactionPress: (messageId: string, emoji: string) => void;
   isSelected: boolean; selectionMode: boolean;
-  onSelect: (msg: Message) => void;
 }) {
+  useTheme();
   const translateX = useSharedValue(0);
   const hasTriggered = useSharedValue(false);
+  const bubbleRef = useRef<View>(null);
+  const canSwipe = !msg.deleted && !isPending(msg) && !selectionMode;
 
   const swipeGesture = Gesture.Pan()
-    .activeOffsetX(isMine ? [-20, 999] : [-999, 20])
-    .failOffsetY([-15, 15])
+    .enabled(canSwipe)
+    .activeOffsetX(isMine ? [-18, 999] : [-999, 18])
+    .failOffsetY([-12, 12])
     .onUpdate((e) => {
-      if (isMine) {
-        translateX.value = Math.max(-60, Math.min(0, e.translationX));
-      } else {
-        translateX.value = Math.max(0, Math.min(60, e.translationX));
-      }
-      const threshold = 50;
-      const triggered = isMine
-        ? translateX.value <= -threshold
-        : translateX.value >= threshold;
+      translateX.value = isMine ? Math.max(-64, Math.min(0, e.translationX)) : Math.max(0, Math.min(64, e.translationX));
+      const triggered = Math.abs(translateX.value) >= 50;
       if (triggered && !hasTriggered.value) {
         hasTriggered.value = true;
         runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
@@ -332,929 +362,992 @@ const MessageBubble = memo(function MessageBubble({
       if (!triggered) hasTriggered.value = false;
     })
     .onEnd(() => {
-      const threshold = 50;
-      const shouldReply = isMine
-        ? translateX.value <= -threshold
-        : translateX.value >= threshold;
-      if (shouldReply) runOnJS(onSwipeReply)(msg);
-      translateX.value = withSpring(0, { damping: 15, stiffness: 400 });
+      if (Math.abs(translateX.value) >= 50) runOnJS(onSwipeReply)(msg);
+      translateX.value = withSpring(0, { damping: 16, stiffness: 380 });
     });
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  const bubbleRef = useRef<View>(null);
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
 
   const handleLongPress = () => {
+    if (msg.deleted) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (selectionMode) { onSelect(msg); return; }
-    bubbleRef.current?.measure((x, y, w, h, px, py) => {
-      onLongPress(msg, py);
-    });
+    bubbleRef.current?.measureInWindow((_x, y) => onLongPress(msg, y));
   };
+
+  const align = isMine ? 'flex-end' : 'flex-start';
+  const marginBottom = isLastInGroup ? 8 : 2;
 
   if (msg.deleted) {
     return (
-      <View style={{
-        alignSelf: isMine ? 'flex-end' : 'flex-start',
-        marginBottom: isLastInGroup ? 8 : 2,
-        marginHorizontal: 16,
-        flexDirection: 'row', alignItems: 'center', gap: 5,
-        backgroundColor: '#141009',
-        borderWidth: 1, borderColor: '#1E1610', borderStyle: 'dashed',
-        borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7,
-      }}>
-        <Ionicons name="ban-outline" size={12} color="#3D3026" />
-        <Text style={{
-          fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12,
-          color: '#3D3026', fontStyle: 'italic',
-        }}>Message deleted</Text>
+      <View style={{ alignItems: align, paddingHorizontal: 12, marginBottom }}>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 6,
+          borderWidth: 1, borderColor: T.line, borderStyle: 'dashed',
+          borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8,
+        }}>
+          <Ionicons name="ban-outline" size={13} color={T.ink4} />
+          <Text style={{ fontSize: 13, color: T.ink3, fontStyle: 'italic' }}>
+            {isMine ? 'You deleted this message' : 'This message was deleted'}
+          </Text>
+        </View>
       </View>
     );
   }
 
-  const isTemp = msg.id.startsWith('temp-');
-  // Margin between messages: tight within group, more between groups
-  const marginBottom = isLastInGroup ? 6 : 2;
-  // Top corner radius logic
-  const br = {
-    borderTopRightRadius: isMine ? (isFirstInGroup ? 4 : 18) : 18,
-    borderBottomRightRadius: isMine ? (isLastInGroup ? 18 : 6) : 18,
-    borderTopLeftRadius: isMine ? 18 : (isFirstInGroup ? 4 : 18),
-    borderBottomLeftRadius: isMine ? 18 : (isLastInGroup ? 18 : 6),
-  };
+  const r = 20;
+  const tight = 6;
+  const radii = isMine
+    ? { borderTopLeftRadius: r, borderBottomLeftRadius: r, borderTopRightRadius: isFirstInGroup ? r : tight, borderBottomRightRadius: isLastInGroup ? r : tight }
+    : { borderTopRightRadius: r, borderBottomRightRadius: r, borderTopLeftRadius: isFirstInGroup ? r : tight, borderBottomLeftRadius: isLastInGroup ? r : tight };
+
+  const imageUri = msg.image_url || msg.local_uri;
+  const pending = isPending(msg);
 
   return (
-    <GestureDetector gesture={swipeGesture}>
-      <Animated.View
-        entering={isMine ? SlideInRight.duration(150).easing(Easing.out) : SlideInLeft.duration(150).easing(Easing.out)}
-        style={[
-          {
-            marginBottom,
-            paddingHorizontal: 10,
-            flexDirection: 'row',
-            justifyContent: isMine ? 'flex-end' : 'flex-start',
-            alignItems: 'flex-end',
-          },
-          animStyle,
-        ]}
-      >
-        {/* Avatar for other user (only on last in group) */}
-        {/* {!isMine && (
-          <View style={{ width: 28, marginRight: 6, marginBottom: 2, alignSelf: 'flex-end' }}>
-            {isLastInGroup ? (
-              <View style={{
-                width: 28, height: 28, borderRadius: 14,
-                backgroundColor: '#2A1F14',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Ionicons name="person" size={14} color="#6B5E50" />
-              </View>
-            ) : null}
-          </View>
-        )} */}
+    <View style={{ backgroundColor: isSelected ? T.primarySoft : 'transparent' }}>
+      <GestureDetector gesture={swipeGesture}>
+        <Animated.View
+          entering={animate ? FadeInDown.duration(180) : undefined}
+          style={[{ paddingHorizontal: 12, marginBottom, alignItems: align }, animStyle]}
+        >
+          <View style={{ maxWidth: SCREEN_WIDTH * 0.78, position: 'relative' }}>
+            <SwipeReplyIcon translateX={translateX} isMine={isMine} />
 
-        <View style={{ maxWidth: SCREEN_WIDTH * 0.75, position: 'relative' }}>
-          {/* Swipe reply icon */}
-          <SwipeReplyIcon translateX={translateX} isMine={isMine} />
-
-          {/* Selection check */}
-          {selectionMode && (
-            <View style={{
-              position: 'absolute',
-              [isMine ? 'right' : 'left']: -30,
-              top: 0, bottom: 0,
-              justifyContent: 'center', zIndex: 10,
-            }}>
-              <View style={{
-                width: 20, height: 20, borderRadius: 10,
-                borderWidth: 2,
-                borderColor: isSelected ? '#E8521A' : '#3D3026',
-                backgroundColor: isSelected ? '#E8521A' : 'transparent',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                {isSelected && <Ionicons name="checkmark" size={12} color="white" />}
-              </View>
-            </View>
-          )}
-
-          <Pressable
-            ref={bubbleRef as any}
-            onPress={() => selectionMode && onSelect(msg)}
-            onLongPress={handleLongPress}
-            delayLongPress={300}
-          >
-            {/* Reply quote */}
-            {msg.reply_to && (
-              <View style={{ marginBottom: 0 }}>
-                <ReplyQuote replyTo={msg.reply_to} isMine={isMine} myId={myId} />
-              </View>
-            )}
-
-            {/* Image bubble */}
-            {msg.type === 'image' && msg.image_url ? (
-              <TouchableOpacity
-                onPress={() => onImagePress(msg.image_url!)}
-                onLongPress={handleLongPress}
-                delayLongPress={300}
-                activeOpacity={0.95}
-              >
-                <Image
-                  source={{ uri: msg.image_url }}
-                  style={{
-                    width: 230, height: 230,
-                    borderRadius: 18, ...br,
-                    opacity: isTemp ? 0.65 : 1,
-                  }}
-                  resizeMode="cover"
-                />
-                {isTemp && (
-                  <View style={{
-                    position: 'absolute', bottom: 8, right: 8,
-                    backgroundColor: 'rgba(0,0,0,0.5)',
-                    borderRadius: 10, padding: 4,
-                  }}>
-                    <ActivityIndicator size="small" color="white" />
-                  </View>
-                )}
-              </TouchableOpacity>
-            ) : (
-              /* Text bubble */
-              <View style={{
-                backgroundColor: isMine ? '#E8521A' : '#1E1610',
-                ...br,
-                borderWidth: isMine ? 0 : 1,
-                borderColor: '#2A1F14',
-                paddingHorizontal: 13,
-                paddingTop: 9,
-                paddingBottom: 7,
-                ...(isSelected ? {
-                  backgroundColor: isMine ? '#c94316' : '#261A0F',
-                } : {}),
-              }}>
-                <Text style={{
-                  fontFamily: 'SpaceGrotesk_400Regular',
-                  fontSize: 15, lineHeight: 21,
-                  color: isMine ? '#FFFFFF' : '#EDE3D5',
-                }}>
-                  {msg.content}
-                </Text>
-
-                {/* Time + status row inside bubble */}
+            <Pressable
+              ref={bubbleRef as any}
+              onPress={() => onPress(msg)}
+              onLongPress={handleLongPress}
+              delayLongPress={280}
+            >
+              {msg.type === 'image' && imageUri ? (
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center',
-                  justifyContent: 'flex-end', gap: 3,
-                  marginTop: 3,
+                  ...radii, overflow: 'hidden',
+                  backgroundColor: isMine ? T.primary : T.surface,
+                  borderWidth: isMine ? 0 : 1, borderColor: T.line, padding: 3,
                 }}>
-                  {msg.edited && (
-                    <Text style={{
-                      fontSize: 10, fontFamily: 'SpaceGrotesk_400Regular',
-                      color: isMine ? 'rgba(255,255,255,0.45)' : '#4A3D30',
-                    }}>edited</Text>
+                  {msg.reply_to && (
+                    <View style={{ padding: 6, paddingBottom: 0 }}>
+                      <ReplyQuote replyTo={msg.reply_to} isMine={isMine} myId={myId} otherName={otherName} />
+                    </View>
                   )}
-                  <Text style={{
-                    fontSize: 10, fontFamily: 'SpaceGrotesk_400Regular',
-                    color: isMine ? 'rgba(255,255,255,0.5)' : '#4A3D30',
-                  }}>
-                    {formatTime(msg.created_at)}
-                  </Text>
-                  {isMine && (
-                    isTemp ? (
-                      <Ionicons name="time-outline" size={11} color="rgba(255,255,255,0.4)" />
-                    ) : (
-                      <Ionicons
-                        name={msg.is_read ? 'checkmark-done' : msg.delivered ? 'checkmark-done' : 'checkmark'}
-                        size={13}
-                        color={msg.is_read ? '#67D8FF' : 'rgba(255,255,255,0.5)'}
-                      />
-                    )
-                  )}
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    disabled={selectionMode || pending}
+                    onPress={() => onImagePress(imageUri)}
+                    onLongPress={handleLongPress}
+                    delayLongPress={280}
+                  >
+                    <Image
+                      source={{ uri: imageUri }}
+                      style={{ width: 232, height: 232, borderRadius: r - 4, backgroundColor: T.surface2, opacity: pending && !msg.failed ? 0.7 : 1 }}
+                      resizeMode="cover"
+                    />
+                    <View style={{
+                      position: 'absolute', right: 8, bottom: 8,
+                      flexDirection: 'row', alignItems: 'center', gap: 3,
+                      backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3,
+                    }}>
+                      <Text style={{ fontSize: 10.5, color: '#FFFFFF' }}>{formatTime(msg.created_at)}</Text>
+                      {isMine && <Ticks msg={msg} onBubble />}
+                    </View>
+                    {pending && !msg.failed && (
+                      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                        <ActivityIndicator color="#FFFFFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 </View>
-              </View>
+              ) : (
+                <View style={{
+                  ...radii,
+                  backgroundColor: isMine ? (msg.failed ? T.primaryPressed : T.primary) : T.surface,
+                  borderWidth: isMine ? 0 : 1, borderColor: T.line,
+                  paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6,
+                  opacity: pending && !msg.failed ? 0.85 : 1,
+                }}>
+                  {msg.reply_to && <ReplyQuote replyTo={msg.reply_to} isMine={isMine} myId={myId} otherName={otherName} />}
+                  <Text style={{ fontSize: 15, lineHeight: 21, color: isMine ? T.onPrimary : T.ink }}>
+                    {msg.content}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 2 }}>
+                    {msg.edited && (
+                      <Text style={{ fontSize: 10.5, fontStyle: 'italic', color: isMine ? 'rgba(255,255,255,0.75)' : T.ink4 }}>edited</Text>
+                    )}
+                    <Text style={{ fontSize: 10.5, color: isMine ? 'rgba(255,255,255,0.8)' : T.ink4 }}>
+                      {formatTime(msg.created_at)}
+                    </Text>
+                    {isMine && <Ticks msg={msg} onBubble />}
+                  </View>
+                </View>
+              )}
+            </Pressable>
+
+            {msg.failed && (
+              <TouchableOpacity onPress={() => onPress(msg)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 3 }}>
+                <Ionicons name="refresh" size={12} color={T.danger} />
+                <Text style={{ fontSize: 11.5, fontFamily: 'PlusJakartaSans_600SemiBold', color: T.dangerInk }}>Not sent · Tap to retry</Text>
+              </TouchableOpacity>
             )}
 
-            {/* Time for image (outside bubble) */}
-            {msg.type === 'image' && (
-              <View style={{
-                flexDirection: 'row', alignItems: 'center',
-                justifyContent: isMine ? 'flex-end' : 'flex-start',
-                gap: 3, marginTop: 3, paddingHorizontal: 2,
-              }}>
-                <Text style={{
-                  fontSize: 10, fontFamily: 'SpaceGrotesk_400Regular', color: '#4A3D30',
-                }}>{formatTime(msg.created_at)}</Text>
-                {isMine && !isTemp && (
-                  <Ionicons
-                    name={msg.is_read ? 'checkmark-done' : 'checkmark'}
-                    size={12} color={msg.is_read ? '#67D8FF' : '#4A3D30'}
-                  />
-                )}
+            {msg.reactions?.length > 0 && (
+              <View style={{ alignItems: align, marginTop: 2 }}>
+                <ReactionRow reactions={msg.reactions} myId={myId} onPress={(emoji) => onReactionPress(msg.id, emoji)} />
               </View>
             )}
-          </Pressable>
-
-          {/* Reactions */}
-          {msg.reactions?.length > 0 && (
-            <View style={{ alignSelf: isMine ? 'flex-end' : 'flex-start' }}>
-              <ReactionRow
-                reactions={msg.reactions}
-                myId={myId}
-                onPress={(emoji) => onReactionPress(msg.id, emoji)}
-              />
-            </View>
-          )}
-        </View>
-      </Animated.View>
-    </GestureDetector>
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    </View>
   );
 });
 
 // ── Payment Request Bubble ─────────────────────────────────────────────────
 const PaymentRequestBubble = memo(function PaymentRequestBubble({
-  msg, isMine, paymentRequest, onPay, onCancel, paying,
+  msg, isMine, onPay, onCancel, paying, animate,
 }: {
-  msg: Message; isMine: boolean; paymentRequest: PaymentRequest | null;
+  msg: Message; isMine: boolean;
   onPay: (pr: PaymentRequest) => void;
   onCancel: (pr: PaymentRequest) => void;
-  paying: string | null;
+  paying: string | null; animate: boolean;
 }) {
-  if (!paymentRequest) return null;
-  const isPaid = paymentRequest.status === 'paid';
-  const isCancelled = paymentRequest.status === 'cancelled';
-  const statusColor = isPaid ? '#2D8653' : isCancelled ? '#4A3D30' : '#F5A623';
+  useTheme();
+  const pr = msg.payment_request;
+  if (!pr) {
+    return (
+      <View style={{ alignItems: isMine ? 'flex-end' : 'flex-start', paddingHorizontal: 12, marginBottom: 8 }}>
+        <View style={{ borderRadius: 16, borderWidth: 1, borderColor: T.line, padding: 12, backgroundColor: T.surface }}>
+          <Text style={{ fontSize: 13, color: T.ink3 }}>Payment request unavailable</Text>
+        </View>
+      </View>
+    );
+  }
+  const isPaid = pr.status === 'paid';
+  const isPending = pr.status === 'pending';
+  const statusColor = isPaid ? T.successInk : isPending ? T.goldInk : T.ink4;
+  const statusBg = isPaid ? T.successSoft : isPending ? T.goldSoft : T.surface2;
+  const statusLabel = isPaid ? 'Paid' : isPending ? 'Awaiting payment' : pr.status === 'cancelled' ? 'Cancelled' : 'Expired';
+  const fee = pr.is_delivery ? pr.delivery_fee ?? 0 : 0;
+  const total = pr.amount + fee;
 
   return (
     <Animated.View
-      entering={FadeInDown.duration(200).easing(Easing.out)}
-      style={{
-        marginBottom: 10, marginHorizontal: 10,
-        alignSelf: isMine ? 'flex-end' : 'flex-start',
-        maxWidth: SCREEN_WIDTH * 0.82,
-      }}
+      entering={animate ? FadeInDown.duration(200) : undefined}
+      style={{ paddingHorizontal: 12, marginBottom: 10, alignItems: isMine ? 'flex-end' : 'flex-start' }}
     >
       <View style={{
-        backgroundColor: '#1A1208',
-        borderWidth: 1,
-        borderColor: isPaid ? 'rgba(45,134,83,0.35)' : isCancelled ? '#1E1610' : 'rgba(245,166,35,0.3)',
-        borderRadius: 20,
-        borderTopRightRadius: isMine ? 4 : 20,
-        borderTopLeftRadius: isMine ? 20 : 4,
-        overflow: 'hidden', minWidth: 240,
+        width: Math.min(290, SCREEN_WIDTH * 0.8),
+        backgroundColor: T.surface, borderRadius: 20,
+        borderWidth: 1, borderColor: isPaid ? T.success : isPending ? T.primaryBorder : T.line,
+        overflow: 'hidden',
       }}>
-        <View style={{ height: 3, backgroundColor: statusColor }} />
-        <View style={{ padding: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{
-                width: 30, height: 30, borderRadius: 10,
-                backgroundColor: `${statusColor}18`,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Ionicons name="cash-outline" size={15} color={statusColor} />
+        <View style={{ padding: 16, gap: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="receipt-outline" size={16} color={T.primary} />
               </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: '#FDF6EC', letterSpacing: 0.3 }}>
-                PAYMENT REQUEST
-              </Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13, color: T.ink }}>Payment request</Text>
             </View>
-            <View style={{
-              backgroundColor: `${statusColor}15`,
-              paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-            }}>
-              <Text style={{
-                fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 10,
-                color: statusColor, textTransform: 'uppercase', letterSpacing: 0.5,
-              }}>
-                {isPaid ? 'Paid' : isCancelled ? 'Cancelled' : 'Pending'}
-              </Text>
+            <View style={{ backgroundColor: statusBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 10.5, color: statusColor }}>{statusLabel}</Text>
             </View>
           </View>
-          <Text style={{
-            fontFamily: 'SpaceGrotesk_700Bold', fontSize: 28,
-            color: '#FDF6EC', marginBottom: paymentRequest.description ? 6 : 14,
-          }}>
-            {formatAmount(paymentRequest.amount)}
-          </Text>
-          {paymentRequest.description && (
-            <Text style={{
-              fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13,
-              color: '#6B5E50', marginBottom: 14, lineHeight: 18,
-            }}>
-              {paymentRequest.description}
+
+          <View>
+            <Text style={{ fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 28, color: isPending || isPaid ? T.ink : T.ink4, letterSpacing: -0.5, textDecorationLine: isPending || isPaid ? 'none' : 'line-through' }}>
+              {formatAmount(total)}
             </Text>
+            {!!pr.description && (
+              <Text style={{ fontSize: 13.5, color: T.ink2, marginTop: 4, lineHeight: 19 }}>{pr.description}</Text>
+            )}
+          </View>
+
+          {fee > 0 && (
+            <View style={{ backgroundColor: T.surface2, borderRadius: 12, padding: 10, gap: 4 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12.5, color: T.ink3 }}>Items</Text>
+                <Text style={{ fontSize: 12.5, color: T.ink2, fontFamily: 'PlusJakartaSans_600SemiBold' }}>{formatAmount(pr.amount)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12.5, color: T.ink3 }}>Delivery</Text>
+                <Text style={{ fontSize: 12.5, color: T.ink2, fontFamily: 'PlusJakartaSans_600SemiBold' }}>{formatAmount(fee)}</Text>
+              </View>
+            </View>
           )}
-          {!isPaid && !isCancelled && !isMine && (
+
+          {isPending && !isMine && (
             <TouchableOpacity
-              onPress={() => onPay(paymentRequest)}
-              disabled={paying === paymentRequest.id}
-              style={{
-                backgroundColor: '#E8521A', borderRadius: 12, height: 46,
-                alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'row', gap: 8,
-              }}
+              onPress={() => onPay(pr)}
+              disabled={paying === pr.id}
+              activeOpacity={0.85}
+              style={{ backgroundColor: T.primary, borderRadius: 14, height: 46, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}
             >
-              {paying === paymentRequest.id
-                ? <ActivityIndicator size="small" color="white" />
-                : <>
-                    <Ionicons name="wallet-outline" size={16} color="white" />
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14, color: 'white' }}>Pay Now</Text>
-                  </>}
+              {paying === pr.id ? <ActivityIndicator size="small" color="#FFFFFF" /> : (
+                <>
+                  <Ionicons name="lock-closed" size={15} color="#FFFFFF" />
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14.5, color: '#FFFFFF' }}>Pay securely</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
-          {!isPaid && !isCancelled && isMine && (
+          {isPending && isMine && (
             <TouchableOpacity
-              onPress={() => onCancel(paymentRequest)}
-              style={{
-                backgroundColor: 'transparent', borderRadius: 12, height: 38,
-                alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: '#2A1F14',
-              }}
+              onPress={() => onCancel(pr)}
+              style={{ borderRadius: 14, height: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: T.line }}
             >
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: '#4A3D30' }}>Cancel Request</Text>
+              <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13, color: T.ink3 }}>Cancel request</Text>
             </TouchableOpacity>
           )}
           {isPaid && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Ionicons name="checkmark-circle" size={13} color="#2D8653" />
-              <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: '#2D8653' }}>
-                Paid {paymentRequest.paid_at ? formatTime(paymentRequest.paid_at) : ''}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="shield-checkmark" size={14} color={T.successInk} />
+              <Text style={{ fontSize: 12.5, color: T.successInk, fontFamily: 'PlusJakartaSans_600SemiBold' }}>
+                Paid{pr.paid_at ? ` · ${formatTime(pr.paid_at)}` : ''} · held in escrow
               </Text>
             </View>
           )}
         </View>
       </View>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        justifyContent: isMine ? 'flex-end' : 'flex-start',
-        marginTop: 3, paddingHorizontal: 4,
-      }}>
-        <Text style={{ fontSize: 10, fontFamily: 'SpaceGrotesk_400Regular', color: '#4A3D30' }}>
-          {formatTime(msg.created_at)}
-        </Text>
-      </View>
+      <Text style={{ fontSize: 10.5, color: T.ink4, marginTop: 3, paddingHorizontal: 4 }}>{formatTime(msg.created_at)}</Text>
     </Animated.View>
   );
 });
 
 // ── Floating Context Menu ──────────────────────────────────────────────────
-// Replaces the old bottom sheet actions with a WhatsApp-style floating menu
 function FloatingContextMenu({
-  visible, pageY, msg, isMine, myId,
-  onReply, onReact, onEdit, onDelete, onSelect, onCopy, onDismiss,
+  visible, pageY, msg, isMine, myReaction,
+  onReply, onReact, onEdit, onDelete, onSelect, onDismiss,
 }: {
-  visible: boolean; pageY: number; msg: Message | null; isMine: boolean; myId: string;
-  onReply: () => void; onReact: () => void;
-  onEdit: () => void; onDelete: () => void;
-  onSelect: () => void; onCopy: () => void;
+  visible: boolean; pageY: number; msg: Message | null; isMine: boolean; myReaction?: string;
+  onReply: () => void; onReact: (emoji: string) => void;
+  onEdit: () => void; onDelete: () => void; onSelect: () => void;
   onDismiss: () => void;
 }) {
+  useTheme();
+  const insets = useSafeAreaInsets();
   if (!visible || !msg) return null;
 
-  // Determine if menu should appear above or below the message
-  const showAbove = pageY > SCREEN_HEIGHT * 0.55;
-  const menuTop = showAbove ? pageY - 220 : pageY + 10;
-
   const actions = [
-    { icon: 'return-down-forward-outline', label: 'Reply', onPress: onReply, color: '#FDF6EC' },
-    ...(msg.type !== 'image' ? [{ icon: 'copy-outline', label: 'Copy', onPress: onCopy, color: '#FDF6EC' }] : []),
-    ...(isMine && msg.type !== 'image' && !msg.deleted
-      ? [{ icon: 'create-outline', label: 'Edit', onPress: onEdit, color: '#FDF6EC' }]
-      : []),
-    { icon: 'checkmark-circle-outline', label: 'Select', onPress: onSelect, color: '#FDF6EC' },
-    ...(isMine && !msg.deleted
-      ? [{ icon: 'trash-outline', label: 'Delete', onPress: onDelete, color: '#FF6B6B' }]
-      : []),
+    { icon: 'arrow-undo-outline', label: 'Reply', onPress: onReply, color: T.ink },
+    ...(isMine && msg.type === 'text' ? [{ icon: 'create-outline', label: 'Edit', onPress: onEdit, color: T.ink }] : []),
+    ...(isMine ? [{ icon: 'checkmark-circle-outline', label: 'Select', onPress: onSelect, color: T.ink }] : []),
+    ...(isMine ? [{ icon: 'trash-outline', label: 'Delete', onPress: onDelete, color: T.dangerInk }] : []),
   ] as Array<{ icon: string; label: string; onPress: () => void; color: string }>;
 
-  return (
-    <Modal visible={visible} transparent animationType="none">
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
-        onPress={onDismiss}
-      >
-        {/* Reaction bar */}
-        <Animated.View
-          entering={ZoomIn.duration(180).springify()}
-          style={{
-            position: 'absolute',
-            top: Math.max(60, menuTop - 60),
-            [isMine ? 'right' : 'left']: 16,
-            backgroundColor: '#1E1610',
-            borderRadius: 28, padding: 6,
-            flexDirection: 'row', gap: 2,
-            borderWidth: 1, borderColor: '#2A1F14',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.5, shadowRadius: 16,
-            elevation: 12,
-          }}
-        >
-          {REACTION_EMOJIS.map((emoji, i) => (
-            <TouchableOpacity
-              key={emoji}
-              onPress={() => { onDismiss(); onReact(); }}
-              style={{
-                width: 42, height: 42, borderRadius: 21,
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>{emoji}</Text>
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
+  const reactionBarH = 58;
+  const menuH = actions.length * 48;
+  const blockH = reactionBarH + 8 + menuH;
+  const minTop = insets.top + 12;
+  const maxTop = SCREEN_HEIGHT - insets.bottom - blockH - 12;
+  const top = Math.max(minTop, Math.min(maxTop, pageY - reactionBarH - 8));
 
-        {/* Action menu */}
-        <Animated.View
-          entering={ZoomIn.duration(180).springify()}
-          style={{
-            position: 'absolute',
-            top: Math.max(120, menuTop),
-            [isMine ? 'right' : 'left']: 16,
-            backgroundColor: '#1E1610',
-            borderRadius: 16, overflow: 'hidden',
-            borderWidth: 1, borderColor: '#2A1F14',
-            minWidth: 180,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.5, shadowRadius: 16,
-            elevation: 12,
-          }}
-        >
-          {actions.map((action, i) => (
-            <TouchableOpacity
-              key={action.label}
-              onPress={() => { onDismiss(); action.onPress(); }}
-              style={{
-                flexDirection: 'row', alignItems: 'center',
-                gap: 12, paddingHorizontal: 16, paddingVertical: 13,
-                borderBottomWidth: i < actions.length - 1 ? 1 : 0,
-                borderBottomColor: '#2A1F14',
-              }}
-            >
-              <Ionicons name={action.icon as any} size={17} color={action.color} />
-              <Text style={{
-                fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14,
-                color: action.color,
-              }}>{action.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onDismiss} statusBarTranslucent>
+      <Pressable style={{ flex: 1, backgroundColor: T.overlay }} onPress={onDismiss}>
+        <View style={{ position: 'absolute', top, [isMine ? 'right' : 'left']: 14, alignItems: isMine ? 'flex-end' : 'flex-start', gap: 8 }}>
+          <Animated.View
+            entering={ZoomIn.duration(160)}
+            style={{
+              flexDirection: 'row', gap: 2, padding: 6, borderRadius: 30,
+              backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
+              shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 16, elevation: 12,
+            }}
+          >
+            {REACTION_EMOJIS.map((emoji) => (
+              <TouchableOpacity
+                key={emoji}
+                onPress={() => { onDismiss(); onReact(emoji); }}
+                style={{
+                  width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: myReaction === emoji ? T.primarySoft : 'transparent',
+                }}
+              >
+                <Text style={{ fontSize: 24 }}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </Animated.View>
+
+          <Animated.View
+            entering={FadeIn.duration(160)}
+            style={{
+              minWidth: 190, borderRadius: 16, overflow: 'hidden',
+              backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
+              shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 16, elevation: 12,
+            }}
+          >
+            {actions.map((action, i) => (
+              <TouchableOpacity
+                key={action.label}
+                onPress={() => { onDismiss(); action.onPress(); }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 16, height: 48,
+                  borderBottomWidth: i < actions.length - 1 ? 1 : 0, borderBottomColor: T.line,
+                }}
+              >
+                <Text style={{ fontFamily: 'PlusJakartaSans_500Medium', fontSize: 14.5, color: action.color }}>{action.label}</Text>
+                <Ionicons name={action.icon as any} size={18} color={action.color} />
+              </TouchableOpacity>
+            ))}
+          </Animated.View>
+        </View>
       </Pressable>
     </Modal>
   );
 }
 
-// ── Floating Reaction Picker ───────────────────────────────────────────────
-function FloatingReactionPicker({
-  visible, onSelect, onDismiss,
-}: {
-  visible: boolean;
-  onSelect: (emoji: string) => void;
-  onDismiss: () => void;
+// ── Reply / Edit strip above the input ─────────────────────────────────────
+const ComposerContext = memo(function ComposerContext({ mode, msg, label, onCancel }: {
+  mode: 'reply' | 'edit'; msg: Message; label: string; onCancel: () => void;
 }) {
-  return (
-    <Modal visible={visible} transparent animationType="none">
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' }}
-        onPress={onDismiss}
-      >
-        <Animated.View
-          entering={ZoomIn.duration(200).springify()}
-          exiting={ZoomOut.duration(150)}
-          style={{
-            backgroundColor: '#1E1610',
-            borderRadius: 32, padding: 10,
-            flexDirection: 'row', gap: 4,
-            borderWidth: 1, borderColor: '#2A1F14',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: 0.6, shadowRadius: 24,
-            elevation: 14,
-          }}
-        >
-          {REACTION_EMOJIS.map((emoji) => (
-            <TouchableOpacity
-              key={emoji}
-              onPress={() => onSelect(emoji)}
-              style={{
-                width: 52, height: 52, borderRadius: 26,
-                backgroundColor: '#2A1F14',
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 28 }}>{emoji}</Text>
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  );
-}
-
-// ── Reply Strip ────────────────────────────────────────────────────────────
-const ReplyStrip = memo(function ReplyStrip({ replyTo, myId, onCancel, senderName }: {
-  replyTo: Message; myId: string; onCancel: () => void; senderName: string | null;
-}) {
-  const isOwn = replyTo.sender_id === myId;
+  useTheme();
+  const preview = msg.type === 'image' ? 'Photo' : msg.type === 'payment_request' ? 'Payment request' : msg.content;
   return (
     <Animated.View
-      entering={FadeInDown.duration(180)}
-      exiting={FadeOutDown.duration(140)}
+      entering={FadeInDown.duration(160)}
+      exiting={FadeOutDown.duration(120)}
       style={{
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: '#141009',
-        borderTopWidth: 1, borderColor: '#1E1610',
-        paddingHorizontal: 16, paddingVertical: 10, gap: 10,
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        marginHorizontal: 10, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 8,
+        backgroundColor: T.surface, borderRadius: 14, borderWidth: 1, borderColor: T.line,
       }}
     >
-      <View style={{ width: 3, alignSelf: 'stretch', backgroundColor: '#E8521A', borderRadius: 2 }} />
+      <View style={{ width: 3, alignSelf: 'stretch', backgroundColor: T.primary, borderRadius: 2 }} />
+      <Ionicons name={mode === 'edit' ? 'create-outline' : 'arrow-undo-outline'} size={16} color={T.primary} />
       <View style={{ flex: 1 }}>
-        <Text style={{
-          fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 12,
-          color: '#E8521A', marginBottom: 2,
-        }}>
-          {isOwn ? 'Replying to yourself' : `Replying to ${senderName || 'Unknown'}`}
-        </Text>
-        {replyTo.type === 'image' ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="image-outline" size={12} color="#6B5E50" />
-            <Text style={{ fontSize: 12, color: '#6B5E50', fontFamily: 'SpaceGrotesk_400Regular' }}>Photo</Text>
-          </View>
-        ) : (
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50' }} numberOfLines={1}>
-            {replyTo.content}
-          </Text>
-        )}
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 12, color: T.primaryInk }}>{label}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 12.5, color: T.ink3 }}>{preview}</Text>
       </View>
-      <TouchableOpacity onPress={onCancel} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-        <Ionicons name="close" size={18} color="#4A3D30" />
+      <TouchableOpacity onPress={onCancel} hitSlop={12}>
+        <Ionicons name="close-circle" size={20} color={T.ink4} />
       </TouchableOpacity>
     </Animated.View>
   );
 });
 
+// ── Bottom sheet shell ─────────────────────────────────────────────────────
+function Sheet({ visible, onClose, children, avoidKeyboard }: {
+  visible: boolean; onClose: () => void; children: React.ReactNode; avoidKeyboard?: boolean;
+}) {
+  useTheme();
+  const insets = useSafeAreaInsets();
+  const body = (
+    <View style={{
+      backgroundColor: T.canvas, borderTopLeftRadius: 26, borderTopRightRadius: 26,
+      paddingHorizontal: 20, paddingTop: 12, paddingBottom: Math.max(insets.bottom, 16) + 12,
+    }}>
+      <View style={{ width: 38, height: 4, backgroundColor: T.lineStrong, borderRadius: 2, alignSelf: 'center', marginBottom: 18 }} />
+      {children}
+    </View>
+  );
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <Pressable style={{ flex: 1, backgroundColor: T.overlay }} onPress={onClose} />
+      {avoidKeyboard ? <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>{body}</KeyboardAvoidingView> : body}
+    </Modal>
+  );
+}
+
 // ── Main Screen ────────────────────────────────────────────────────────────
 export default function ChatScreen() {
-  const { user } = useAuthStore();
-  const { setActiveConversationId } = usePresenceStore();
-  const { conversationId, vendorId, productName, productPrice } = useLocalSearchParams<{
-    conversationId?: string;
-    vendorId?: string;
-    productName?: string;
-    productPrice?: string;
-  }>();
+  useTheme();
+  const insets = useSafeAreaInsets();
+  const user = useAuthStore((s) => s.user);
+  const myId = user?.id ?? '';
+  const queryClient = useQueryClient();
   const { showAlert: vendrAlert, alertElement } = useVendrAlert();
-  const flatListRef = useRef<FlatList<Message>>(null);
+  const params = useLocalSearchParams<{
+    conversationId?: string; vendorId?: string; productName?: string; productPrice?: string;
+    // header info passed from the chat list so the screen opens fully drawn
+    name?: string; avatar?: string; uid?: string; asVendor?: string; verified?: string; vid?: string;
+  }>();
+  const { conversationId, vendorId, productName, productPrice } = params;
+  const routeCid = looksLikeConversationId(conversationId) ? conversationId! : null;
+
+  const listRef = useRef<FlatList<Message>>(null);
   const inputRef = useRef<TextInput>(null);
+  const openedAt = useRef(new Date().toISOString());
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Header info, available on the very first frame: route params → chat list cache → device cache
+  const [seed] = useState<ChatMeta | null>(() => {
+    if (params.name) {
+      return {
+        otherUserId: params.uid || null,
+        otherName: params.name,
+        otherAvatar: params.avatar || null,
+        isVerified: params.verified === '1',
+        actingAsVendor: params.asVendor === '1',
+        vendorProfileId: params.vid || '',
+      };
+    }
+    if (!routeCid) return null;
+    const c = queryClient.getQueryData<ConversationItem[]>(conversationsKey(myId))?.find((x) => x.id === routeCid);
+    if (c) {
+      return {
+        otherUserId: getOtherUserId(c),
+        otherName: getOtherName(c),
+        otherAvatar: getOtherAvatar(c),
+        isVerified: !c.iAmVendor && !!c.vendor?.is_verified,
+        actingAsVendor: c.iAmVendor,
+        vendorProfileId: c.vendor?.id ?? '',
+      };
+    }
+    return peekChat(routeCid)?.meta ?? null;
+  });
+
+  // Conversation meta
+  const [convId, setConvId] = useState<string | null>(routeCid);
+  const [actingAsVendor, setActingAsVendor] = useState(seed?.actingAsVendor ?? false);
+  const [otherUserId, setOtherUserId] = useState<string | null>(seed?.otherUserId ?? null);
+  const [otherName, setOtherName] = useState(seed?.otherName ?? '');
+  const [otherAvatar, setOtherAvatar] = useState<string | null>(seed?.otherAvatar ?? null);
+  const [isVerified, setIsVerified] = useState(seed?.isVerified ?? false);
+  const [vendorProfileId, setVendorProfileId] = useState(seed?.vendorProfileId ?? '');
+
+  // Messages (whatever this session already holds in memory shows instantly)
+  const [messages, setMessages] = useState<Message[]>(() => (routeCid ? (peekChat(routeCid)?.messages as Message[]) ?? [] : []));
+  const [initialLoading, setInitialLoading] = useState(() => !(routeCid && peekChat(routeCid)?.messages?.length));
+  const [networkIssue, setNetworkIssue] = useState(false);
+  const [socketStatus, setSocketStatus] = useState<SocketStatus>('connected');
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [convId, setConvId] = useState<string | null>(null);
-  const [buyerId, setBuyerId] = useState('');
-  const [vendorDbId, setVendorDbId] = useState('');
-  const [vendorUserId, setVendorUserId] = useState('');
-  const [vendorName, setVendorName] = useState('');
-  const [vendorActualId, setVendorActualId] = useState('');
-  const [vendorLogoUrl, setVendorLogoUrl] = useState<string | null>(null);
-  const [vendorAvatarUrl, setVendorAvatarUrl] = useState<string | null>(null);
-  const [isVerified, setIsVerified] = useState(false);
-  const [otherOnline, setOtherOnline] = useState(false);
-  const [lastSeen, setLastSeen] = useState<string | null>(null);
-  const [actingAsVendor, setActingAsVendor] = useState(false);
-  const [buyerAvatar, setBuyerAvatar] = useState<string | null>(null);
-  const [text, setText] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paying, setPaying] = useState<string | null>(null);
+  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
 
-  // UI State
+  // Composer
+  const [text, setText] = useState('');
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [editingMsg, setEditingMsg] = useState<Message | null>(null);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  // UI
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [showAttachSheet, setShowAttachSheet] = useState(false);
-  const [editingMsg, setEditingMsg] = useState<Message | null>(null);
   const [showProductEnquiry, setShowProductEnquiry] = useState(false);
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [otherUserTyping, setOtherUserTyping] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [newBelow, setNewBelow] = useState(0);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; msg: Message | null; pageY: number }>({ visible: false, msg: null, pageY: 0 });
 
-  // Context menu (replaces showActions sheet)
-  const [contextMenu, setContextMenu] = useState<{
-    visible: boolean; msg: Message | null; pageY: number; isMine: boolean;
-  }>({ visible: false, msg: null, pageY: 0, isMine: false });
-
-  // Reaction picker
-  const [reactionPicker, setReactionPicker] = useState<{
-    visible: boolean; messageId: string | null;
-  }>({ visible: false, messageId: null });
-
-  // Payment
+  // Payments
+  const [paying, setPaying] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState('');
   const [payDescription, setPayDescription] = useState('');
   const [sendingPaymentRequest, setSendingPaymentRequest] = useState(false);
-  const [showPayOrderSheet, setShowPayOrderSheet] = useState(false);
   const [pendingPayPr, setPendingPayPr] = useState<PaymentRequest | null>(null);
   const [payOrderType, setPayOrderType] = useState<'pickup' | 'delivery'>('pickup');
   const [payDeliveryAddress, setPayDeliveryAddress] = useState('');
 
+  const presence = usePresence(otherUserId);
+  const otherTyping = useIsTyping(convId);
+  useNow(30_000); // keeps "last seen …" current while the chat is open
+
+  // Refs mirrored for socket handlers / timers
+  const convIdRef = useRef<string | null>(routeCid);
+  const focusedRef = useRef(false);
+  const scrolledUpRef = useRef(false);
+  const markReadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingRef = useRef<{ active: boolean; lastEmit: number; timer: ReturnType<typeof setTimeout> | null }>({ active: false, lastEmit: 0, timer: null });
+  useEffect(() => { convIdRef.current = convId; }, [convId]);
+
   // Image viewer zoom
   const scale = useSharedValue(1);
   const pinchGesture = Gesture.Pinch()
-    .onUpdate((e) => { scale.value = Math.max(1, e.scale); })
+    .onUpdate((e) => { scale.value = Math.max(1, Math.min(4, e.scale)); })
     .onEnd(() => { scale.value = withSpring(1); });
-  const animatedImageStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  useEffect(() => { if (viewingImage) scale.value = 1; }, [viewingImage]);
-
-  const resolveSenderName = useCallback((senderId: string, currentVendorName?: string, currentBuyerName?: string, currentActingAsVendor?: boolean) => {
-    if (senderId === user?.id) return user?.full_name ?? null;
-    if (currentActingAsVendor) return currentBuyerName ?? currentVendorName ?? 'Unknown';
-    return currentVendorName ?? 'Vendor';
-  }, [user?.id, user?.full_name]);
-
-  const initChat = useCallback(async () => {
-    const userId = user!.id;
-    setError(null);
-    try {
-      let cid: string | null = null;
-      const isValidUUID = (s?: string) => !!s && s !== '[conversationId]' && s.includes('-');
-      if (isValidUUID(conversationId)) {
-        cid = conversationId!;
-      } else if (vendorId) {
-        const { data, error } = await chatApi.createConversation(vendorId);
-        if (error) throw new Error('Could not start conversation: ' + (error as any).message);
-        cid = data.id;
-      }
-      if (!cid) throw new Error('No conversation ID');
-      setConvId(cid);
-
-      const { data: convData } = await chatApi.getConversation(cid);
-      const { conversation, vendor, buyer, actingAsVendor } = convData;
-      setBuyerId(conversation.buyer_id);
-      setActingAsVendor(actingAsVendor);
-      setVendorDbId(conversation.vendor_id);
-      setVendorUserId(vendor?.user_id ?? '');
-      if (!actingAsVendor && vendor?.user_id === userId) throw new Error('You cannot chat with your own store.');
-
-      // Use local variables instead of state for message mapping
-      const resolvedVendorName = actingAsVendor
-        ? buyer?.name ?? 'Unknown Buyer'
-        : vendor?.business_name ?? 'Vendor';
-
-      const localResolveSenderName = (senderId: string) => {
-        return resolveSenderName(senderId, resolvedVendorName, buyer?.name, actingAsVendor);
-      };
-
-      if (actingAsVendor) {
-        setVendorName(buyer?.name ?? 'Unknown Buyer');
-        setBuyerAvatar(buyer?.avatar_url ?? null);
-      } else {
-        setVendorName(vendor?.business_name ?? 'Vendor');
-        setVendorActualId(vendor?.id ?? '');
-        setVendorLogoUrl(vendor?.logo_url ?? null);
-        setVendorAvatarUrl(vendor?.avatar_url ?? null);
-        setIsVerified(vendor?.is_verified ?? false);
-      }
-
-      const { data: msgs } = await chatApi.getMessages(cid, { limit: 30 });
-      // Populate sender_name and reconstruct reply_to objects for messages that don't have them
-      const messagesWithNames = await Promise.all((msgs ?? []).map(async msg => {
-        const senderName = msg.sender_name ?? localResolveSenderName(msg.sender_id);
-
-        // Patch sender_name onto reply_to from backend since it doesn't send it
-        let replyTo = msg.reply_to
-          ? {
-              ...msg.reply_to,
-              sender_name: msg.reply_to.sender_name ?? localResolveSenderName(msg.reply_to.sender_id),
-            }
-          : null;
-
-        // If message has reply_to_id but no reply_to object, try to find the original message
-        if (msg.reply_to_id && !msg.reply_to) {
-          const originalMsg = (msgs ?? []).find(m => m.id === msg.reply_to_id);
-          if (originalMsg) {
-            replyTo = {
-              id: originalMsg.id,
-              sender_id: originalMsg.sender_id,
-              sender_name: originalMsg.sender_name ?? localResolveSenderName(originalMsg.sender_id),
-              content: originalMsg.content,
-              image_url: originalMsg.image_url,
-              type: originalMsg.type,
-            };
-          } else {
-            // Original message not in current batch, fetch it individually
-            try {
-              const { data: fetchedMsg } = await chatApi.getMessage(msg.reply_to_id);
-              if (fetchedMsg) {
-                replyTo = {
-                  id: fetchedMsg.id,
-                  sender_id: fetchedMsg.sender_id,
-                  sender_name: fetchedMsg.sender_name ?? localResolveSenderName(fetchedMsg.sender_id),
-                  content: fetchedMsg.content,
-                  image_url: fetchedMsg.image_url,
-                  type: fetchedMsg.type,
-                };
-              }
-            } catch (e) {
-              console.error('Failed to fetch original message for reply:', e);
-            }
-          }
-        }
-        return {
-          ...msg,
-          sender_name: senderName,
-          reply_to: replyTo,
-        };
-      }));
-      setMessages(messagesWithNames);
-      if (!msgs || msgs.length < 30) setHasMore(false);
-
-      await chatApi.markDelivered(cid);
-      await chatApi.resetUnread(cid, actingAsVendor ? 'vendor_unread' : 'buyer_unread');
-      await chatApi.markAsRead(cid);
-      await chatApi.setPresence(true);
-      setActiveConversationId(cid);
-
-      const socket = await connectSocket();
-      if (socket && cid) {
-        joinConversation(cid);
-        socket.on('messages_read', (data: { conversationId: string; messageIds: string[]; readBy: string }) => {
-          if (data.conversationId === cid)
-            setMessages(prev => prev.map(m => data.messageIds.includes(m.id) ? { ...m, is_read: true } : m));
-        });
-        socket.on('user_presence', (data: { userId: string; isOnline: boolean; lastSeen?: string }) => {
-          const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
-          if (data.userId === otherUserId) { setOtherOnline(data.isOnline); setLastSeen(data.lastSeen ?? null); }
-        });
-        socket.on('reaction_added', (data: { messageId: string; reaction: Reaction }) => {
-          setMessages(prev => prev.map(m => {
-            if (m.id !== data.messageId) return m;
-            const reactions = [...m.reactions];
-            const idx = reactions.findIndex(r => r.user_id === data.reaction.user_id);
-            if (idx >= 0) reactions[idx] = data.reaction; else reactions.push(data.reaction);
-            return { ...m, reactions };
-          }));
-        });
-        socket.on('reaction_removed', (data: { messageId: string; userId: string }) => {
-          setMessages(prev => prev.map(m => m.id !== data.messageId ? m : { ...m, reactions: m.reactions.filter(r => r.user_id !== data.userId) }));
-        });
-        socket.on('message_deleted', (data: { messageId: string }) => {
-          setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, deleted: true, content: null, image_url: null } : m));
-        });
-        socket.on('new_message', (newMsg: Message) => {
-          if (newMsg.conversation_id === cid) {
-            setMessages(prev => {
-              // Don't add if message already exists (prevents duplicates from sender receiving their own message)
-              if (prev.some(m => m.id === newMsg.id)) {
-                // Update existing message with server data (delivered/read status, etc.)
-                return prev.map(m => m.id === newMsg.id ? { ...m, ...newMsg } : m);
-              }
-              // Populate sender_name if not provided by server
-              const msgWithName = {
-                ...newMsg,
-                sender_name: newMsg.sender_name ?? localResolveSenderName(newMsg.sender_id),
-              };
-              // Patch sender_name onto reply_to from backend since it doesn't send it
-              let replyTo = msgWithName.reply_to
-                ? {
-                    ...msgWithName.reply_to,
-                    sender_name: msgWithName.reply_to.sender_name ?? localResolveSenderName(msgWithName.reply_to.sender_id),
-                  }
-                : null;
-              // If the new message has reply_to_id but no reply_to object, try to find the original message
-              if (msgWithName.reply_to_id && !msgWithName.reply_to) {
-                const originalMsg = prev.find(m => m.id === msgWithName.reply_to_id);
-                if (originalMsg) {
-                  replyTo = {
-                    id: originalMsg.id,
-                    sender_id: originalMsg.sender_id,
-                    sender_name: originalMsg.sender_name,
-                    content: originalMsg.content,
-                    image_url: originalMsg.image_url,
-                    type: originalMsg.type,
-                  };
-                }
-              }
-              return [...prev, { ...msgWithName, reply_to: replyTo }];
-            });
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-          }
-        });
-        socket.on('user_typing', (data: { conversationId: string }) => {
-          if (data.conversationId === cid) {
-            setOtherUserTyping(true);
-            setTimeout(() => setOtherUserTyping(false), 3000);
-          }
-        });
-      }
-
-      const otherUserId = actingAsVendor ? conversation.buyer_id : vendor?.user_id;
-      if (otherUserId) {
-        try {
-          const { data: presenceData } = await chatApi.getPresence([otherUserId]);
-          const presence = (presenceData as any)[otherUserId] || presenceData;
-          setOtherOnline(presence?.is_online ?? false);
-          setLastSeen(presence?.last_seen ?? null);
-        } catch { setOtherOnline(false); }
-      }
-
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
-      setLoading(false);
-      if (productName) setTimeout(() => setShowProductEnquiry(true), 400);
-    } catch (e: any) {
-      setError(e.message);
-      setLoading(false);
-    }
-  }, [user?.id, conversationId, vendorId, productName, resolveSenderName, setActiveConversationId]);
-
-  useEffect(() => { if (!user?.id) return; initChat(); }, [user?.id, conversationId, vendorId, productName, initChat]);
+  const animatedImageStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   useEffect(() => {
-    return () => {
-      if (convId) leaveConversation(convId);
-      // Clear active conversation ID when leaving chat
-      setActiveConversationId(null);
-      // Don't disconnect socket - it's managed app-wide in _layout.tsx
-      if (user?.id) chatApi.setPresence(false).catch(console.error);
-    };
-  }, [convId, user, setActiveConversationId]);
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
-  const loadOlderMessages = async () => {
-    if (!convId || loadingMore || !hasMore || !messages.length) return;
+  // ─── Read receipts ──────────────────────────────────────────────────────
+  const scheduleMarkRead = useStableCallback(() => {
+    const cid = convIdRef.current;
+    if (!cid || !focusedRef.current || AppState.currentState !== 'active') return;
+    if (markReadTimer.current) clearTimeout(markReadTimer.current);
+    markReadTimer.current = setTimeout(() => {
+      markConversationReadLocally(queryClient, myId, cid);
+      chatApi.markAsRead(cid).catch(() => {});
+    }, 250);
+  });
+
+  // ─── Loading ────────────────────────────────────────────────────────────
+  const fetchLatest = useStableCallback(async (cid: string, isInitial = false) => {
+    const { data } = await chatApi.getMessages(cid, { limit: PAGE_SIZE });
+    const fresh: Message[] = data ?? [];
+    if (isInitial) {
+      const firstUnread = fresh.find((m) => m.sender_id !== myId && !m.is_read && !m.deleted);
+      setFirstUnreadId(firstUnread?.id ?? null);
+      setHasMore(fresh.length === PAGE_SIZE);
+    }
+    setMessages((prev) => mergeLatest(prev, fresh));
+  });
+
+  const refreshPresence = useStableCallback(async (uid: string | null) => {
+    if (!uid) return;
+    try {
+      const { data } = await chatApi.getPresence([uid]);
+      const p = data?.[uid];
+      usePresenceStore.getState().seedPresence([{ userId: uid, isOnline: !!p?.is_online, lastSeen: p?.last_seen ?? null }]);
+    } catch { /* non-critical */ }
+  });
+
+  const applyMeta = (meta: ChatMeta, cid: string | null, persist: boolean) => {
+    setActingAsVendor(meta.actingAsVendor);
+    setOtherUserId(meta.otherUserId);
+    setOtherName(meta.otherName);
+    setOtherAvatar(meta.otherAvatar);
+    setIsVerified(meta.isVerified);
+    setVendorProfileId(meta.vendorProfileId);
+    if (persist && cid) saveChatMeta(cid, meta);
+  };
+
+  /** Refresh from the server. Never wipes what's on screen if the network is bad. */
+  const syncFromServer = useStableCallback(async (cid: string, isInitial: boolean) => {
+    const [convRes, msgRes] = await Promise.allSettled([chatApi.getConversation(cid), fetchLatest(cid, isInitial)]);
+
+    if (convRes.status === 'fulfilled') {
+      const { conversation, vendor, buyer, actingAsVendor: asVendor } = convRes.value.data;
+      if (!asVendor && vendor?.user_id === myId) {
+        setError('You cannot chat with your own store.');
+        return;
+      }
+      applyMeta(asVendor ? {
+        actingAsVendor: true,
+        otherUserId: conversation.buyer_id,
+        otherName: buyer?.name || 'Customer',
+        otherAvatar: buyer?.avatar_url ?? null,
+        isVerified: false,
+        vendorProfileId: '',
+      } : {
+        actingAsVendor: false,
+        otherUserId: vendor?.user_id ?? null,
+        otherName: vendor?.business_name || 'Vendor',
+        otherAvatar: vendor?.logo_url || vendor?.avatar_url || vendor?.owner_avatar || null,
+        isVerified: !!vendor?.is_verified,
+        vendorProfileId: vendor?.id ?? '',
+      }, cid, true);
+      refreshPresence(asVendor ? conversation.buyer_id : vendor?.user_id ?? null);
+    }
+
+    const failure = convRes.status === 'rejected' ? convRes.reason : msgRes.status === 'rejected' ? msgRes.reason : null;
+    if (failure && !isTransientError(failure)) {
+      // 403/404 etc. — this chat genuinely can't be opened
+      setError(failure?.message || 'This conversation could not be opened.');
+      return;
+    }
+    setNetworkIssue(!!failure);
+    if (!failure) scheduleMarkRead();
+  });
+
+  const initChat = useStableCallback(async () => {
+    if (!myId) return;
+    setError(null);
+
+    let cid = routeCid;
+    if (!cid && vendorId) {
+      try {
+        const { data } = await chatApi.createConversation(vendorId);
+        cid = data?.id ?? null;
+      } catch (e: any) {
+        setError(isTransientError(e)
+          ? "You're offline. Connect to the internet to start this chat."
+          : e?.message || 'Could not start this chat.');
+        setInitialLoading(false);
+        return;
+      }
+    }
+    if (!cid) {
+      setError('This conversation could not be found.');
+      setInitialLoading(false);
+      return;
+    }
+    setConvId(cid);
+    convIdRef.current = cid;
+
+    // 1) Instant: what's saved on this device + anything still waiting to send
+    const [cached, pending] = await Promise.all([loadChat(cid), pendingForConversation(cid)]);
+    if (cached.meta && !seed) applyMeta(cached.meta, cid, false);
+    const local = [...((cached.messages as Message[]) ?? []), ...(pending as Message[])];
+    if (local.length) {
+      setMessages((prev) => {
+        const ids = new Set(prev.map((m) => m.id));
+        return normalize([...prev, ...local.filter((m) => !ids.has(m.id))]);
+      });
+      const firstUnread = (cached.messages as Message[] | undefined)?.find((m) => m.sender_id !== myId && !m.is_read && !m.deleted);
+      setFirstUnreadId(firstUnread?.id ?? null);
+      setHasMore(true);
+      setInitialLoading(false);
+    }
+
+    // 2) Fresh data from the server (non-fatal when offline)
+    await syncFromServer(cid, true);
+    setInitialLoading(false);
+
+    if (productName) setTimeout(() => setShowProductEnquiry(true), 350);
+  });
+
+  useEffect(() => {
+    if (myId) initChat();
+  }, [myId, conversationId, vendorId]);
+
+  useEffect(() => onSocketStatus(setSocketStatus), []);
+
+  // Save the conversation to the device so it opens instantly / offline next time
+  useEffect(() => {
+    if (!convId || initialLoading) return;
+    saveChatMessages(convId, messages.filter((m) => !isPending(m)));
+  }, [messages, convId, initialLoading]);
+
+  const loadOlderMessages = useStableCallback(async () => {
+    const cid = convIdRef.current;
+    const oldest = messages.find((m) => !isPending(m));
+    if (!cid || loadingMore || !hasMore || !oldest) return;
     setLoadingMore(true);
     try {
-      const { data } = await chatApi.getMessages(convId, { limit: 30, before: messages[0].created_at });
-      if (!data?.length) { setHasMore(false); return; }
-      setMessages(prev => [...data, ...prev]);
-    } catch (err) { console.error(err); }
-    finally { setLoadingMore(false); }
+      const { data } = await chatApi.getMessages(cid, { limit: PAGE_SIZE, before: oldest.created_at });
+      const older: Message[] = data ?? [];
+      setHasMore(older.length === PAGE_SIZE);
+      if (older.length) {
+        setMessages((prev) => {
+          const ids = new Set(prev.map((m) => m.id));
+          return [...older.filter((m) => !ids.has(m.id)).map((m) => ({ ...m, reactions: m.reactions ?? [] })), ...prev];
+        });
+      }
+    } catch (err) {
+      console.error('[Chat] load older failed', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  });
+
+  // ─── Focus / app state ──────────────────────────────────────────────────
+  const stopTyping = useStableCallback(() => {
+    const t = typingRef.current;
+    if (t.timer) clearTimeout(t.timer);
+    t.timer = null;
+    if (t.active && convIdRef.current) emitTyping(convIdRef.current, false);
+    t.active = false;
+  });
+
+  useFocusEffect(useCallback(() => {
+    focusedRef.current = true;
+    if (convId) {
+      usePresenceStore.getState().setActiveConversationId(convId);
+      scheduleMarkRead();
+    }
+    return () => {
+      focusedRef.current = false;
+      stopTyping();
+      if (usePresenceStore.getState().activeConversationId === convId) {
+        usePresenceStore.getState().setActiveConversationId(null);
+      }
+    };
+  }, [convId]));
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') scheduleMarkRead();
+      else stopTyping();
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => () => {
+    if (markReadTimer.current) clearTimeout(markReadTimer.current);
+    // Leaving the screen by any route must never leave this chat flagged as "open"
+    const store = usePresenceStore.getState();
+    if (convIdRef.current && store.activeConversationId === convIdRef.current) {
+      store.setActiveConversationId(null);
+    }
+  }, []);
+
+  // ─── Realtime ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!convId || !myId) return;
+    joinConversation(convId);
+    const mine = (m: Message) => m.sender_id === myId;
+
+    const offs = [
+      onSocketEvent('new_message', (m: Message) => {
+        if (m.conversation_id !== convId) return;
+        setMessages((prev) => upsertMessage(prev, m));
+        if (!mine(m)) {
+          scheduleMarkRead();
+          if (scrolledUpRef.current) setNewBelow((n) => n + 1);
+        }
+      }),
+      onSocketEvent('message_updated', (m: Message) => {
+        if (m.conversation_id !== convId) return;
+        setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, content: m.content, edited: true } : x)));
+      }),
+      onSocketEvent('message_deleted', (d: { conversationId?: string; messageId: string }) => {
+        if (d.conversationId && d.conversationId !== convId) return;
+        setMessages((prev) => prev.map((x) => (x.id === d.messageId ? { ...x, deleted: true, content: null, image_url: null, reactions: [] } : x)));
+      }),
+      onSocketEvent('messages_read', (d: { conversationId: string; messageIds: string[]; readBy: string }) => {
+        if (d.conversationId !== convId || d.readBy === myId || !d.messageIds?.length) return;
+        const ids = new Set(d.messageIds);
+        setMessages((prev) => prev.map((x) => (ids.has(x.id) ? { ...x, is_read: true, delivered: true } : x)));
+      }),
+      onSocketEvent('message_delivered', (d: { conversationId: string; userId: string; messageIds?: string[] }) => {
+        if (d.conversationId !== convId || d.userId === myId) return;
+        const ids = d.messageIds ? new Set(d.messageIds) : null;
+        setMessages((prev) => prev.map((x) => (mine(x) && !x.delivered && !isPending(x) && (!ids || ids.has(x.id)) ? { ...x, delivered: true } : x)));
+      }),
+      onSocketEvent('reaction_added', (d: { conversationId?: string; messageId: string; reaction: Reaction }) => {
+        if (d.conversationId && d.conversationId !== convId) return;
+        setMessages((prev) => prev.map((x) => {
+          if (x.id !== d.messageId) return x;
+          const others = x.reactions.filter((r) => r.user_id !== d.reaction.user_id);
+          return { ...x, reactions: [...others, d.reaction] };
+        }));
+      }),
+      onSocketEvent('reaction_removed', (d: { conversationId?: string; messageId: string; userId: string }) => {
+        if (d.conversationId && d.conversationId !== convId) return;
+        setMessages((prev) => prev.map((x) => (x.id === d.messageId ? { ...x, reactions: x.reactions.filter((r) => r.user_id !== d.userId) } : x)));
+      }),
+      onSocketEvent('payment_request_updated', (d: { conversationId: string; paymentRequest: PaymentRequest }) => {
+        if (d.conversationId !== convId) return;
+        setMessages((prev) => prev.map((x) => (x.type === 'payment_request' && x.content === d.paymentRequest.id ? { ...x, payment_request: d.paymentRequest } : x)));
+      }),
+      // Back online: catch up on anything we missed
+      onSocketEvent('connect', () => {
+        syncFromServer(convId, false).catch(() => {});
+      }),
+    ];
+
+    return () => {
+      offs.forEach((off) => off());
+      leaveConversation(convId);
+    };
+  }, [convId, myId, otherUserId]);
+
+  // ─── Sending (via the persistent outbox: works offline, retries on reconnect) ───
+  const scrollToBottom = (animated = true) => {
+    listRef.current?.scrollToOffset({ offset: 0, animated });
+    setNewBelow(0);
   };
 
-  // ─── Reactions ─────────────────────────────────────────────────────────
-  const handleReactionSelect = async (emoji: string) => {
-    const messageId = reactionPicker.messageId;
-    if (!messageId || !user?.id) return;
-    setReactionPicker({ visible: false, messageId: null });
-    // Optimistic
-    setMessages(prev => prev.map(m => {
-      if (m.id !== messageId) return m;
-      const reactions = [...m.reactions];
-      const idx = reactions.findIndex(r => r.user_id === user.id);
-      const newR: Reaction = { id: `tmp-${Date.now()}`, message_id: messageId, user_id: user.id, emoji, created_at: new Date().toISOString() };
-      if (idx >= 0) reactions[idx] = newR; else reactions.push(newR);
-      return { ...m, reactions };
-    }));
-    try { await chatApi.addReaction(messageId, emoji); } catch (e) { console.error(e); }
+  const replyPreviewOf = (m: Message | null): ReplyPreview | null => m ? {
+    id: m.id, sender_id: m.sender_id,
+    sender_name: m.sender_id === myId ? user?.full_name ?? null : otherName,
+    content: m.content, image_url: m.image_url, type: m.type,
+  } : null;
+
+  // Results from the outbox (it keeps sending even if this screen was closed meanwhile)
+  useEffect(() => {
+    if (!convId) return;
+    return subscribeOutbox((e) => {
+      if (e.type === 'changed' || e.item.conversationId !== convId) return;
+      if (e.type === 'sent') {
+        setMessages((prev) => upsertMessage(prev, { ...e.message, client_id: e.item.clientId }));
+      } else {
+        setMessages((prev) => prev.map((m) => (m.id === e.item.clientId ? { ...m, failed: true } : m)));
+      }
+    });
+  }, [convId]);
+
+  const queueMessage = (temp: Message) => {
+    enqueueOutbox({
+      clientId: temp.id,
+      conversationId: temp.conversation_id,
+      kind: temp.type === 'image' ? 'image' : 'text',
+      content: temp.content,
+      localUri: temp.local_uri,
+      replyToId: temp.reply_to_id,
+      message: { ...temp, failed: false },
+    });
   };
 
-  const handleReactionPress = useCallback(async (messageId: string, emoji: string) => {
-    if (!user?.id) return;
-    const msg = messages.find(m => m.id === messageId);
-    if (!msg) return;
-    const myReaction = msg.reactions.find(r => r.user_id === user.id);
-    if (myReaction?.emoji === emoji) {
-      setMessages(prev => prev.map(m => m.id === messageId
-        ? { ...m, reactions: m.reactions.filter(r => r.user_id !== user.id) } : m));
-      try { await chatApi.removeReaction(messageId); } catch (e) { console.error(e); }
+  const addOptimistic = (temp: Message) => {
+    setMessages((prev) => [...prev, temp]);
+    setFirstUnreadId(null);
+    requestAnimationFrame(() => scrollToBottom());
+    queueMessage(temp);
+  };
+
+  const sendText = (content: string, replyTo: Message | null = null) => {
+    const cid = convIdRef.current;
+    if (!cid || !myId || !content.trim()) return;
+    const tempId = newClientId();
+    addOptimistic({
+      id: tempId, client_id: tempId, conversation_id: cid, sender_id: myId,
+      content: content.trim(), image_url: null, type: 'text',
+      is_read: false, delivered: false, edited: false, deleted: false,
+      reply_to_id: replyTo?.id ?? null, reply_to: replyPreviewOf(replyTo),
+      reactions: [], created_at: new Date().toISOString(),
+    });
+  };
+
+  const sendImage = (uri: string) => {
+    const cid = convIdRef.current;
+    if (!cid || !myId) return;
+    const tempId = newClientId();
+    const replyTo = replyingTo;
+    setReplyingTo(null);
+    addOptimistic({
+      id: tempId, client_id: tempId, conversation_id: cid, sender_id: myId,
+      content: null, image_url: null, local_uri: uri, type: 'image',
+      is_read: false, delivered: false, edited: false, deleted: false,
+      reply_to_id: replyTo?.id ?? null, reply_to: replyPreviewOf(replyTo),
+      reactions: [], created_at: new Date().toISOString(),
+    });
+  };
+
+  const retryMessage = (m: Message) => {
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, failed: false } : x)));
+    queueMessage(m);
+  };
+
+  const onSubmit = async () => {
+    const content = text.trim();
+    if (!content) return;
+    stopTyping();
+
+    if (editingMsg) {
+      const original = editingMsg;
+      setEditingMsg(null);
+      setText('');
+      if (content === original.content) return;
+      setMessages((ms) => ms.map((m) => (m.id === original.id ? { ...m, content, edited: true } : m)));
+      try {
+        await chatApi.updateMessage(original.id, content);
+      } catch (err: any) {
+        setMessages((ms) => ms.map((m) => (m.id === original.id ? original : m)));
+        vendrAlert({ title: "Couldn't edit message", message: err?.message ?? 'Please try again.', type: 'danger' });
+      }
+      return;
+    }
+
+    const replyTo = replyingTo;
+    setText('');
+    setReplyingTo(null);
+    sendText(content, replyTo);
+  };
+
+  const onChangeText = (value: string) => {
+    setText(value);
+    const cid = convIdRef.current;
+    if (!cid || editingMsg) return;
+    const t = typingRef.current;
+    if (!value.trim()) { stopTyping(); return; }
+    const now = Date.now();
+    if (!t.active || now - t.lastEmit > 2500) {
+      emitTyping(cid, true);
+      t.active = true;
+      t.lastEmit = now;
+    }
+    if (t.timer) clearTimeout(t.timer);
+    t.timer = setTimeout(stopTyping, 3000);
+  };
+
+  // ─── Images ─────────────────────────────────────────────────────────────
+  const pickFromGallery = async () => {
+    setShowAttachSheet(false);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { vendrAlert({ title: 'Permission needed', message: 'Allow photo access to send pictures.', type: 'warning' }); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    if (result.canceled || !result.assets?.[0]) return;
+    sendImage(result.assets[0].uri);
+  };
+
+  const takePhoto = async () => {
+    setShowAttachSheet(false);
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') { vendrAlert({ title: 'Permission needed', message: 'Allow camera access to take photos.', type: 'warning' }); return; }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (result.canceled || !result.assets?.[0]) return;
+    sendImage(result.assets[0].uri);
+  };
+
+  // ─── Reactions ──────────────────────────────────────────────────────────
+  const toggleReaction = useStableCallback(async (messageId: string, emoji: string) => {
+    if (!myId) return;
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg || isPending(msg) || msg.deleted) return;
+    const mineR = msg.reactions.find((r) => r.user_id === myId);
+    const before = msg.reactions;
+    Haptics.selectionAsync().catch(() => {});
+
+    if (mineR?.emoji === emoji) {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: m.reactions.filter((r) => r.user_id !== myId) } : m)));
+      try { await chatApi.removeReaction(messageId); }
+      catch { setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: before } : m))); }
     } else {
-      setReactionPicker({ visible: true, messageId });
+      const optimistic: Reaction = { id: `tmp-${Date.now()}`, message_id: messageId, user_id: myId, emoji, created_at: new Date().toISOString() };
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: [...m.reactions.filter((r) => r.user_id !== myId), optimistic] } : m)));
+      try { await chatApi.addReaction(messageId, emoji); }
+      catch { setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: before } : m))); }
     }
-  }, [user?.id, messages]);
+  });
 
-  // ─── Context Menu ───────────────────────────────────────────────────────
-  const handleLongPress = useCallback((msg: Message, pageY: number) => {
+  // ─── Bubble interactions ────────────────────────────────────────────────
+  const handleLongPress = useStableCallback((msg: Message, pageY: number) => {
     if (msg.deleted) return;
-    setContextMenu({ visible: true, msg, pageY, isMine: msg.sender_id === user?.id });
-  }, [user?.id]);
+    if (selectionMode) { toggleSelect(msg); return; }
+    if (isPending(msg)) { if (msg.failed) handleBubblePress(msg); return; }
+    Keyboard.dismiss();
+    setContextMenu({ visible: true, msg, pageY });
+  });
 
-  const dismissContextMenu = () => setContextMenu(prev => ({ ...prev, visible: false }));
-
-  const handleCopy = () => {
-    const msg = contextMenu.msg;
-    if (msg?.content) {
-      // Clipboard.setStringAsync(msg.content);
-      // vendrAlert({ title: 'Copied', message: '', type: 'success' });
-    }
+  const toggleSelect = (msg: Message) => {
+    if (msg.sender_id !== myId || msg.deleted || isPending(msg) || msg.type === 'payment_request') return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(msg.id) ? next.delete(msg.id) : next.add(msg.id);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
   };
+
+  const handleBubblePress = useStableCallback((msg: Message) => {
+    if (selectionMode) { toggleSelect(msg); return; }
+    if (msg.failed) {
+      vendrAlert({
+        title: 'Message not sent',
+        message: 'The message was rejected. You can try again or delete it.',
+        type: 'warning',
+        buttons: [
+          { text: 'Delete', style: 'destructive', onPress: () => {
+            removeFromOutbox(msg.id);
+            setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+          } },
+          { text: 'Retry', onPress: () => retryMessage(msg) },
+        ],
+      });
+    }
+  });
+
+  const handleSwipeReply = useStableCallback((msg: Message) => {
+    setEditingMsg(null);
+    setReplyingTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 80);
+  });
+
+  const handleImagePress = useStableCallback((url: string) => {
+    scale.value = 1;
+    setViewingImage(url);
+  });
+
+  const dismissContextMenu = () => setContextMenu((prev) => ({ ...prev, visible: false }));
 
   const startEdit = () => {
     const msg = contextMenu.msg;
     if (!msg) return;
+    setReplyingTo(null);
     setEditingMsg(msg);
     setText(msg.content ?? '');
-    setTimeout(() => inputRef.current?.focus(), 100);
+    setTimeout(() => inputRef.current?.focus(), 80);
   };
 
   const startReply = () => {
-    const msg = contextMenu.msg;
-    if (!msg) return;
-    setReplyingTo(msg);
-    setTimeout(() => inputRef.current?.focus(), 100);
+    if (contextMenu.msg) handleSwipeReply(contextMenu.msg);
   };
 
   const startSelect = () => {
@@ -1264,241 +1357,162 @@ export default function ChatScreen() {
     setSelectedIds(new Set([msg.id]));
   };
 
-  const openReactionFromMenu = () => {
+  const softDeleteLocal = (ids: string[]) =>
+    setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, deleted: true, content: null, image_url: null, reactions: [] } : m)));
+
+  const deleteMessage = () => {
     const msg = contextMenu.msg;
     if (!msg) return;
-    setReactionPicker({ visible: true, messageId: msg.id });
-  };
-
-  const deleteMessage = async () => {
-    const msg = contextMenu.msg;
-    if (!msg || !convId) return;
     vendrAlert({
-      title: 'Delete Message?', message: 'This cannot be undone.',
+      title: 'Delete message?',
+      message: 'It will be removed for everyone in this chat.',
       type: 'danger',
       buttons: [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete', style: 'destructive', onPress: async () => {
-            setMessages(prev => prev.map(m => m.id === msg.id
-              ? { ...m, deleted: true, content: null, image_url: null } : m));
+            softDeleteLocal([msg.id]);
             try { await chatApi.deleteMessage(msg.id); }
-            catch { setMessages(prev => prev.map(m => m.id === msg.id ? msg : m)); }
-          }
+            catch { setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m))); }
+          },
         },
       ],
     });
   };
-
-  // ─── Selection ──────────────────────────────────────────────────────────
-  const handleSelect = useCallback((msg: Message) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(msg.id) ? next.delete(msg.id) : next.add(msg.id);
-      return next;
-    });
-  }, []);
 
   const exitSelectionMode = () => { setSelectionMode(false); setSelectedIds(new Set()); };
 
   const deleteSelectedMessages = () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
     vendrAlert({
-      title: `Delete ${selectedIds.size} message${selectedIds.size > 1 ? 's' : ''}?`,
-      message: 'This cannot be undone.', type: 'danger',
+      title: `Delete ${ids.length} message${ids.length > 1 ? 's' : ''}?`,
+      message: 'They will be removed for everyone in this chat.',
+      type: 'danger',
       buttons: [
-        { text: 'Cancel', style: 'cancel', onPress: exitSelectionMode },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete', style: 'destructive', onPress: async () => {
-            const ids = Array.from(selectedIds);
-            setMessages(prev => prev.map(m => ids.includes(m.id) && m.sender_id === user?.id
-              ? { ...m, deleted: true, content: null, image_url: null } : m));
+            softDeleteLocal(ids);
             exitSelectionMode();
-            await Promise.all(ids.map(id => chatApi.deleteMessage(id).catch(console.error)));
-          }
+            await Promise.all(ids.map((id) => chatApi.deleteMessage(id).catch(() => {})));
+          },
         },
       ],
     });
   };
 
-  // ─── Image ──────────────────────────────────────────────────────────────
-  const pickFromGallery = async () => {
-    setShowAttachSheet(false);
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { vendrAlert({ title: 'Permission Needed', message: 'Allow photo access.', type: 'warning' }); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
-    if (result.canceled || !result.assets[0]) return;
-    await uploadAndSendImage(result.assets[0].uri);
-  };
-
-  const takePhoto = async () => {
-    setShowAttachSheet(false);
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') { vendrAlert({ title: 'Permission Needed', message: 'Allow camera access.', type: 'warning' }); return; }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7, allowsEditing: true });
-    if (result.canceled || !result.assets[0]) return;
-    await uploadAndSendImage(result.assets[0].uri);
-  };
-
-  const uploadAndSendImage = async (uri: string) => {
-    if (!convId || !user?.id) return;
-    setUploadingImage(true);
-    const tempId = `temp-img-${Date.now()}`;
-    try {
-      const tempMsg: Message = {
-        id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.full_name ?? null,
-        content: null, image_url: uri, type: 'image',
-        is_read: false, delivered: false, edited: false, deleted: false,
-        reply_to_id: replyingTo?.id ?? null,
-        reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, sender_name: replyingTo.sender_name, content: replyingTo.content, image_url: replyingTo.image_url, type: replyingTo.type } : null,
-        reactions: [], created_at: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, tempMsg]);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-
-      const fileName = `chat/${convId}/${Date.now()}.jpg`;
-      const { data: signData } = await storageApi.signUpload(fileName, 'image/jpeg');
-      const { uploadUrl, publicUrl } = signData;
-
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
-      const binaryStr = atob(base64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-
-      const uploadResponse = await fetch(uploadUrl, { method: 'PUT', body: bytes, headers: { 'Content-Type': 'image/jpeg' } });
-      if (!uploadResponse.ok) throw new Error(`Upload failed (${uploadResponse.status})`);
-
-      const { data: inserted } = await chatApi.sendMessage({
-        conversation_id: convId, content: null, type: 'image',
-        image_url: publicUrl, reply_to_id: replyingTo?.id ?? null,
-      });
-
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, reactions: [], reply_to: tempMsg.reply_to } : m));
-      setReplyingTo(null);
-    } catch (e: any) {
-      vendrAlert({ title: 'Upload Failed', message: e.message || 'Something went wrong', type: 'danger' });
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-    } finally { setUploadingImage(false); }
-  };
-
-  // ─── Send / Edit ────────────────────────────────────────────────────────
-  const sendMessage = async () => {
-    if (editingMsg) {
-      const newContent = text.trim();
-      if (!newContent || !convId) return;
-      setSending(true);
-      const prev = editingMsg;
-      setMessages(ms => ms.map(m => m.id === prev.id ? { ...m, content: newContent, edited: true } : m));
-      setEditingMsg(null); setText('');
-      try {
-        const { data: updated } = await chatApi.updateMessage(prev.id, newContent);
-        setMessages(ms => ms.map(m => m.id === prev.id ? updated : m));
-      } catch (err: any) {
-        vendrAlert({ title: 'Error', message: err.message, type: 'danger' });
-        setMessages(ms => ms.map(m => m.id === prev.id ? prev : m));
-      } finally { setSending(false); }
-      return;
-    }
-
-    const content = text.trim();
-    if (!content || !convId || !user?.id || sending) return;
-    setText('');
-    setSending(true);
-    const tempId = `temp-${Date.now()}`;
-    const replySnapshot = replyingTo;
-
-    setMessages(prev => [...prev, {
-      id: tempId, conversation_id: convId, sender_id: user!.id, sender_name: user?.full_name ?? null,
-      content, image_url: null, type: 'text',
-      is_read: false, delivered: false, edited: false, deleted: false,
-      reply_to_id: replySnapshot?.id ?? null,
-      reply_to: replySnapshot ? { id: replySnapshot.id, sender_id: replySnapshot.sender_id, sender_name: replySnapshot.sender_name, content: replySnapshot.content, image_url: replySnapshot.image_url, type: replySnapshot.type } : null,
-      reactions: [], created_at: new Date().toISOString(),
-    }]);
-    setReplyingTo(null);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-
-    try {
-      const { data: inserted } = await chatApi.sendMessage({
-        conversation_id: convId, content, type: 'text',
-        reply_to_id: replySnapshot?.id ?? null,
-      });
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...inserted, reactions: inserted.reactions ?? [], reply_to: replySnapshot ? { id: replySnapshot.id, sender_id: replySnapshot.sender_id, sender_name: replySnapshot.sender_name, content: replySnapshot.content, image_url: replySnapshot.image_url, type: replySnapshot.type } : null } : m));
-    } catch (err: any) {
-      vendrAlert({ title: 'Send Failed', message: err.message, type: 'danger' });
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-      setText(content); setReplyingTo(replySnapshot);
-    } finally { setSending(false); }
-  };
-
-  // ─── Payment ─────────────────────────────────────────────────────────────
+  // ─── Payments ───────────────────────────────────────────────────────────
   const sendPaymentRequest = async () => {
     const amount = parseFloat(payAmount.replace(/[^0-9.]/g, ''));
-    if (!amount || amount <= 0) { vendrAlert({ title: 'Invalid Amount', message: 'Enter a valid amount.', type: 'warning' }); return; }
-    if (!convId || !user?.id) return;
+    if (!amount || amount <= 0) { vendrAlert({ title: 'Invalid amount', message: 'Enter an amount greater than zero.', type: 'warning' }); return; }
+    const cid = convIdRef.current;
+    if (!cid) return;
     setSendingPaymentRequest(true);
     try {
-      const { data: msg } = await chatApi.createPaymentRequest(convId, amount, payDescription.trim());
-      setMessages(prev => [...prev, msg]);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-      setShowPaymentSheet(false); setPayAmount(''); setPayDescription('');
-    } catch (e: any) { vendrAlert({ title: 'Error', message: e.message, type: 'danger' }); }
-    finally { setSendingPaymentRequest(false); }
+      const { data: msg } = await chatApi.createPaymentRequest(cid, amount, payDescription.trim() || undefined);
+      setMessages((prev) => upsertMessage(prev, msg));
+      setShowPaymentSheet(false);
+      setPayAmount('');
+      setPayDescription('');
+      requestAnimationFrame(() => scrollToBottom());
+    } catch (e: any) {
+      vendrAlert({ title: "Couldn't send request", message: e?.message ?? 'Please try again.', type: 'danger' });
+    } finally {
+      setSendingPaymentRequest(false);
+    }
   };
 
-  const handlePayNow = useCallback((pr: PaymentRequest) => {
-    setPendingPayPr(pr); setPayOrderType('pickup'); setPayDeliveryAddress(''); setShowPayOrderSheet(true);
-  }, []);
+  const handlePayNow = useStableCallback((pr: PaymentRequest) => {
+    setPendingPayPr(pr);
+    setPayOrderType(pr.is_delivery ? 'delivery' : 'pickup');
+    setPayDeliveryAddress(pr.delivery_address ?? '');
+  });
 
-  const handleImagePress = useCallback((url: string) => {
-    setViewingImage(url);
-  }, []);
-
-  const handleSwipeReply = useCallback((msg: Message) => {
-    setReplyingTo(msg);
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
-
-  const handleCancelRequest = useCallback((pr: PaymentRequest) => {
+  const handleCancelRequest = useStableCallback((pr: PaymentRequest) => {
     vendrAlert({
-      title: 'Cancel Request?', message: 'The buyer will no longer be able to pay.', type: 'question',
+      title: 'Cancel this request?', message: 'The buyer will no longer be able to pay it.', type: 'question',
       buttons: [
         { text: 'Keep', style: 'cancel' },
         {
-          text: 'Cancel Request', style: 'destructive', onPress: async () => {
+          text: 'Cancel request', style: 'destructive', onPress: async () => {
             try {
               await chatApi.cancelPaymentRequest(pr.id);
-              setMessages(prev => prev.map(msg => msg.type === 'payment_request' && msg.content === pr.id
-                ? { ...msg, payment_request: { ...msg.payment_request!, status: 'cancelled' } } : msg));
-            } catch (e: any) { vendrAlert({ title: 'Error', message: e.message, type: 'danger' }); }
-          }
+              setMessages((prev) => prev.map((m) => (m.type === 'payment_request' && m.content === pr.id
+                ? { ...m, payment_request: { ...(m.payment_request ?? pr), status: 'cancelled' } } : m)));
+            } catch (e: any) {
+              vendrAlert({ title: 'Error', message: e?.message ?? 'Please try again.', type: 'danger' });
+            }
+          },
         },
       ],
     });
-  }, []);
+  });
+
+  const confirmPayNow = async () => {
+    const pr = pendingPayPr;
+    if (!pr || !convIdRef.current) return;
+    if (payOrderType === 'delivery' && !payDeliveryAddress.trim()) {
+      vendrAlert({ title: 'Address required', message: 'Enter where the order should be delivered.', type: 'warning' });
+      return;
+    }
+    setPendingPayPr(null);
+    setPaying(pr.id);
+    try {
+      const { data: payResult } = await chatApi.payPaymentRequest(pr.id, {
+        order_type: payOrderType,
+        delivery_address: payOrderType === 'delivery' ? payDeliveryAddress.trim() : undefined,
+      });
+      if (!payResult?.success) throw new Error('Payment failed');
+      analyticsApi.recordOrder({ vendorId: pr.vendor_id, productId: '', amount: pr.amount }).catch(() => {});
+      setMessages((prev) => prev.map((m) => (m.type === 'payment_request' && m.content === pr.id
+        ? { ...m, payment_request: { ...(m.payment_request ?? pr), status: 'paid', paid_at: new Date().toISOString() } } : m)));
+      sendText(`✅ Payment of ${formatAmount(pr.amount + (pr.is_delivery ? pr.delivery_fee ?? 0 : 0))} sent.`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      vendrAlert({ title: 'Payment successful', message: 'Your money is held safely in escrow until you confirm the order.', type: 'success' });
+    } catch (e: any) {
+      vendrAlert({ title: 'Payment failed', message: e?.message ?? 'Please try again.', type: 'danger' });
+    } finally {
+      setPaying(null);
+    }
+  };
+
+  const sendEnquiry = () => {
+    setShowProductEnquiry(false);
+    if (!productName) return;
+    sendText(`Hi! I'm interested in "${productName}"${productPrice ? ` (${productPrice})` : ''}. Is it still available?`);
+  };
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/chat');
+  };
+
+  // ─── List rendering ─────────────────────────────────────────────────────
+  // Inverted list: newest first. Grouping math uses chronological neighbours.
+  const listData = useMemo(() => [...messages].reverse(), [messages]);
+  const myReactionInMenu = contextMenu.msg?.reactions?.find((r) => r.user_id === myId)?.emoji;
 
   const renderItem = useCallback(({ item, index }: { item: Message; index: number }) => {
-    const prevItem = messages[index - 1];
-    const nextItem = messages[index + 1];
-    const showDate = !prevItem || getDateLabel(item.created_at) !== getDateLabel(prevItem.created_at);
-    const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id || showDate;
-    const isLastInGroup = !nextItem || nextItem.sender_id !== item.sender_id ||
-      getDateLabel(item.created_at) !== getDateLabel(nextItem.created_at);
-    const isMine = item.sender_id === user?.id;
+    const ci = messages.length - 1 - index;
+    const prevItem = messages[ci - 1];
+    const nextItem = messages[ci + 1];
+    const label = getDateLabel(item.created_at);
+    const showDate = !prevItem || getDateLabel(prevItem.created_at) !== label;
+    const isFirstInGroup = showDate || !prevItem || prevItem.sender_id !== item.sender_id || prevItem.type === 'payment_request';
+    const isLastInGroup = !nextItem || nextItem.sender_id !== item.sender_id || getDateLabel(nextItem.created_at) !== label || nextItem.type === 'payment_request';
+    const isMine = item.sender_id === myId;
+    const animate = isPending(item) || item.created_at > openedAt.current;
 
     return (
       <View>
-        {showDate && <DateSeparator label={getDateLabel(item.created_at)} />}
-        {/* Extra space between groups */}
-        {isFirstInGroup && !showDate && index > 0 && (
-          <View style={{ height: 6 }} />
-        )}
+        {showDate && <DateSeparator label={label} />}
+        {item.id === firstUnreadId && <UnreadSeparator />}
+        {isFirstInGroup && !showDate && ci > 0 && <View style={{ height: 4 }} />}
         {item.type === 'payment_request' ? (
           <PaymentRequestBubble
-            msg={item} isMine={isMine}
-            paymentRequest={item.payment_request ?? null}
-            onPay={handlePayNow}
-            onCancel={handleCancelRequest}
-            paying={paying}
+            msg={item} isMine={isMine} animate={animate}
+            onPay={handlePayNow} onCancel={handleCancelRequest} paying={paying}
           />
         ) : (
           <MessageBubble
@@ -1506,169 +1520,110 @@ export default function ChatScreen() {
             isMine={isMine}
             isFirstInGroup={isFirstInGroup}
             isLastInGroup={isLastInGroup}
-            myId={user?.id ?? ''}
+            myId={myId}
+            otherName={otherName}
+            animate={animate}
             onLongPress={handleLongPress}
+            onPress={handleBubblePress}
             onImagePress={handleImagePress}
             onSwipeReply={handleSwipeReply}
-            onReactionPress={handleReactionPress}
+            onReactionPress={toggleReaction}
             isSelected={selectedIds.has(item.id)}
             selectionMode={selectionMode}
-            onSelect={handleSelect}
           />
         )}
       </View>
     );
-  }, [messages, user?.id, handlePayNow, handleCancelRequest, paying, handleLongPress, handleImagePress, handleSwipeReply, handleReactionPress, selectedIds, selectionMode, handleSelect]);
+  }, [messages, myId, otherName, firstUnreadId, paying, selectedIds, selectionMode]);
 
-  const confirmPayNow = async () => {
-    const pr = pendingPayPr;
-    if (!user?.id || !convId || !pr) return;
-    if (payOrderType === 'delivery' && !payDeliveryAddress.trim()) {
-      vendrAlert({ title: 'Address required', message: 'Enter a delivery address.', type: 'warning' }); return;
-    }
-    setShowPayOrderSheet(false);
-    setPaying(pr.id);
-    try {
-      const { data: payResult } = await chatApi.payPaymentRequest(pr.id, { order_type: payOrderType, delivery_address: payOrderType === 'delivery' ? payDeliveryAddress.trim() : undefined });
-      if (!payResult?.success) throw new Error('Payment failed');
-      analyticsApi.recordOrder({ vendorId: pr.vendor_id, productId: '', amount: pr.amount }).catch(console.error);
-      const updatedPr = { ...pr, status: 'paid' as const, paid_at: new Date().toISOString() };
-      setMessages(prev => prev.map(msg => msg.type === 'payment_request' && msg.content === pr.id ? { ...msg, payment_request: updatedPr } : msg));
-      await chatApi.sendMessage({ conversation_id: convId, content: `Payment of ${formatAmount(pr.amount)} sent successfully.`, type: 'text' });
-      vendrAlert({ title: 'Payment Successful', message: `You paid ${formatAmount(pr.amount)}.`, type: 'success' });
-      setPendingPayPr(null);
-    } catch (e: any) { vendrAlert({ title: 'Payment Failed', message: e.message, type: 'danger' }); }
-    finally { setPaying(null); }
-  };
-
-  const sendEnquiry = async () => {
-    if (!convId || !user?.id || !productName) return;
-    setShowProductEnquiry(false);
-    const msg = `Hi! I'm interested in your product: *${productName}*${productPrice ? ` (${productPrice})` : ''}. Is it still available?`;
-    setSending(true);
-    try {
-      const { data: inserted } = await chatApi.sendMessage({ conversation_id: convId, content: msg, type: 'text' });
-      setMessages(prev => [...prev, { ...inserted, delivered: false, is_read: false }]);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (e: any) { vendrAlert({ title: 'Error', message: e.message, type: 'danger' }); }
-    finally { setSending(false); }
-  };
-
-  // ─── Render ───────────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-        <ActivityIndicator size="large" color="#E8521A" />
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#4A3D30' }}>Opening chat...</Text>
-      </View>
-    );
-  }
-
+  // ─── Render ─────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0F0A06', alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 32 }}>
-        <Ionicons name="warning-outline" size={40} color="#E85555" />
-        <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 16, color: '#FDF6EC', textAlign: 'center' }}>Something went wrong</Text>
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#4A3D30', textAlign: 'center' }}>{error}</Text>
-        <TouchableOpacity onPress={() => { setLoading(true); setError(null); initChat(); }}
-          style={{ backgroundColor: '#E8521A', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 12 }}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: 'white' }}>Try Again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#4A3D30' }}>Go Back</Text>
-        </TouchableOpacity>
+      <View style={{ flex: 1, backgroundColor: T.canvas, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 }}>
+        <View style={{ width: 72, height: 72, borderRadius: 24, backgroundColor: T.dangerSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="chatbubble-ellipses-outline" size={32} color={T.danger} />
+        </View>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 17, color: T.ink, textAlign: 'center' }}>Couldn't open this chat</Text>
+        <Text style={{ fontSize: 14, color: T.ink3, textAlign: 'center' }}>{error}</Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+          <TouchableOpacity onPress={goBack} style={{ borderRadius: 14, paddingHorizontal: 20, paddingVertical: 12, borderWidth: 1, borderColor: T.line }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink2 }}>Go back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => initChat()} style={{ backgroundColor: T.primary, borderRadius: 14, paddingHorizontal: 20, paddingVertical: 12 }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.onPrimary }}>Try again</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
+
+  // Like WhatsApp: connection state wins over presence (which may be stale while offline)
+  const offline = socketStatus !== 'connected' && socketStatus !== 'idle';
+  const subtitle = offline
+    ? { text: networkIssue ? 'waiting for network…' : 'connecting…', color: T.ink3 }
+    : otherTyping
+    ? { text: 'typing…', color: T.primaryInk }
+    : presence?.isOnline
+      ? { text: 'online', color: T.successInk }
+      : presence
+        ? { text: formatLastSeen(presence.lastSeen), color: T.ink3 }
+        : { text: actingAsVendor ? 'Customer' : isVerified ? 'Verified vendor' : 'Vendor', color: T.ink3 };
+
+  const canSend = !!text.trim();
+  const showEmpty = !initialLoading && messages.length === 0 && !networkIssue;
+  const waitingForFirstLoad = messages.length === 0 && (initialLoading || networkIssue);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: '#0F0A06' }}
+        style={{ flex: 1, backgroundColor: T.canvas }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
       >
-        <StatusBar style="light" />
+        <StatusBar barStyle={T.barStyle} />
 
         {/* ── Header ── */}
         <View style={{
-          flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 12, paddingTop: 52, paddingBottom: 10,
-          backgroundColor: '#0F0A06',
-          borderBottomWidth: 1, borderBottomColor: '#1A1208',
-          gap: 8,
+          flexDirection: 'row', alignItems: 'center', gap: 6,
+          paddingHorizontal: 8, paddingTop: insets.top + 6, paddingBottom: 10,
+          backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.line,
         }}>
           {selectionMode ? (
             <>
-              <TouchableOpacity onPress={exitSelectionMode}
-                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="close" size={22} color="#FDF6EC" />
+              <TouchableOpacity onPress={exitSelectionMode} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="close" size={24} color={T.ink} />
               </TouchableOpacity>
-              <Text style={{ flex: 1, fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 16, color: '#FDF6EC' }}>
+              <Text style={{ flex: 1, fontFamily: 'PlusJakartaSans_700Bold', fontSize: 17, color: T.ink }}>
                 {selectedIds.size} selected
               </Text>
-              {selectedIds.size > 0 && (
-                <TouchableOpacity onPress={deleteSelectedMessages}
-                  style={{ backgroundColor: 'rgba(232,85,85,0.12)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#E85555' }}>Delete</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                onPress={deleteSelectedMessages}
+                disabled={selectedIds.size === 0}
+                style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', opacity: selectedIds.size ? 1 : 0.4 }}
+              >
+                <Ionicons name="trash-outline" size={22} color={T.dangerInk} />
+              </TouchableOpacity>
             </>
           ) : (
             <>
-              <TouchableOpacity onPress={() => router.back()}
-                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="arrow-back" size={22} color="#FDF6EC" />
+              <TouchableOpacity onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Back">
+                <Ionicons name="chevron-back" size={26} color={T.ink} />
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => !actingAsVendor && vendorActualId && router.push({ pathname: '/vendor/[id]', params: { id: vendorActualId } })}
-                activeOpacity={actingAsVendor ? 1 : 0.75}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                onPress={() => !actingAsVendor && vendorProfileId && router.push({ pathname: '/vendor/[id]', params: { id: vendorProfileId } })}
+                activeOpacity={actingAsVendor ? 1 : 0.7}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 }}
               >
-                {/* Avatar */}
-                <View style={{ position: 'relative' }}>
-                  {(!actingAsVendor && (vendorLogoUrl || vendorAvatarUrl)) ? (
-                    <Image
-                      source={{ uri: vendorLogoUrl ?? vendorAvatarUrl! }}
-                      style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#1A1208' }}
-                    />
-                  ) : (actingAsVendor && buyerAvatar) ? (
-                    <Image source={{ uri: buyerAvatar }} style={{ width: 42, height: 42, borderRadius: 21 }} />
-                  ) : (
-                    <View style={{
-                      width: 42, height: 42, borderRadius: 21,
-                      backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#E8521A' }}>
-                        {vendorName.slice(0, 2).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  {/* Online dot */}
-                  <View style={{
-                    position: 'absolute', bottom: 0, right: 0,
-                    width: 12, height: 12, borderRadius: 6,
-                    backgroundColor: otherOnline ? '#4CAF50' : '#2A1F14',
-                    borderWidth: 2, borderColor: '#0F0A06',
-                  }} />
-                </View>
-
-                <View style={{ flex: 1 }}>
+                <ChatAvatar uri={otherAvatar} name={otherName || '…'} userId={otherUserId} size={40} />
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 15, color: '#FDF6EC' }} numberOfLines={1}>
-                      {vendorName}
+                    <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>
+                      {otherName || ' '}
                     </Text>
-                    {!actingAsVendor && isVerified && (
-                      <Ionicons name="shield-checkmark" size={13} color="#2D8653" />
-                    )}
+                    {!actingAsVendor && isVerified && <Ionicons name="shield-checkmark" size={14} color={T.successInk} />}
                   </View>
-                  <Text style={{
-                    fontSize: 12, fontFamily: 'SpaceGrotesk_400Regular',
-                    color: otherOnline ? '#4CAF50' : '#4A3D30',
-                  }}>
-                    {otherOnline ? 'Online' : lastSeen ? `Last seen ${formatTime(lastSeen)}` : 'Offline'}
+                  <Text numberOfLines={1} style={{ fontSize: 12.5, color: subtitle.color, fontFamily: 'PlusJakartaSans_500Medium' }}>
+                    {subtitle.text}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -1676,15 +1631,15 @@ export default function ChatScreen() {
               {actingAsVendor && (
                 <TouchableOpacity
                   onPress={() => setShowPaymentSheet(true)}
+                  activeOpacity={0.8}
                   style={{
-                    backgroundColor: 'rgba(232,82,26,0.1)',
-                    borderWidth: 1, borderColor: 'rgba(232,82,26,0.2)',
-                    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7,
-                    flexDirection: 'row', alignItems: 'center', gap: 5,
+                    flexDirection: 'row', alignItems: 'center', gap: 5, marginRight: 4,
+                    backgroundColor: T.primarySoft, borderWidth: 1, borderColor: T.primaryBorder,
+                    borderRadius: 12, paddingHorizontal: 12, height: 36,
                   }}
                 >
-                  <Ionicons name="cash-outline" size={15} color="#E8521A" />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: '#E8521A' }}>Request</Text>
+                  <Ionicons name="receipt-outline" size={15} color={T.primary} />
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13, color: T.primaryInk }}>Request</Text>
                 </TouchableOpacity>
               )}
             </>
@@ -1692,446 +1647,336 @@ export default function ChatScreen() {
         </View>
 
         {/* ── Messages ── */}
-        {messages.length === 0 ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 }}>
-            <View style={{
-              width: 64, height: 64, borderRadius: 20,
-              backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Ionicons name="chatbubble-ellipses-outline" size={28} color="#2A1F14" />
+        <View style={{ flex: 1 }}>
+          {waitingForFirstLoad ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 }}>
+              <ActivityIndicator color={T.primary} />
+              {networkIssue && (
+                <Text style={{ fontSize: 13.5, color: T.ink3, textAlign: 'center', lineHeight: 19 }}>
+                  Waiting for network… Messages will appear as soon as you're back online. You can still type — they'll send automatically.
+                </Text>
+              )}
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 16, color: '#FDF6EC', textAlign: 'center' }}>
-              Start the conversation
-            </Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#4A3D30', textAlign: 'center' }}>
-              {actingAsVendor ? 'A buyer reached out to you' : `Say hi to ${vendorName}`}
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={m => m.id}
-            contentContainerStyle={{ paddingTop: 8, paddingBottom: 4 }}
-            // Not inverted — normal top-to-bottom order
-            onScroll={(e) => {
-              const maxOffset = e.nativeEvent.contentSize.height - e.nativeEvent.layoutMeasurement.height;
-              setShowScrollButton(maxOffset - e.nativeEvent.contentOffset.y > 200);
-            }}
-            scrollEventThrottle={100}
-            onEndReached={loadOlderMessages}
-            onEndReachedThreshold={0.1}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-            removeClippedSubviews={false}
-            maxToRenderPerBatch={20}
-            updateCellsBatchingPeriod={100}
-            windowSize={21}
-            initialNumToRender={20}
-            ListHeaderComponent={loadingMore ? (
-              <ActivityIndicator size="small" color="#E8521A" style={{ marginVertical: 8 }} />
-            ) : null}
-            renderItem={renderItem}
-          />
-        )}
-
-        {/* Typing indicator */}
-        {otherUserTyping && <TypingBubble />}
-
-        {/* Scroll to bottom */}
-        {showScrollButton && (
-          <TouchableOpacity
-            onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            style={{
-              position: 'absolute', bottom: 90, right: 16,
-              backgroundColor: '#1E1610', width: 38, height: 38,
-              borderRadius: 19, alignItems: 'center', justifyContent: 'center',
-              borderWidth: 1, borderColor: '#2A1F14',
-              shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
-            }}
-          >
-            <Ionicons name="chevron-down" size={18} color="#FDF6EC" />
-          </TouchableOpacity>
-        )}
-
-        {/* ── Edit banner ── */}
-        {editingMsg && (
-          <Animated.View
-            entering={FadeInDown.duration(180)}
-            style={{
-              flexDirection: 'row', alignItems: 'center',
-              paddingHorizontal: 16, paddingVertical: 8,
-              backgroundColor: '#141009',
-              borderTopWidth: 1, borderColor: '#1E1610', gap: 10,
-            }}
-          >
-            <Ionicons name="create-outline" size={15} color="#E8521A" />
-            <Text style={{ flex: 1, fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#6B5E50' }} numberOfLines={1}>
-              Editing: {editingMsg.content}
-            </Text>
-            <TouchableOpacity onPress={() => { setEditingMsg(null); setText(''); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={18} color="#4A3D30" />
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {/* ── Reply Strip ── */}
-        {replyingTo && !editingMsg && (
-          <ReplyStrip
-            replyTo={replyingTo}
-            myId={user?.id ?? ''}
-            senderName={replyingTo.sender_name}
-            onCancel={() => setReplyingTo(null)}
-          />
-        )}
-
-        {/* ── Input Bar ── */}
-        <View style={{
-          flexDirection: 'row', alignItems: 'flex-end',
-          paddingHorizontal: 10, paddingVertical: 10,
-          paddingBottom: Platform.OS === 'ios' ? 10 : 10,
-          backgroundColor: '#0F0A06',
-          borderTopWidth: 1, borderTopColor: '#1A1208',
-          gap: 8,
-        }}>
-          <TouchableOpacity
-            onPress={() => setShowAttachSheet(true)}
-            style={{
-              width: 40, height: 40, borderRadius: 20,
-              backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14',
-              alignItems: 'center', justifyContent: 'center', marginBottom: 1,
-            }}
-          >
-            {uploadingImage
-              ? <ActivityIndicator size="small" color="#E8521A" />
-              : <Ionicons name="add" size={22} color="#6B5E50" />
-            }
-          </TouchableOpacity>
-
-          <View style={{
-            flex: 1, backgroundColor: '#1A1208',
-            borderWidth: 1, borderColor: '#2A1F14',
-            borderRadius: 22, paddingHorizontal: 14,
-            paddingTop: 10, paddingBottom: 10, minHeight: 40,
-            justifyContent: 'center',
-          }}>
-            <TextInput
-              ref={inputRef}
-              style={{
-                fontFamily: 'SpaceGrotesk_400Regular', fontSize: 15,
-                color: '#EDE3D5', maxHeight: 120, lineHeight: 20,
+          ) : showEmpty ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 10 }}>
+              <ChatAvatar uri={otherAvatar} name={otherName || '?'} userId={otherUserId} size={72} />
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 17, color: T.ink, textAlign: 'center', marginTop: 6 }}>
+                {actingAsVendor ? `${otherName} reached out` : `Start chatting with ${otherName}`}
+              </Text>
+              <Text style={{ fontSize: 13.5, color: T.ink3, textAlign: 'center', lineHeight: 19 }}>
+                {actingAsVendor
+                  ? 'Reply to answer their questions, then send a payment request when you agree on a price.'
+                  : 'Ask about products, prices or delivery. Payments made in chat are protected by escrow.'}
+              </Text>
+              {!actingAsVendor && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 10 }}>
+                  {BUYER_QUICK_REPLIES.map((q) => (
+                    <TouchableOpacity
+                      key={q}
+                      onPress={() => sendText(q)}
+                      style={{ borderRadius: 16, borderWidth: 1, borderColor: T.primaryBorder, backgroundColor: T.primarySoft, paddingHorizontal: 12, paddingVertical: 8 }}
+                    >
+                      <Text style={{ fontSize: 13, color: T.primaryInk, fontFamily: 'PlusJakartaSans_600SemiBold' }}>{q}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : (
+            <FlatList
+              ref={listRef}
+              inverted
+              data={listData}
+              keyExtractor={(m) => m.id}
+              renderItem={renderItem}
+              extraData={[selectedIds, selectionMode, paying, firstUnreadId]}
+              contentContainerStyle={{ paddingTop: 6, paddingBottom: 10 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              onScroll={(e) => {
+                const up = e.nativeEvent.contentOffset.y > 280;
+                scrolledUpRef.current = up;
+                if (up !== showScrollButton) setShowScrollButton(up);
+                if (!up && newBelow) setNewBelow(0);
               }}
-              placeholder={editingMsg ? 'Edit message...' : 'Message...'}
-              placeholderTextColor="#3D3026"
-              value={text}
-              onChangeText={setText}
-              multiline
+              scrollEventThrottle={64}
+              onEndReached={loadOlderMessages}
+              onEndReachedThreshold={0.3}
+              initialNumToRender={20}
+              maxToRenderPerBatch={20}
+              windowSize={15}
+              ListHeaderComponent={otherTyping ? <TypingBubble /> : null}
+              ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={T.primary} style={{ marginVertical: 12 }} /> : null}
             />
-          </View>
+          )}
 
-          <TouchableOpacity
-            onPress={sendMessage}
-            disabled={!text.trim() || sending}
-            style={{
-              width: 40, height: 40, borderRadius: 20,
-              backgroundColor: text.trim() ? '#E8521A' : '#1A1208',
-              borderWidth: text.trim() ? 0 : 1, borderColor: '#2A1F14',
-              alignItems: 'center', justifyContent: 'center', marginBottom: 1,
-            }}
-          >
-            {sending
-              ? <ActivityIndicator size="small" color="white" />
-              : <Ionicons
-                  name={editingMsg ? 'checkmark' : 'send'}
-                  size={17}
-                  color={text.trim() ? 'white' : '#3D3026'}
-                />
-            }
-          </TouchableOpacity>
+          {showScrollButton && (
+            <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} style={{ position: 'absolute', right: 14, bottom: 12 }}>
+              <TouchableOpacity
+                onPress={() => scrollToBottom()}
+                activeOpacity={0.85}
+                style={{
+                  width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: T.surface, borderWidth: 1, borderColor: T.line,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 5,
+                }}
+              >
+                <Ionicons name="chevron-down" size={20} color={T.ink} />
+                {newBelow > 0 && (
+                  <View style={{ position: 'absolute', top: -6, right: -4, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 }}>
+                    <Text style={{ fontSize: 10.5, fontFamily: 'PlusJakartaSans_700Bold', color: T.onPrimary }}>{newBelow > 99 ? '99+' : newBelow}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          )}
         </View>
 
-        {/* ── Floating Context Menu ── */}
+        {/* ── Composer ── */}
+        <View style={{
+          paddingTop: 8,
+          paddingBottom: (keyboardOpen ? 0 : insets.bottom) + 8,
+          backgroundColor: T.canvas, borderTopWidth: 1, borderTopColor: T.line,
+        }}>
+          {editingMsg ? (
+            <ComposerContext mode="edit" msg={editingMsg} label="Editing message" onCancel={() => { setEditingMsg(null); setText(''); }} />
+          ) : replyingTo ? (
+            <ComposerContext
+              mode="reply" msg={replyingTo}
+              label={replyingTo.sender_id === myId ? 'Replying to yourself' : `Replying to ${otherName}`}
+              onCancel={() => setReplyingTo(null)}
+            />
+          ) : null}
+
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 10 }}>
+            {!editingMsg && (
+              <TouchableOpacity
+                onPress={() => { Keyboard.dismiss(); setShowAttachSheet(true); }}
+                accessibilityLabel="Attach"
+                style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}
+              >
+                <Ionicons name="add" size={24} color={T.ink2} />
+              </TouchableOpacity>
+            )}
+
+            <View style={{
+              flex: 1, minHeight: 44, justifyContent: 'center',
+              backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 22,
+              paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 11 : 4,
+            }}>
+              <TextInput
+                ref={inputRef}
+                value={text}
+                onChangeText={onChangeText}
+                onBlur={stopTyping}
+                placeholder={editingMsg ? 'Edit message' : 'Message'}
+                placeholderTextColor={T.ink4}
+                multiline
+                maxLength={2000}
+                style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 15.5, color: T.ink, maxHeight: 120, lineHeight: 21, paddingVertical: 0 }}
+              />
+            </View>
+
+            <TouchableOpacity
+              onPress={onSubmit}
+              disabled={!canSend}
+              accessibilityLabel={editingMsg ? 'Save edit' : 'Send'}
+              style={{
+                width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: canSend ? T.primary : T.surface2,
+              }}
+            >
+              <Ionicons name={editingMsg ? 'checkmark' : 'send'} size={editingMsg ? 22 : 18} color={canSend ? T.onPrimary : T.ink4} style={editingMsg ? undefined : { marginLeft: 2 }} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── Context menu ── */}
         <FloatingContextMenu
           visible={contextMenu.visible}
           pageY={contextMenu.pageY}
           msg={contextMenu.msg}
-          isMine={contextMenu.isMine}
-          myId={user?.id ?? ''}
-          onReply={() => { startReply(); }}
-          onReact={openReactionFromMenu}
+          isMine={contextMenu.msg?.sender_id === myId}
+          myReaction={myReactionInMenu}
+          onReply={startReply}
+          onReact={(emoji) => contextMenu.msg && toggleReaction(contextMenu.msg.id, emoji)}
           onEdit={startEdit}
           onDelete={deleteMessage}
           onSelect={startSelect}
-          onCopy={handleCopy}
           onDismiss={dismissContextMenu}
         />
 
-        {/* ── Reaction Picker ── */}
-        <FloatingReactionPicker
-          visible={reactionPicker.visible}
-          onSelect={handleReactionSelect}
-          onDismiss={() => setReactionPicker({ visible: false, messageId: null })}
-        />
-
-        {/* ── Fullscreen Image Viewer ── */}
-        <Modal visible={!!viewingImage} transparent animationType="fade" statusBarTranslucent>
-          <View style={{ flex: 1, backgroundColor: '#000' }}>
+        {/* ── Fullscreen image viewer ── */}
+        <Modal visible={!!viewingImage} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setViewingImage(null)}>
+          <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000' }}>
             <TouchableOpacity
               onPress={() => setViewingImage(null)}
-              style={{
-                position: 'absolute', top: 52, right: 16, zIndex: 20,
-                width: 36, height: 36, borderRadius: 18,
-                backgroundColor: 'rgba(255,255,255,0.12)',
-                alignItems: 'center', justifyContent: 'center',
-              }}
+              style={{ position: 'absolute', top: insets.top + 10, right: 16, zIndex: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}
             >
-              <Ionicons name="close" size={20} color="white" />
+              <Ionicons name="close" size={22} color="#FFFFFF" />
             </TouchableOpacity>
             <GestureDetector gesture={pinchGesture}>
-              <Animated.View
-                style={[{ flex: 1, justifyContent: 'center', alignItems: 'center' }, animatedImageStyle]}
-              >
+              <Animated.View style={[{ flex: 1, justifyContent: 'center', alignItems: 'center' }, animatedImageStyle]}>
                 {viewingImage && (
-                  <Image
-                    source={{ uri: viewingImage }}
-                    style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.8 }}
-                    resizeMode="contain"
-                  />
+                  <Image source={{ uri: viewingImage }} style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.8 }} resizeMode="contain" />
                 )}
               </Animated.View>
             </GestureDetector>
-          </View>
+          </GestureHandlerRootView>
         </Modal>
 
-        {/* ── Attach Sheet ── */}
-        <Modal visible={showAttachSheet} transparent animationType="slide">
-          <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowAttachSheet(false)} />
-          <View style={{
-            backgroundColor: '#141009',
-            borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            borderTopWidth: 1, borderColor: '#1E1610',
-            paddingHorizontal: 20, paddingTop: 14, paddingBottom: 40,
-          }}>
-            <View style={{ width: 36, height: 4, backgroundColor: '#2A1F14', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              {[
-                { icon: 'camera', label: 'Camera', sub: 'Take a photo', action: takePhoto },
-                { icon: 'images', label: 'Gallery', sub: 'Pick from photos', action: pickFromGallery },
-              ].map(item => (
-                <TouchableOpacity
-                  key={item.label} onPress={item.action} activeOpacity={0.8}
-                  style={{
-                    flex: 1, alignItems: 'center',
-                    backgroundColor: '#1A1208',
-                    borderWidth: 1, borderColor: '#2A1F14',
-                    borderRadius: 18, paddingVertical: 20, gap: 8,
-                  }}
-                >
-                  <View style={{
-                    width: 50, height: 50, borderRadius: 14,
-                    backgroundColor: 'rgba(232,82,26,0.1)',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Ionicons name={item.icon as any} size={24} color="#E8521A" />
-                  </View>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#FDF6EC' }}>{item.label}</Text>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#4A3D30' }}>{item.sub}</Text>
-                </TouchableOpacity>
-              ))}
+        {/* ── Attach sheet ── */}
+        <Sheet visible={showAttachSheet} onClose={() => setShowAttachSheet(false)}>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            {[
+              { icon: 'camera', label: 'Camera', action: takePhoto },
+              { icon: 'images', label: 'Gallery', action: pickFromGallery },
+              ...(actingAsVendor ? [{ icon: 'receipt', label: 'Request pay', action: () => { setShowAttachSheet(false); setTimeout(() => setShowPaymentSheet(true), 250); } }] : []),
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                onPress={item.action}
+                activeOpacity={0.8}
+                style={{ flex: 1, alignItems: 'center', gap: 8, paddingVertical: 18, borderRadius: 18, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}
+              >
+                <View style={{ width: 50, height: 50, borderRadius: 16, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name={item.icon as any} size={24} color={T.primary} />
+                </View>
+                <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13.5, color: T.ink }}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Sheet>
+
+        {/* ── Product enquiry ── */}
+        <Sheet visible={showProductEnquiry} onClose={() => setShowProductEnquiry(false)}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, marginBottom: 18 }}>
+            <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="cube-outline" size={22} color={T.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: T.ink }}>{productName}</Text>
+              {!!productPrice && <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.primaryInk, marginTop: 2 }}>{productPrice}</Text>}
             </View>
           </View>
-        </Modal>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, marginBottom: 4 }}>Ask about this product?</Text>
+          <Text style={{ fontSize: 13.5, color: T.ink3, lineHeight: 19, marginBottom: 18 }}>
+            We'll send {otherName || 'the vendor'} a quick message about it.
+          </Text>
+          <TouchableOpacity onPress={sendEnquiry} style={{ backgroundColor: T.primary, borderRadius: 14, height: 52, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            <Ionicons name="send" size={16} color={T.onPrimary} />
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15, color: T.onPrimary }}>Send enquiry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowProductEnquiry(false)} style={{ height: 46, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14, color: T.ink3 }}>Not now</Text>
+          </TouchableOpacity>
+        </Sheet>
 
-        {/* ── Product Enquiry ── */}
-        <Modal visible={showProductEnquiry} transparent animationType="fade">
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}>
-            <Animated.View
-              entering={FadeInDown.duration(280).springify()}
-              style={{
-                backgroundColor: '#141009',
-                borderTopLeftRadius: 26, borderTopRightRadius: 26,
-                borderTopWidth: 1, borderColor: '#1E1610',
-                paddingHorizontal: 20, paddingTop: 14, paddingBottom: 40,
-              }}
-            >
-              <View style={{ width: 36, height: 4, backgroundColor: '#2A1F14', borderRadius: 2, alignSelf: 'center', marginBottom: 24 }} />
-              <View style={{
-                backgroundColor: '#0F0A06', borderRadius: 16,
-                borderWidth: 1, borderColor: '#1E1610',
-                padding: 14, marginBottom: 20,
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-              }}>
-                <View style={{
-                  width: 48, height: 48, borderRadius: 12,
-                  backgroundColor: 'rgba(232,82,26,0.1)',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Ionicons name="cube-outline" size={22} color="#E8521A" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: '#FDF6EC' }} numberOfLines={1}>{productName}</Text>
-                  {productPrice && <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: '#E8521A', marginTop: 2 }}>{productPrice}</Text>}
-                </View>
-              </View>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 6 }}>
-                Send enquiry?
-              </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#4A3D30', lineHeight: 20, marginBottom: 16 }}>
-                This message will be sent to the vendor
-              </Text>
-              <View style={{ backgroundColor: '#0F0A06', borderRadius: 14, borderWidth: 1, borderColor: '#1E1610', padding: 14, marginBottom: 20 }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#EDE3D5', lineHeight: 22 }}>
-                  Hi! I'm interested in <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', color: '#E8521A' }}>{productName}</Text>
-                  {productPrice ? ` (${productPrice})` : ''}. Is it still available?
-                </Text>
-              </View>
-              <TouchableOpacity onPress={sendEnquiry} style={{
-                backgroundColor: '#E8521A', borderRadius: 14, height: 52,
-                alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'row', gap: 8, marginBottom: 10,
-              }}>
-                <Ionicons name="send" size={16} color="white" />
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>Send Enquiry</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowProductEnquiry(false)} style={{
-                backgroundColor: '#1A1208', borderRadius: 14, height: 48,
-                alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: '#2A1F14',
-              }}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 14, color: '#4A3D30' }}>Cancel</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        </Modal>
-
-        {/* ── Pay Order Type ── */}
-        <Modal visible={showPayOrderSheet} transparent animationType="slide">
-          <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowPayOrderSheet(false)} />
-          <View style={{
-            backgroundColor: '#141009',
-            borderTopLeftRadius: 26, borderTopRightRadius: 26,
-            borderTopWidth: 1, borderColor: '#1E1610',
-            paddingHorizontal: 20, paddingTop: 14, paddingBottom: 44,
-          }}>
-            <View style={{ width: 36, height: 4, backgroundColor: '#2A1F14', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
-            <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: '#FDF6EC', marginBottom: 4 }}>How will you receive this?</Text>
-            <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13, color: '#4A3D30', marginBottom: 20 }}>
-              Payment stays in escrow until delivery is confirmed.
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-              {(['pickup', 'delivery'] as const).map((t) => (
+        {/* ── Pay: choose pickup / delivery ── */}
+        <Sheet visible={!!pendingPayPr} onClose={() => setPendingPayPr(null)} avoidKeyboard>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 18, color: T.ink, marginBottom: 4 }}>How do you want to receive it?</Text>
+          <Text style={{ fontSize: 13, color: T.ink3, marginBottom: 18, lineHeight: 18 }}>
+            Your payment is held in escrow and only released to the vendor after you confirm the order.
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            {(['pickup', 'delivery'] as const).map((t) => {
+              const active = payOrderType === t;
+              const locked = !!pendingPayPr?.is_delivery && t === 'pickup';
+              return (
                 <TouchableOpacity
-                  key={t} onPress={() => setPayOrderType(t)}
+                  key={t}
+                  disabled={locked}
+                  onPress={() => setPayOrderType(t)}
                   style={{
-                    flex: 1, padding: 14, borderRadius: 14, borderWidth: 1,
-                    borderColor: payOrderType === t ? '#E8521A' : '#2A1F14',
-                    backgroundColor: payOrderType === t ? 'rgba(232,82,26,0.1)' : '#0F0A06',
+                    flex: 1, padding: 14, borderRadius: 16, borderWidth: 1.5, opacity: locked ? 0.4 : 1,
+                    borderColor: active ? T.primary : T.line, backgroundColor: active ? T.primarySoft : T.surface,
                   }}
                 >
-                  <Ionicons name={t === 'pickup' ? 'storefront-outline' : 'bicycle-outline'} size={20} color={payOrderType === t ? '#E8521A' : '#4A3D30'} />
-                  <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, color: payOrderType === t ? '#E8521A' : '#FDF6EC', marginTop: 6 }}>
+                  <Ionicons name={t === 'pickup' ? 'storefront-outline' : 'bicycle-outline'} size={22} color={active ? T.primary : T.ink3} />
+                  <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: active ? T.primaryInk : T.ink, marginTop: 8 }}>
                     {t === 'pickup' ? 'Pickup' : 'Delivery'}
                   </Text>
+                  <Text style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>
+                    {t === 'pickup' ? 'Collect from vendor' : 'A runner brings it'}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            {payOrderType === 'delivery' && (
-              <Animated.View entering={FadeInDown.duration(180)}>
-                <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#4A3D30', marginBottom: 8, letterSpacing: 0.5 }}>DELIVERY ADDRESS</Text>
-                <View style={{ backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 }}>
-                  <TextInput
-                    value={payDeliveryAddress} onChangeText={setPayDeliveryAddress}
-                    placeholder="Street, area, city..."
-                    placeholderTextColor="#3D3026" multiline
-                    style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC', minHeight: 56 }}
-                  />
-                </View>
-              </Animated.View>
-            )}
-            <TouchableOpacity
-              onPress={confirmPayNow}
-              disabled={paying === pendingPayPr?.id}
-              style={{
-                backgroundColor: '#E8521A', borderRadius: 14, height: 54,
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              {paying === pendingPayPr?.id
-                ? <ActivityIndicator color="white" />
-                : <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>
-                    Pay {pendingPayPr ? formatAmount(pendingPayPr.amount) : ''}
-                  </Text>}
-            </TouchableOpacity>
+              );
+            })}
           </View>
-        </Modal>
+          {payOrderType === 'delivery' && (
+            <Animated.View entering={FadeInDown.duration(160)}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 11, color: T.ink3, marginBottom: 8, letterSpacing: 0.5 }}>DELIVERY ADDRESS</Text>
+              <TextInput
+                value={payDeliveryAddress}
+                onChangeText={setPayDeliveryAddress}
+                editable={!pendingPayPr?.delivery_address}
+                placeholder="Street, area, city"
+                placeholderTextColor={T.ink4}
+                multiline
+                style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14.5, color: T.ink, minHeight: 56, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16, textAlignVertical: 'top' }}
+              />
+            </Animated.View>
+          )}
+          <TouchableOpacity
+            onPress={confirmPayNow}
+            style={{ backgroundColor: T.primary, borderRadius: 14, height: 54, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}
+          >
+            <Ionicons name="lock-closed" size={16} color={T.onPrimary} />
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15.5, color: T.onPrimary }}>
+              Pay {pendingPayPr ? formatAmount(pendingPayPr.amount + (pendingPayPr.is_delivery ? pendingPayPr.delivery_fee ?? 0 : 0)) : ''}
+            </Text>
+          </TouchableOpacity>
+        </Sheet>
 
-        {/* ── Payment Request Sheet ── */}
-        <Modal visible={showPaymentSheet} transparent animationType="slide">
-          <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} activeOpacity={1} onPress={() => setShowPaymentSheet(false)} />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-            <View style={{
-              backgroundColor: '#141009',
-              borderTopLeftRadius: 26, borderTopRightRadius: 26,
-              borderTopWidth: 1, borderColor: '#1E1610',
-              paddingHorizontal: 20, paddingTop: 14, paddingBottom: 44,
-            }}>
-            <View style={{ width: 36, height: 4, backgroundColor: '#2A1F14', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-              <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(232,82,26,0.1)', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="cash-outline" size={20} color="#E8521A" />
-              </View>
-              <View>
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: '#FDF6EC' }}>Request Payment</Text>
-                <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#4A3D30' }}>Send a request to the buyer</Text>
-              </View>
+        {/* ── Vendor: create payment request ── */}
+        <Sheet visible={showPaymentSheet} onClose={() => setShowPaymentSheet(false)} avoidKeyboard>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="receipt-outline" size={21} color={T.primary} />
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#4A3D30', marginBottom: 8, letterSpacing: 0.5 }}>AMOUNT</Text>
-            <View style={{
-              backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14',
-              borderRadius: 14, paddingHorizontal: 16, height: 60,
-              flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 14,
-            }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: '#4A3D30' }}>₦</Text>
-              <TextInput
-                value={payAmount} onChangeText={setPayAmount}
-                placeholder="0.00" placeholderTextColor="#2A1F14"
-                keyboardType="numeric"
-                style={{ flex: 1, fontFamily: 'SpaceGrotesk_700Bold', fontSize: 26, color: '#FDF6EC' }}
-              />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 17, color: T.ink }}>Request payment</Text>
+              <Text style={{ fontSize: 12.5, color: T.ink3 }}>{otherName || 'The buyer'} pays securely into escrow</Text>
             </View>
-            <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: '#4A3D30', marginBottom: 8, letterSpacing: 0.5 }}>DESCRIPTION (OPTIONAL)</Text>
-            <View style={{ backgroundColor: '#0F0A06', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 24 }}>
-              <TextInput
-                value={payDescription} onChangeText={setPayDescription}
-                placeholder="e.g. 2 units of Red Sneakers"
-                placeholderTextColor="#3D3026" multiline
-                style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 14, color: '#FDF6EC', maxHeight: 80 }}
-              />
-            </View>
-            <TouchableOpacity
-              onPress={sendPaymentRequest}
-              disabled={sendingPaymentRequest || !payAmount}
-              style={{
-                backgroundColor: payAmount ? '#E8521A' : '#1A1208',
-                borderWidth: payAmount ? 0 : 1, borderColor: '#2A1F14',
-                borderRadius: 14, height: 54,
-                alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'row', gap: 8,
-              }}
-            >
-              {sendingPaymentRequest
-                ? <ActivityIndicator size="small" color="white" />
-                : <>
-                    <Ionicons name="send-outline" size={16} color={payAmount ? 'white' : '#3D3026'} />
-                    <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: payAmount ? 'white' : '#3D3026' }}>
-                      Send Request{payAmount ? ` · ₦${parseFloat(payAmount || '0').toLocaleString()}` : ''}
-                    </Text>
-                  </>}
-            </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+          </View>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 11, color: T.ink3, marginBottom: 8, letterSpacing: 0.5 }}>AMOUNT</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 62, paddingHorizontal: 16, marginBottom: 14, borderRadius: 16, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line }}>
+            <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 24, color: T.ink3 }}>₦</Text>
+            <TextInput
+              value={payAmount}
+              onChangeText={(v) => setPayAmount(v.replace(/[^0-9.]/g, ''))}
+              placeholder="0"
+              placeholderTextColor={T.ink4}
+              keyboardType="decimal-pad"
+              autoFocus
+              style={{ flex: 1, fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 28, color: T.ink, paddingVertical: 0 }}
+            />
+          </View>
+          <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 11, color: T.ink3, marginBottom: 8, letterSpacing: 0.5 }}>WHAT'S IT FOR? (OPTIONAL)</Text>
+          <TextInput
+            value={payDescription}
+            onChangeText={setPayDescription}
+            placeholder="e.g. 2 pairs of red sneakers, size 42"
+            placeholderTextColor={T.ink4}
+            multiline
+            maxLength={200}
+            style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 14.5, color: T.ink, maxHeight: 90, minHeight: 48, backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 20, textAlignVertical: 'top' }}
+          />
+          <TouchableOpacity
+            onPress={sendPaymentRequest}
+            disabled={sendingPaymentRequest || !parseFloat(payAmount)}
+            style={{
+              height: 54, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+              backgroundColor: parseFloat(payAmount) ? T.primary : T.surface2,
+            }}
+          >
+            {sendingPaymentRequest ? <ActivityIndicator color={T.onPrimary} /> : (
+              <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 15.5, color: parseFloat(payAmount) ? T.onPrimary : T.ink4 }}>
+                Send request{parseFloat(payAmount) ? ` · ${formatAmount(parseFloat(payAmount))}` : ''}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </Sheet>
 
         {alertElement}
       </KeyboardAvoidingView>

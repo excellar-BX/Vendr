@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { View, TouchableOpacity, Animated, Platform, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './StyledText';
+import { T, useTheme } from '../../constants/theme';
 
 interface NetworkToastProps {
   visible: boolean;
@@ -9,6 +11,8 @@ interface NetworkToastProps {
 }
 
 export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
+  useTheme();
+  const insets = useSafeAreaInsets();
   const translateYAnim = useRef(new Animated.Value(-80)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -64,9 +68,11 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
 
   return (
     <Animated.View
+      // When hidden it must not swallow taps meant for headers / back buttons underneath
+      pointerEvents={visible ? 'box-none' : 'none'}
       style={{
         position: 'absolute',
-        top: Platform.OS === 'ios' ? 54 : 28,
+        top: insets.top,
         left: 0,
         right: 0,
         alignItems: 'center',
@@ -80,14 +86,16 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
       <View
         style={{
           width: '95%',
-          backgroundColor: '#FFFFFF',
+          backgroundColor: T.surface,
+          borderWidth: 1,
+          borderColor: T.line,
           borderRadius: 16,
           paddingVertical: 12,
           paddingHorizontal: 14,
           flexDirection: 'row',
           alignItems: 'center',
           gap: 10,
-          shadowColor: '#000',
+          shadowColor: '#1C1917',
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.1,
           shadowRadius: 12,
@@ -100,7 +108,7 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
             width: 34,
             height: 34,
             borderRadius: 10,
-            backgroundColor: '#FEE2E2',
+            backgroundColor: T.dangerSoft,
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -112,9 +120,9 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
         <View style={{ flex: 1 }}>
           <Text
             style={{
-              fontFamily: 'SpaceGrotesk_600SemiBold',
+              fontFamily: 'PlusJakartaSans_600SemiBold',
               fontSize: 13,
-              color: '#111827',
+              color: T.ink,
               marginBottom: 1,
             }}
           >
@@ -122,9 +130,9 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
           </Text>
           <Text
             style={{
-              fontFamily: 'SpaceGrotesk_400Regular',
+              fontFamily: 'PlusJakartaSans_400Regular',
               fontSize: 11,
-              color: '#9CA3AF',
+              color: T.ink3,
               lineHeight: 15,
             }}
           >
@@ -140,14 +148,14 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
             paddingHorizontal: 12,
             paddingVertical: 7,
             borderRadius: 8,
-            backgroundColor: '#111827',
+            backgroundColor: T.ink,
           }}
         >
           <Text
             style={{
-              fontFamily: 'SpaceGrotesk_600SemiBold',
+              fontFamily: 'PlusJakartaSans_600SemiBold',
               fontSize: 12,
-              color: '#FFFFFF',
+              color: T.canvas,
             }}
           >
             Settings
@@ -158,9 +166,11 @@ export function NetworkToast({ visible, onDismiss }: NetworkToastProps) {
         <TouchableOpacity
           onPress={onDismiss}
           activeOpacity={0.7}
+          hitSlop={12}
+          accessibilityLabel="Dismiss"
           style={{ padding: 4 }}
         >
-          <Ionicons name="close" size={18} color="#D1D5DB" />
+          <Ionicons name="close" size={18} color={T.ink3} />
         </TouchableOpacity>
       </View>
     </Animated.View>

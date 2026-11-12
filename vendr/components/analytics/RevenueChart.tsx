@@ -1,6 +1,7 @@
 import { View, Dimensions } from 'react-native';
 import { Text } from '../ui/StyledText';
 import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop, Circle, Line, Text as SvgText } from 'react-native-svg';
+import { T, useTheme } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 40 - 40; // screen - margin - card padding
@@ -33,6 +34,7 @@ function buildPath(data: DailyData[], w: number, h: number, maxVal: number) {
 }
 
 export function RevenueChart({ data }: { data: DailyData[] }) {
+  useTheme();
   if (!data || data.length === 0) return null;
   const maxVal = Math.max(...data.map((d) => d.revenue), 1);
   const { line, area, pts } = buildPath(data, CHART_WIDTH, CHART_HEIGHT, maxVal) as any;
@@ -49,12 +51,12 @@ export function RevenueChart({ data }: { data: DailyData[] }) {
   return (
     <View style={{ marginHorizontal: 20, marginBottom: 24 }}>
       <View style={{ marginBottom: 12 }}>
-        <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: '#FDF6EC' }}>Revenue Trend</Text>
-        <Text style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 12, color: '#6B5E50', marginTop: 2 }}>
+        <Text style={{ fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16, color: T.ink }}>Revenue Trend</Text>
+        <Text style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 12, color: T.ink3, marginTop: 2 }}>
           Daily breakdown
         </Text>
       </View>
-      <View style={{ backgroundColor: '#1A1208', borderWidth: 1, borderColor: '#2A1F14', borderRadius: 20, padding: 20 }}>
+      <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.line, borderRadius: 20, padding: 20 }}>
         <Svg width={CHART_WIDTH} height={CHART_HEIGHT + 20}>
           <Defs>
             <SvgGrad id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
@@ -77,7 +79,7 @@ export function RevenueChart({ data }: { data: DailyData[] }) {
               <SvgText
                 x={peakPt.x}
                 y={peakPt.y - 14}
-                fill="#FDF6EC"
+                fill={T.ink}
                 fontSize={10}
                 fontWeight="bold"
                 textAnchor="middle"
@@ -89,14 +91,14 @@ export function RevenueChart({ data }: { data: DailyData[] }) {
 
           {/* X-axis dots */}
           {pts?.map((pt: any, i: number) => (
-            <Circle key={i} cx={pt.x} cy={CHART_HEIGHT} r={2} fill="#2A1F14" />
+            <Circle key={i} cx={pt.x} cy={CHART_HEIGHT} r={2} fill={T.line} />
           ))}
         </Svg>
 
         {/* X labels */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
           {data.map((d, i) => (
-            <Text key={i} style={{ fontFamily: 'SpaceGrotesk_400Regular', fontSize: 10, color: '#6B5E50' }}>
+            <Text key={i} style={{ fontFamily: 'PlusJakartaSans_400Regular', fontSize: 10, color: T.ink3 }}>
               {d.date}
             </Text>
           ))}

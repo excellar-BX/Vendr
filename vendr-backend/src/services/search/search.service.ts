@@ -1,3 +1,4 @@
+import { normalizeTag } from '../reel/hashtag.service'
 // search.service.ts
 import prisma from '../../lib/prisma'
 import type {
@@ -259,46 +260,31 @@ export function extractSearchTerm(raw: string): string {
   let q = raw.toLowerCase()
   // Strip punctuation characters first
   q = q.replace(/[?!.,;:'"(){}\[\]<>\/\\]+/g, ' ')
+  // Only phrases that never carry product meaning. Words like "top", "stand",
+  // "new", "fine", "express", "size" are deliberately NOT here — they are real
+  // product terms ("crop top", "phone stand", "new balance", "fine jewellery").
   const fillers = [
-    'near me', 'around me', 'close to me', 'nearby', 'near', 'around', 'close by',
-    'in lagos', 'in abuja', 'in port harcourt', 'in benin', 'in enugu', 'in kano',
-    'in nigeria', 'around here', 'close to', 'within', 'within distance',
+    'near me', 'around me', 'close to me', 'nearby', 'close by', 'around here',
     'in my area', 'in my city', 'in my location',
-    'seller', 'sellers', 'shop', 'store', 'stores',
-    'stall', 'stalls', 'stand', 'booth', 'outlet', 'outlets',
-    'market', 'markets', 'mall', 'malls', 'plaza', 'centre',
+    'in lagos', 'in abuja', 'in port harcourt', 'in benin', 'in enugu', 'in kano', 'in nigeria',
+    'seller', 'sellers', 'vendor near', 'shop near', 'store near',
     'cheap', 'cheapest', 'affordable', 'budget', 'low price', 'low cost',
-    'best', 'good', 'top', 'quality', 'premium', 'expensive', 'luxury',
-    'high quality', 'high-end', 'top rated', 'top notch', 'excellent',
-    'deluxe', 'superior', 'fine', 'grade a', 'original', 'authentic',
-    'verified', 'trusted', 'reliable', 'professional',
+    'best', 'top rated', 'trusted', 'reliable', 'verified',
     'where can i buy', 'who sells', 'where to buy', 'where to find',
     'where can i get', 'where can i find', 'where is', 'where are',
-    'looking for', 'i need', 'i want', 'i am looking for',
-    'i want to buy', 'i want to find', 'i need to buy', 'searching for',
-    'trying to find', 'trying to buy', 'help me find', 'help me buy',
-    'show me', 'get me', 'find me', 'locate', 'discover',
-    'some', 'any', 'few', 'many', 'much', 'lot of', 'lots of',
-    'one', 'two', 'three', 'first', 'second', 'third',
-    'now', 'today', 'today only', 'tonight', 'this week', 'this weekend',
-    'right now', 'immediately', 'asap', 'urgent', 'quick', 'fast',
-    'online', 'delivery', 'pickup', 'pick-up', 'store pick up',
-    'home delivery', 'doorstep', 'free delivery', 'same day',
-    'next day', 'express', 'shipping', 'deliver',
-    'new', 'used', 'second hand', 'pre-owned', 'refurbished',
-    'brand new', 'fairly used', 'lightly used',
-    'for', 'for sale', 'for rent', 'to buy', 'to let', 'available',
-    'all', 'everything', 'anything', 'whatever', 'anywhere',
+    'i am looking for', 'looking for', 'i need to buy', 'i need', 'i want to buy',
+    'i want to find', 'i want', 'searching for', 'trying to find', 'trying to buy',
+    'help me find', 'help me buy', 'show me', 'get me', 'find me',
+    'right now', 'asap', 'urgent', 'today',
+    'for sale', 'available',
     'please', 'kindly', 'thanks', 'thank you', 'hey', 'hi', 'hello',
-    'good', 'morning', 'evening', 'afternoon',
-    'size', 'sizes', 'color', 'colors', 'colour', 'colours',
-    'price', 'cost', 'rate', 'amount', 'fee',
   ]
 
   // Sort longest first so multi-word fillers match before their subsets
   const sorted = [...fillers].sort((a, b) => b.length - a.length)
   sorted.forEach((f) => {
-    q = q.replace(new RegExp(`\\b${f}\\b`, 'gi'), ' ')
+    const escaped = f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    q = q.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), ' ')
   })
   const cleaned = q.replace(/\s+/g, ' ').trim()
   return cleaned.length > 0 ? cleaned : raw.trim()
@@ -334,13 +320,16 @@ function buildProductOrFilter(term: string, words: string[]) {
 
 function buildReelOrFilter(term: string, words: string[]) {
   const allTerms = [...new Set([term, ...words])].filter((t) => t.length > 0)
-  return allTerms.flatMap((t) => [
+  // "#ankara" or "ankara" both match posts tagged #ankara
+  const tags = [...new Set(allTerms.map((t) => normalizeTag(t)).filter(Boolean) as string[])]
+  const tagFilters = tags.map((tag) => ({ hashtags: { has: tag } }))
+  return [...tagFilters, ...allTerms.flatMap((t) => [
     { caption: { contains: t, mode: 'insensitive' as const } },
     { vendor: { shop_name: { contains: t, mode: 'insensitive' as const } } },
     { vendor: { category: { contains: t, mode: 'insensitive' as const } } },
     { vendor: { user: { full_name: { contains: t, mode: 'insensitive' as const } } } },
     { product: { name: { contains: t, mode: 'insensitive' as const } } },
-  ])
+  ])]
 }
 
 /**
@@ -382,31 +371,28 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
   // ── Special vendor-only browse ────────────────────────────────────────────
   const isVendorBrowse = words.length === 1 && (words[0] === 'vendor' || words[0] === 'vendors')
   if (isVendorBrowse) {
-    return runVendorBrowse({ verified_only, lat, lng, limit, min_rating })
+    return runVendorBrowse({ verified_only, lat, lng, limit, offset, min_rating, category, max_distance })
   }
 
   // ── Build WHERE clauses ───────────────────────────────────────────────────
-  const vendorBaseWhere: any = {
+  // One vendor filter shared by vendors, products (via vendor) and reels (via vendor),
+  // so verified / rating / category filters apply consistently to every result type.
+  const hasCategory = !!category && category !== 'All'
+  const vendorFilter: any = {
     is_active: true,
     is_suspended: false,
     is_fraud_flagged: false,
   }
-  if (verified_only) vendorBaseWhere.user = { is_vendor_verified: true }
-  if (min_rating > 0) vendorBaseWhere.rating = { gte: min_rating }
+  if (verified_only) vendorFilter.user = { is_vendor_verified: true }
+  if (min_rating > 0) vendorFilter.rating = { gte: min_rating }
+  if (hasCategory) vendorFilter.category = { equals: category, mode: 'insensitive' }
 
-  const productBaseWhere: any = {
-    is_available: true,
-    vendor: { is_active: true, is_suspended: false },
-  }
-  if (verified_only) productBaseWhere.vendor = { ...productBaseWhere.vendor, user: { is_vendor_verified: true } }
+  const vendorBaseWhere: any = { ...vendorFilter }
+  const productBaseWhere: any = { is_available: true, vendor: vendorFilter }
+  const reelBaseWhere: any = { is_active: true, vendor: vendorFilter }
 
-  const reelBaseWhere: any = {
-    is_active: true,
-    vendor: { is_active: true, is_suspended: false },
-  }
-  if (verified_only) reelBaseWhere.vendor = { ...reelBaseWhere.vendor, user: { is_vendor_verified: true } }
-
-  const FETCH_MULT = 4 // fetch more than needed so scoring has enough to rank from
+  // Fetch enough candidates to rank the requested page (scoring happens in memory).
+  const fetchTake = Math.min((offset + limit) * 3, 300)
 
   // Run all three queries in parallel for speed
   const [vendorsRaw, productsRaw, reelsRaw] = await Promise.all([
@@ -424,12 +410,8 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
         user: {
           select: { id: true, full_name: true, avatar_url: true, created_at: true, is_vendor_verified: true },
         },
-        products: {
-          where: { is_available: true },
-          select: { id: true, name: true, description: true, price: true, image_url: true },
-        },
       },
-      take: limit * FETCH_MULT,
+      take: fetchTake,
     }),
 
     prisma.product.findMany({
@@ -448,7 +430,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
           },
         },
       },
-      take: limit * FETCH_MULT,
+      take: fetchTake,
     }),
 
     prisma.reel.findMany({
@@ -468,7 +450,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
         },
         product: { select: { id: true, name: true, price: true, image_url: true } },
       },
-      take: limit * FETCH_MULT,
+      take: fetchTake,
     }),
   ])
 
@@ -503,12 +485,8 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
             user: {
               select: { id: true, full_name: true, avatar_url: true, created_at: true, is_vendor_verified: true },
             },
-            products: {
-              where: { is_available: true },
-              select: { id: true, name: true, description: true, price: true, image_url: true },
-            },
           },
-          take: limit * FETCH_MULT,
+          take: fetchTake,
         }),
         prisma.product.findMany({
           where: {
@@ -526,7 +504,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
               },
             },
           },
-          take: limit * FETCH_MULT,
+          take: fetchTake,
         }),
         prisma.reel.findMany({
           where: {
@@ -545,7 +523,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
             },
             product: { select: { id: true, name: true, price: true, image_url: true } },
           },
-          take: limit * FETCH_MULT,
+          take: fetchTake,
         }),
       ])
     }
@@ -594,7 +572,7 @@ export async function searchVendorsAndProducts(input: SearchInput): Promise<{
     results.push(buildProductResult(p, v, score, vDist))
   }
 
-  for (const r of reelsRaw) {
+  for (const r of finalReels) {
     const v = r.vendor
     const vDist =
       lat != null && lng != null && v.lat != null && v.lng != null
@@ -777,9 +755,11 @@ function buildReelResult(r: any, v: any, score: number, distance: number | null)
     name: r.caption,
     description: r.caption,
     price: r.product?.price ?? null,
-    image_url: r.thumbnail_url,
+    image_url: r.thumbnail_url ?? r.image_urls?.[0] ?? null,
     video_url: r.video_url,
-    thumbnail_url: r.thumbnail_url,
+    thumbnail_url: r.thumbnail_url ?? r.image_urls?.[0] ?? null,
+    media_type: r.media_type ?? 'video',
+    image_count: Array.isArray(r.image_urls) ? r.image_urls.length : 0,
     product_id: r.product_id,
     score,
     distance,
@@ -883,13 +863,19 @@ async function runVendorBrowse({
   lat,
   lng,
   limit,
+  offset,
   min_rating,
+  category,
+  max_distance,
 }: {
   verified_only: boolean
   lat?: number
   lng?: number
   limit: number
+  offset: number
   min_rating: number
+  category?: string
+  max_distance?: number
 }) {
   const where: any = {
     is_active: true,
@@ -898,6 +884,8 @@ async function runVendorBrowse({
   }
   if (verified_only) where.user = { is_vendor_verified: true }
   if (min_rating > 0) where.rating = { gte: min_rating }
+  if (category && category !== 'All') where.category = { equals: category, mode: 'insensitive' }
+  const take = Math.min((offset + limit) * 3, 300)
 
   const [vendorsRaw, productsRaw, reelsRaw] = await Promise.all([
     prisma.vendor.findMany({
@@ -909,15 +897,12 @@ async function runVendorBrowse({
         open_days: true, open_time: true, close_time: true, city: true,
         rating: true, review_count: true,
         user: { select: { id: true, full_name: true, avatar_url: true, created_at: true, is_vendor_verified: true } },
-        products: {
-          where: { is_available: true },
-          select: { id: true, name: true, description: true, price: true, image_url: true },
-        },
+        _count: { select: { products: { where: { is_available: true } } } },
       },
-      take: limit * 3,
+      take,
     }),
     prisma.product.findMany({
-      where: { is_available: true, vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) } },
+      where: { is_available: true, vendor: where },
       include: {
         vendor: {
           select: {
@@ -929,10 +914,10 @@ async function runVendorBrowse({
           },
         },
       },
-      take: limit * 3,
+      take,
     }),
     prisma.reel.findMany({
-      where: { is_active: true, vendor: { is_active: true, is_suspended: false, ...(verified_only && { user: { is_vendor_verified: true } }) } },
+      where: { is_active: true, vendor: where },
       include: {
         vendor: {
           select: {
@@ -945,7 +930,7 @@ async function runVendorBrowse({
         },
         product: { select: { id: true, name: true, price: true, image_url: true } },
       },
-      take: limit * 3,
+      take,
     }),
   ])
 
@@ -956,7 +941,7 @@ async function runVendorBrowse({
       ? calcDistance(lat, lng, v.lat, v.lng) : null
     const score =
       20 + (v.user?.is_vendor_verified ? 10 : 0) +
-      Math.min((v.products?.length ?? 0), 5) * 2 + distanceBonus(d)
+      Math.min(v._count?.products ?? 0, 5) * 2 + distanceBonus(d)
     results.push(buildVendorResult(v, score, d))
   }
 
@@ -976,8 +961,11 @@ async function runVendorBrowse({
     results.push(buildReelResult(r, v, score, d))
   }
 
-  results.sort((a, b) => b.score - a.score)
-  const paged = results.slice(0, limit)
+  const inRange = max_distance != null && lat != null && lng != null
+    ? results.filter((r) => r.distance != null && r.distance <= max_distance)
+    : results
+  inRange.sort((a, b) => b.score - a.score)
+  const paged = inRange.slice(offset, offset + limit)
 
   const vendors = paged.filter((r) => r.type === 'vendor').map(mapVendorShape)
   const products = paged.filter((r) => r.type === 'product').map(mapProductShape)
@@ -987,9 +975,9 @@ async function runVendorBrowse({
     vendors,
     products,
     reels,
-    totalVendors: vendors.length,
-    totalProducts: products.length,
-    totalReels: reels.length,
+    totalVendors: inRange.filter((r) => r.type === 'vendor').length,
+    totalProducts: inRange.filter((r) => r.type === 'product').length,
+    totalReels: inRange.filter((r) => r.type === 'reel').length,
     extractedTerm: 'vendors',
   }
 }
@@ -999,16 +987,11 @@ async function runVendorBrowse({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get smart search suggestions.
- *
- * Returns up to `limit` items blending:
- *   - User's recent search history (highest priority — personalised)
- *   - Matching product names
- *   - Matching vendor names
- *   - Popular/trending recent searches from other users (if user's own results are sparse)
- *
- * Each suggestion carries enough metadata for the frontend to render a rich row
- * (icon, subtitle, source label).
+ * Smart type-ahead suggestions, blending:
+ *   - the signed-in user's own matching history (most personal, shown first)
+ *   - matching product names and vendors (prefix matches ranked above substring matches)
+ *   - trending queries — only those searched at least twice, so a single user's
+ *     private search never surfaces to other people
  */
 export async function getSearchSuggestions(
   input: SuggestionInput & { userId?: string }
@@ -1019,31 +1002,31 @@ export async function getSearchSuggestions(
   trending: string[]
 }> {
   const { q, limit, userId } = input
-  const term = extractSearchTerm(q)
+  const raw = q.trim()
+  const term = extractSearchTerm(raw)
+  const termLower = term.toLowerCase()
+  const productSlots = Math.max(1, Math.ceil(limit * 0.4))
+  const vendorSlots = Math.max(1, Math.ceil(limit * 0.3))
 
-  // Run everything in parallel
+  const activeVendor = { is_active: true, is_suspended: false, is_fraud_flagged: false }
+
   const [products, vendors, userHistory, trendingHistory] = await Promise.all([
-    // Products — broader search: match name OR description
     prisma.product.findMany({
       where: {
         is_available: true,
-        vendor: { is_active: true, is_suspended: false },
+        vendor: activeVendor,
         OR: [
           { name: { contains: term, mode: 'insensitive' } },
           { description: { contains: term, mode: 'insensitive' } },
         ],
       },
       select: { id: true, name: true, price: true, image_url: true, vendor_id: true },
-      orderBy: { name: 'asc' },
-      take: Math.ceil(limit * 0.4), // 40% of slots for products
+      take: productSlots * 4,
     }),
 
-    // Vendors — match shop_name OR category
     prisma.vendor.findMany({
       where: {
-        is_active: true,
-        is_suspended: false,
-        is_fraud_flagged: false,
+        ...activeVendor,
         OR: [
           { shop_name: { contains: term, mode: 'insensitive' } },
           { category: { contains: term, mode: 'insensitive' } },
@@ -1051,47 +1034,58 @@ export async function getSearchSuggestions(
       },
       select: { id: true, shop_name: true, category: true, logo_url: true, rating: true },
       orderBy: { rating: 'desc' },
-      take: Math.ceil(limit * 0.3), // 30% for vendors
+      take: vendorSlots * 4,
     }),
 
-    // User's own recent matching history
     userId
       ? prisma.searchHistory.findMany({
-          where: {
-            user_id: userId,
-            query: { contains: q, mode: 'insensitive' },
-          },
+          where: { user_id: userId, query: { contains: raw, mode: 'insensitive' } },
           orderBy: { created_at: 'desc' },
           select: { query: true },
-          take: 5,
+          take: 10,
         })
-      : Promise.resolve([]),
+      : Promise.resolve([] as { query: string }[]),
 
-    // Trending: most searched queries by ALL users that match the prefix
     prisma.searchHistory.groupBy({
       by: ['query'],
-      where: { query: { startsWith: q, mode: 'insensitive' } },
+      where: { query: { startsWith: raw, mode: 'insensitive' } },
       _count: { query: true },
+      having: { query: { _count: { gte: 2 } } },
       orderBy: { _count: { query: 'desc' } },
-      take: 4,
+      take: 10,
     }),
   ])
 
-  // Deduplicate history
-  const historyStrings = [...new Set((userHistory as { query: string }[]).map((h) => h.query))]
-  const trendingStrings = trendingHistory
-    .map((t: any) => t.query as string)
-    .filter((t) => !historyStrings.includes(t))
+  // Rank: exact/prefix matches first, then substring matches, then by shorter names.
+  const rank = (name: string) => {
+    const n = name.toLowerCase()
+    if (n === termLower) return 0
+    if (n.startsWith(termLower)) return 1
+    if (n.split(/\s+/).some((w) => w.startsWith(termLower))) return 2
+    return 3
+  }
+  const sortedProducts = [...products]
+    .sort((a, b) => rank(a.name) - rank(b.name) || a.name.length - b.name.length)
+    .slice(0, productSlots)
+  const sortedVendors = [...vendors]
+    .sort((a, b) => rank(a.shop_name) - rank(b.shop_name) || (b.rating ?? 0) - (a.rating ?? 0))
+    .slice(0, vendorSlots)
+
+  const historyStrings = dedupeCaseInsensitive(userHistory.map((h) => h.query)).slice(0, 3)
+  const seen = new Set(historyStrings.map((h) => h.toLowerCase()))
+  const trendingStrings = dedupeCaseInsensitive(trendingHistory.map((t: any) => t.query as string))
+    .filter((t) => !seen.has(t.toLowerCase()))
+    .slice(0, 3)
 
   return {
-    products: products.map((p) => ({
+    products: sortedProducts.map((p) => ({
       id: p.id,
       name: p.name,
       price: p.price,
       image_url: p.image_url,
       vendor_id: p.vendor_id,
     })),
-    vendors: vendors.map((v) => ({
+    vendors: sortedVendors.map((v) => ({
       id: v.id,
       business_name: v.shop_name,
       category: v.category,
@@ -1103,40 +1097,63 @@ export async function getSearchSuggestions(
   }
 }
 
+function dedupeCaseInsensitive(items: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) {
+    const key = item.trim().toLowerCase()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(item.trim())
+  }
+  return out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// HISTORY helpers (unchanged)
+// HISTORY
 // ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_HISTORY = 50
 
 export async function getUserSearchHistory(userId: string, limit = 10): Promise<string[]> {
   const history = await prisma.searchHistory.findMany({
     where: { user_id: userId },
     orderBy: { created_at: 'desc' },
-    take: limit,
+    take: limit * 3, // over-fetch in case older rows contain case-variants
     select: { query: true },
   })
-  return [...new Set(history.map((h) => h.query as string))]
+  return dedupeCaseInsensitive(history.map((h) => h.query)).slice(0, limit)
 }
 
 export async function saveSearchQuery(userId: string, query: string): Promise<void> {
-  const trimmed = query.trim()
+  const trimmed = query.trim().replace(/\s+/g, ' ')
   if (!trimmed) return
 
-  await prisma.searchHistory.create({ data: { user_id: userId, query: trimmed } })
+  // Re-searching moves the query to the top instead of storing a duplicate.
+  await prisma.$transaction([
+    prisma.searchHistory.deleteMany({
+      where: { user_id: userId, query: { equals: trimmed, mode: 'insensitive' } },
+    }),
+    prisma.searchHistory.create({ data: { user_id: userId, query: trimmed } }),
+  ])
 
-  // Keep only latest 50
-  const all = await prisma.searchHistory.findMany({
+  // Keep only the latest MAX_HISTORY entries.
+  const overflow = await prisma.searchHistory.findMany({
     where: { user_id: userId },
     orderBy: { created_at: 'desc' },
+    skip: MAX_HISTORY,
     select: { id: true },
   })
-  if (all.length > 50) {
-    const toDelete = all.slice(50).map((h) => h.id)
-    await prisma.searchHistory.deleteMany({ where: { id: { in: toDelete } } })
+  if (overflow.length > 0) {
+    await prisma.searchHistory.deleteMany({ where: { id: { in: overflow.map((h) => h.id) } } })
   }
 }
 
 export async function clearSearchHistory(userId: string, query?: string): Promise<void> {
   await prisma.searchHistory.deleteMany({
-    where: { user_id: userId, ...(query ? { query } : {}) },
+    where: {
+      user_id: userId,
+      ...(query ? { query: { equals: query, mode: 'insensitive' as const } } : {}),
+    },
   })
 }

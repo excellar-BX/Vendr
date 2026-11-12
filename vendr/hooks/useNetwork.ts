@@ -21,7 +21,8 @@ export function useNetwork() {
       try {
         const networkState = await Network.getNetworkStateAsync();
         setState({
-          isOnline: networkState.isInternetReachable ?? false,
+          // Some devices report reachability as unknown (null) — fall back to connectivity
+          isOnline: networkState.isInternetReachable ?? networkState.isConnected ?? true,
           isConnected: networkState.isConnected ?? false,
           type: networkState.type ?? null,
         });

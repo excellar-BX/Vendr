@@ -1,612 +1,193 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  View, FlatList, TouchableOpacity,
-  ActivityIndicator, Share, Image, Pressable, useWindowDimensions,
-} from 'react-native';
+import { View, FlatList, TouchableOpacity, ActivityIndicator, AppState, LayoutChangeEvent } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/ui/StyledText';
+import { useVendrAlert } from '../../components/ui/VendrAlert';
+import { ReelItem, FeedReel, normalizeReel, useReelOwnerMenu, onReelUpdated } from '../../components/reel/ReelViewer';
 import { useAuthStore } from '../../stores/authStore';
-import { formatPrice } from '../../lib/utils';
 import { reelApi } from '../../lib/api';
+import { useReelInteractions } from '../../components/reel/useReelInteractions';
 
-interface VendorInfo {
-  business_name: string;
-  logo_url: string | null;
-  is_verified: boolean;
-  category: string;
-}
-
-interface ProductInfo {
-  name: string;
-  price: number;
-  image_url: string | null;
-}
-
-interface Reel {
-  id: string;
-  vendor_id: string;
-  user_id: string;
-  video_url: string;
-  thumbnail_url: string | null;
-  caption: string | null;
-  product_id: string | null;
-  view_count: number;
-  like_count: number;
-  save_count: number;
-  is_active: boolean;
-  created_at: string;
-  vendor: VendorInfo | null;
-  product: ProductInfo | null;
-  is_liked: boolean;
-  is_saved: boolean;
-}
-
-// ─── Single Reel Card ──────────────────────────────────────────────────────────
-function ReelCard({
-  reel,
-  isActive,
-  isScreenFocused,
-  onLike,
-  onSave,
-  currentUserId,
-  itemWidth,
-  itemHeight,
-}: {
-  reel: Reel;
-  isActive: boolean;
-  isScreenFocused: boolean;
-  onLike: (id: string, liked: boolean) => void;
-  onSave: (id: string, saved: boolean) => void;
-  currentUserId: string;
-  itemWidth: number;
-  itemHeight: number;
-}) {
-  const [liked, setLiked] = useState(reel.is_liked);
-  const [saved, setSaved] = useState(reel.is_saved);
-  const [likeCount, setLikeCount] = useState(reel.like_count);
-  const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const viewCountedRef = useRef(false);
-  const mountedRef = useRef(true);
-  const isOwnReel = reel.user_id === currentUserId;
-  const shouldPlay = isActive && isScreenFocused && !paused;
-
-  const vendor = reel.vendor;
-  const product = reel.product;
-
-  // Sync from parent when reel object updates
-  useEffect(() => { setLiked(reel.is_liked); }, [reel.is_liked]);
-  useEffect(() => { setSaved(reel.is_saved); }, [reel.is_saved]);
-  useEffect(() => { setLikeCount(reel.like_count); }, [reel.like_count]);
-
-  // Always-on player — no null swapping, no jank
-  const player = useVideoPlayer(
-    { uri: reel.video_url },
-    (p) => {
-      p.loop = true;
-      p.muted = false;
-      p.volume = 1.0;
-    }
-  );
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (progressRef.current) clearInterval(progressRef.current);
-    };
-  }, []);
-
-  // Play / pause
-  useEffect(() => {
-    if (!player) return;
-
-    if (!shouldPlay) {
-      try { player.pause(); } catch (_) {}
-      if (progressRef.current) { clearInterval(progressRef.current); progressRef.current = null; }
-      return;
-    }
-
-    if (!mountedRef.current) return;
-    try {
-      player.muted = muted;
-      player.volume = 1.0;
-      player.play();
-      setVideoReady(true);
-    } catch (e: any) {
-      console.log('[ReelFeed] play error:', e?.message);
-    }
-
-    if (progressRef.current) clearInterval(progressRef.current);
-    progressRef.current = setInterval(() => {
-      if (!mountedRef.current) return;
-      try {
-        const dur = player.duration ?? 0;
-        const cur = player.currentTime ?? 0;
-        if (dur > 0) setProgress(cur / dur);
-      } catch (_) {}
-    }, 250);
-
-    if (!viewCountedRef.current) {
-      viewCountedRef.current = true;
-      // Increment view via backend API (fire and forget)
-      reelApi.incrementView(reel.id).catch((e: any) => {
-        console.warn('[ReelFeed] incrementView failed:', e?.message);
-      });
-    }
-
-    return () => {
-      if (progressRef.current) { clearInterval(progressRef.current); progressRef.current = null; }
-    };
-  }, [shouldPlay, player]);
-
-  // Mute sync
-  useEffect(() => {
-    if (!player) return;
-    try { player.muted = muted; } catch (_) {}
-  }, [muted, player]);
-
-  // Reset when scrolled away
-  useEffect(() => {
-    if (!isActive) {
-      setVideoReady(false);
-      setProgress(0);
-      setPaused(false);
-      viewCountedRef.current = false;
-    }
-  }, [isActive]);
-
-  const handleSeekTap = useCallback((e: any) => {
-    if (!player) return;
-    try {
-      const ratio = Math.min(Math.max(e.nativeEvent.locationX / itemWidth, 0), 1);
-      const dur = player.duration ?? 0;
-      if (dur > 0) {
-        player.currentTime = ratio * dur;
-        setProgress(ratio);
-      }
-    } catch (_) {}
-  }, [player, itemWidth]);
-
-  const handleLike = () => {
-    const n = !liked;
-    setLiked(n);
-    setLikeCount(prev => n ? prev + 1 : Math.max(prev - 1, 0));
-    onLike(reel.id, n);
-  };
-
-  const handleSave = () => {
-    const n = !saved;
-    setSaved(n);
-    onSave(reel.id, n);
-  };
-
-  return (
-    <View style={{ width: itemWidth, height: itemHeight, backgroundColor: '#000', overflow: 'hidden' }}>
-
-      {/* 1. Video — always mounted */}
-      <VideoView
-        player={player}
-        style={{ position: 'absolute', top: 0, left: 0, width: itemWidth, height: itemHeight }}
-        contentFit="contain"
-        nativeControls={false}
-      />
-
-      {/* 2. Thumbnail until video ready */}
-      {reel.thumbnail_url && !videoReady && (
-        <Image
-          source={{ uri: reel.thumbnail_url }}
-          style={{ position: 'absolute', top: 0, left: 0, width: itemWidth, height: itemHeight, zIndex: 1 }}
-          resizeMode="cover"
-        />
-      )}
-
-      {/* 3. Spinner when no thumbnail and not ready */}
-      {!reel.thumbnail_url && !videoReady && (
-        <View style={{
-          position: 'absolute', top: 0, left: 0, width: itemWidth, height: itemHeight,
-          backgroundColor: '#0F0A06', zIndex: 1, alignItems: 'center', justifyContent: 'center',
-        }}>
-          <ActivityIndicator color="#E8521A" size="large" />
-        </View>
-      )}
-
-      {/* 4. Tap-to-pause overlay */}
-      <Pressable
-        onPress={() => setPaused(p => !p)}
-        style={{ position: 'absolute', top: 0, left: 0, width: itemWidth, height: itemHeight, zIndex: 2 }}
-      />
-
-      {/* Pause icon */}
-      {paused && (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute', top: 0, left: 0, width: itemWidth, height: itemHeight,
-            alignItems: 'center', justifyContent: 'center', zIndex: 3,
-          }}
-        >
-          <View style={{
-            width: 72, height: 72, borderRadius: 36,
-            backgroundColor: 'rgba(0,0,0,0.55)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name="pause" size={38} color="white" />
-          </View>
-        </View>
-      )}
-
-      {/* Back button */}
-      <TouchableOpacity
-        onPress={() => router.back()}
-        style={{
-          position: 'absolute', top: 56, left: 16, zIndex: 10,
-          width: 38, height: 38, borderRadius: 12,
-          backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-          alignItems: 'center', justifyContent: 'center',
-        }}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="arrow-back" size={20} color="white" />
-      </TouchableOpacity>
-
-      {/* Bottom scrim */}
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          height: 220, backgroundColor: 'rgba(0,0,0,0.52)', zIndex: 4,
-        }}
-      />
-
-      {/* Right action bar */}
-      <View style={{
-        position: 'absolute', right: 14, bottom: 110,
-        alignItems: 'center', gap: 18, zIndex: 10,
-      }}>
-        {/* Vendor avatar */}
-        <TouchableOpacity
-          onPress={() => router.push({ pathname: '/vendor/[id]', params: { id: reel.vendor_id } })}
-          activeOpacity={0.85}
-        >
-          <View style={{
-            width: 48, height: 48, borderRadius: 16,
-            borderWidth: 2, borderColor: '#E8521A',
-            overflow: 'hidden', backgroundColor: '#1A1208',
-          }}>
-            {vendor?.logo_url
-              ? <Image source={{ uri: vendor.logo_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-              : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(232,82,26,0.2)' }}>
-                  <Ionicons name="storefront" size={22} color="#E8521A" />
-                </View>
-            }
-          </View>
-        </TouchableOpacity>
-
-        {/* Like */}
-        <TouchableOpacity onPress={handleLike} activeOpacity={0.75} style={{ alignItems: 'center', gap: 3 }}>
-          <View style={{
-            width: 48, height: 48, borderRadius: 16,
-            backgroundColor: liked ? 'rgba(232,82,26,0.25)' : 'rgba(0,0,0,0.5)',
-            borderWidth: 1, borderColor: liked ? 'rgba(232,82,26,0.5)' : 'rgba(255,255,255,0.15)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? '#E8521A' : 'white'} />
-          </View>
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: 'white' }}>
-            {likeCount > 999 ? `${(likeCount / 1000).toFixed(1)}k` : likeCount}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Save */}
-        <TouchableOpacity onPress={handleSave} activeOpacity={0.75} style={{ alignItems: 'center', gap: 3 }}>
-          <View style={{
-            width: 48, height: 48, borderRadius: 16,
-            backgroundColor: saved ? 'rgba(245,166,35,0.25)' : 'rgba(0,0,0,0.5)',
-            borderWidth: 1, borderColor: saved ? 'rgba(245,166,35,0.5)' : 'rgba(255,255,255,0.15)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={22} color={saved ? '#F5A623' : 'white'} />
-          </View>
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: 'white' }}>
-            {reel.save_count > 999 ? `${(reel.save_count / 1000).toFixed(1)}k` : reel.save_count}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Share */}
-        <TouchableOpacity
-          onPress={() => Share.share({ message: `Check out ${vendor?.business_name} on Vendr!` })}
-          activeOpacity={0.75}
-          style={{ alignItems: 'center', gap: 3 }}
-        >
-          <View style={{
-            width: 48, height: 48, borderRadius: 16,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name="arrow-redo-outline" size={22} color="white" />
-          </View>
-          <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 11, color: 'white' }}>Share</Text>
-        </TouchableOpacity>
-
-        {/* Mute */}
-        <TouchableOpacity onPress={() => setMuted(m => !m)} activeOpacity={0.8}>
-          <View style={{
-            width: 48, height: 48, borderRadius: 16,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={20} color="white" />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom info */}
-      <View style={{ position: 'absolute', bottom: 40, left: 14, right: 76, zIndex: 10 }}>
-        <TouchableOpacity
-          onPress={() => router.push({ pathname: '/vendor/[id]', params: { id: reel.vendor_id } })}
-          activeOpacity={0.85}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}
-        >
-          <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: 'white' }}>
-            {vendor?.business_name}
-          </Text>
-          {vendor?.is_verified && <Ionicons name="checkmark-circle" size={15} color="#2D8653" />}
-          <View style={{
-            paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10,
-            backgroundColor: 'rgba(232,82,26,0.25)', borderWidth: 1, borderColor: 'rgba(232,82,26,0.4)',
-          }}>
-            <Text style={{ fontFamily: 'SpaceGrotesk_500Medium', fontSize: 10, color: '#E8521A' }}>
-              {vendor?.category}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {reel.caption ? (
-          <Text
-            numberOfLines={2}
-            style={{
-              fontFamily: 'SpaceGrotesk_400Regular', fontSize: 13,
-              color: 'rgba(255,255,255,0.85)', lineHeight: 19, marginBottom: 10,
-            }}
-          >
-            {reel.caption}
-          </Text>
-        ) : null}
-
-        {product ? (
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(10,6,2,0.88)',
-            borderWidth: 1, borderColor: 'rgba(232,82,26,0.45)',
-            borderRadius: 16, padding: 10, alignSelf: 'flex-start',
-          }}>
-            {product.image_url
-              ? <Image source={{ uri: product.image_url }} style={{ width: 42, height: 42, borderRadius: 10, marginRight: 10 }} resizeMode="cover" />
-              : <View style={{ width: 42, height: 42, borderRadius: 10, marginRight: 10, backgroundColor: '#2A1F14', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="cube-outline" size={20} color="#3D3026" />
-                </View>
-            }
-            <View style={{ maxWidth: isOwnReel ? 180 : 130 }}>
-              <Text style={{ fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 13, color: 'white' }} numberOfLines={1}>
-                {product.name}
-              </Text>
-              <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: '#E8521A' }}>
-                {formatPrice(product.price)}
-              </Text>
-            </View>
-            {!isOwnReel && (
-              <TouchableOpacity
-                onPress={() => router.push({
-                  pathname: '/chat/[conversationId]',
-                  params: {
-                    vendorId: reel.vendor_id,
-                    productId: reel.product_id ?? undefined,
-                    productName: product?.name ?? undefined,
-                    productPrice: product?.price ? formatPrice(product.price) : undefined,
-                  },
-                })}
-                activeOpacity={0.85}
-                style={{ marginLeft: 10, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#E8521A', borderRadius: 11 }}
-              >
-                <Text style={{ fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: 'white' }}>Enquire</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : null}
-      </View>
-
-      {/* Seek bar */}
-      <TouchableOpacity
-        onPress={handleSeekTap}
-        activeOpacity={1}
-        style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          height: 28, justifyContent: 'flex-end', zIndex: 20,
-        }}
-      >
-        <View style={{ height: 3, backgroundColor: 'rgba(255,255,255,0.2)' }}>
-          <View style={{ height: '100%', backgroundColor: '#E8521A', width: `${Math.round(progress * 100)}%` }} />
-          <View style={{
-            position: 'absolute',
-            left: `${Math.round(progress * 100)}%` as any,
-            top: -4, marginLeft: -5,
-            width: 11, height: 11, borderRadius: 6, backgroundColor: '#E8521A',
-          }} />
-        </View>
-      </TouchableOpacity>
-
-    </View>
-  );
-}
-
-// ─── Screen ────────────────────────────────────────────────────────────────────
-export default function ReelFeedScreen() {
-  const { reelId, vendorId, startIndex } = useLocalSearchParams<{
-    reelId: string;
-    vendorId: string;
-    startIndex: string;
-  }>();
-  const { width: SW, height: SH } = useWindowDimensions();
+/**
+ * Full-screen reel viewer opened from a vendor page, profile, saved list or search.
+ * Starts on the tapped post and lets you swipe through the rest of that vendor's posts.
+ * Works with just a reelId (search results don't know the vendor).
+ */
+export default function ReelViewerScreen() {
+  const { reelId, vendorId, hashtag } = useLocalSearchParams<{ reelId: string; vendorId?: string; hashtag?: string; startIndex?: string }>();
   const insets = useSafeAreaInsets();
-  const ITEM_HEIGHT = SH - insets.bottom;
-
   const { user } = useAuthStore();
-  const [reels, setReels] = useState<Reel[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { showAlert, alertElement } = useVendrAlert();
+
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const onLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (!size || size.width !== width || Math.abs(size.height - height) > 1) setSize({ width, height });
+  };
+
+  const [reels, setReels] = useState<FeedReel[]>([]);
+  const [startIndex, setStartIndex] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isScreenFocused, setIsScreenFocused] = useState(false);
-  const listRef = useRef<FlatList>(null);
-  const initialScrollDone = useRef(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const listRef = useRef<FlatList<FeedReel>>(null);
+  const { onComments, onFollow, onReport, sheets } = useReelInteractions(reels, setReels);
 
   useFocusEffect(useCallback(() => {
-    setIsScreenFocused(true);
-    return () => setIsScreenFocused(false);
+    setFocused(true);
+    return () => setFocused(false);
   }, []));
 
   useEffect(() => {
-    const load = async () => {
-      if (!vendorId || !user?.id) return;
+    const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
 
-      try {
-        // Fetch all reels for this vendor (active only)
-        const { data } = await reelApi.getReels({
-          vendor_id: vendorId,
-          include_all: false, // only active
-        });
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/reels'));
 
-        if (data && data.length > 0) {
-          setReels(data);
-
-          // Start at the specific reel if provided
-          const idx = data.findIndex((r: any) => r.id === reelId);
-          const start = idx >= 0 ? idx : parseInt(startIndex ?? '0', 10);
-          setActiveIndex(start);
-        } else {
-          setReels([]);
-        }
-      } catch (e: any) {
-        console.error('[ReelFeed] fetch error:', e);
-        setReels([]);
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let vid = vendorId;
+      let tapped: FeedReel | null = null;
+      if (reelId) {
+        const { data } = await reelApi.getReel(reelId);
+        tapped = normalizeReel(data);
+        vid = vid || tapped.vendor_id;
       }
-    };
-    load();
-  }, [vendorId, reelId, user?.id]);
-
-  // Scroll to starting reel after data loads
-  useEffect(() => {
-    if (reels.length > 0 && activeIndex > 0 && !initialScrollDone.current) {
-      initialScrollDone.current = true;
-      setTimeout(() => {
-        listRef.current?.scrollToIndex({ index: activeIndex, animated: false });
-      }, 50);
+      let list: FeedReel[] = [];
+      if (hashtag) {
+        // Opened from a #tag page: swipe through that tag's posts
+        const { data } = await reelApi.getReels({ hashtag, limit: 50 });
+        list = ((data ?? []) as any[]).map(normalizeReel);
+      } else if (vid) {
+        const { data } = await reelApi.getReels({ vendor_id: vid, limit: 50 });
+        list = ((data ?? []) as any[]).map(normalizeReel);
+      }
+      if (tapped && !list.some((r) => r.id === tapped!.id)) list = [tapped, ...list];
+      const idx = Math.max(0, list.findIndex((r) => r.id === reelId));
+      setReels(list);
+      setStartIndex(idx);
+      setActiveIndex(idx);
+    } catch (e: any) {
+      setError(e?.statusCode === 404 ? 'This post is no longer available.' : "Couldn't load this post. Check your connection.");
+    } finally {
+      setLoading(false);
     }
-  }, [reels, activeIndex]);
+  }, [reelId, vendorId, hashtag]);
 
-  const handleViewableChange = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index ?? 0);
+  useEffect(() => { load(); }, [load]);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const first = viewableItems.find((v: any) => v.isViewable);
+    if (first?.index != null) setActiveIndex(first.index);
   }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+  const patch = (id: string, fn: (r: FeedReel) => FeedReel) => setReels((prev) => prev.map((r) => (r.id === id ? fn(r) : r)));
 
-  const handleLike = useCallback(async (reelId: string, liked: boolean) => {
-    if (!user?.id) return;
-    // Optimistic update
-    setReels(prev => prev.map(r => r.id === reelId
-      ? { ...r, is_liked: liked, like_count: liked ? r.like_count + 1 : Math.max(r.like_count - 1, 0) }
-      : r
-    ));
-    try {
-      await reelApi.toggleLike(reelId);
-    } catch (e: any) {
-      // Revert on error
-      setReels(prev => prev.map(r => r.id === reelId
-        ? { ...r, is_liked: !liked, like_count: !liked ? r.like_count + 1 : Math.max(r.like_count - 1, 0) }
-        : r
-      ));
-      console.error('[ReelFeed] toggleLike failed:', e);
-    }
-  }, [user?.id]);
+  const handleLike = useCallback(async (id: string, liked: boolean) => {
+    const apply = (on: boolean) => (r: FeedReel) => ({ ...r, is_liked: on, like_count: Math.max(0, r.like_count + (on ? 1 : -1)) });
+    patch(id, apply(liked));
+    try { await reelApi.toggleLike(id); } catch { patch(id, apply(!liked)); }
+  }, []);
 
-  const handleSave = useCallback(async (reelId: string, saved: boolean) => {
-    if (!user?.id) return;
-    // Optimistic update
-    setReels(prev => prev.map(r => r.id === reelId
-      ? { ...r, is_saved: saved, save_count: saved ? r.save_count + 1 : Math.max(r.save_count - 1, 0) }
-      : r
-    ));
-    try {
-      await reelApi.toggleSave(reelId);
-    } catch (e: any) {
-      // Revert on error
-      setReels(prev => prev.map(r => r.id === reelId
-        ? { ...r, is_saved: !saved, save_count: !saved ? r.save_count + 1 : Math.max(r.save_count - 1, 0) }
-        : r
-      ));
-      console.error('[ReelFeed] toggleSave failed:', e);
-    }
-  }, [user?.id]);
+  const handleSave = useCallback(async (id: string, saved: boolean) => {
+    const apply = (on: boolean) => (r: FeedReel) => ({ ...r, is_saved: on, save_count: Math.max(0, r.save_count + (on ? 1 : -1)) });
+    patch(id, apply(saved));
+    try { await reelApi.toggleSave(id); } catch { patch(id, apply(!saved)); }
+  }, []);
 
-  if (loading) {
+  // ⋯ on your own post: edit (first 15 minutes) or delete
+  const onDeleted = useCallback((id: string) => setReels((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      if (next.length === 0) setTimeout(goBack, 0);
+      return next;
+    }), []);
+  const handleOwnerMenu = useReelOwnerMenu({ showAlert, onDeleted });
+
+  // An edit saved elsewhere updates this list in place
+  useEffect(() => onReelUpdated((u) => setReels((prev) => prev.map((r) => (r.id === u.id ? { ...r, ...u } : r)))), []);
+
+  const backButton = (
+    <TouchableOpacity
+      onPress={goBack}
+      accessibilityLabel="Back"
+      style={{ position: 'absolute', top: insets.top + 6, left: 12, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+    </TouchableOpacity>
+  );
+
+  if (loading || error || reels.length === 0) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
-        <StatusBar style="light" hidden />
-        <ActivityIndicator size="large" color="#E8521A" />
+      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 36 }}>
+        <StatusBar style="light" />
+        {loading ? <ActivityIndicator size="large" color="#E8521A" /> : (
+          <>
+            <Ionicons name={error?.includes('available') ? 'eye-off-outline' : 'cloud-offline-outline'} size={40} color="rgba(255,255,255,0.6)" />
+            <Text style={{ fontSize: 16, color: '#FFFFFF', textAlign: 'center' }}>{error ?? 'Nothing to show here.'}</Text>
+            {!error?.includes('available') && (
+              <TouchableOpacity onPress={load} style={{ marginTop: 6, backgroundColor: '#E8521A', borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>Retry</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+        {backButton}
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <StatusBar style="light" hidden />
-      <FlatList
-        ref={listRef}
-        data={reels}
-        keyExtractor={item => item.id}
-        renderItem={({ item, index }) => (
-          <ReelCard
-            reel={item}
-            isActive={index === activeIndex}
-            isScreenFocused={isScreenFocused}
-            onLike={handleLike}
-            onSave={handleSave}
-            currentUserId={user?.id ?? ''}
-            itemWidth={SW}
-            itemHeight={ITEM_HEIGHT}
-          />
-        )}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToInterval={ITEM_HEIGHT}
-        snapToAlignment="start"
-        disableIntervalMomentum
-        onViewableItemsChanged={handleViewableChange}
-        viewabilityConfig={viewabilityConfig}
-        onEndReachedThreshold={2}
-        getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
-        windowSize={5}
-        removeClippedSubviews={false}
-        onScrollToIndexFailed={info => {
-          setTimeout(() => {
-            listRef.current?.scrollToIndex({ index: info.index, animated: false });
-          }, 100);
-        }}
-      />
+    <View style={{ flex: 1, backgroundColor: '#000' }} onLayout={onLayout}>
+      <StatusBar style="light" />
+      {size && (
+        <FlatList
+          ref={listRef}
+          data={reels}
+          keyExtractor={(r) => r.id}
+          initialScrollIndex={startIndex}
+          renderItem={({ item, index }) => (
+            <ReelItem
+              reel={item}
+              isActive={index === activeIndex}
+              isScreenFocused={focused && appActive}
+              mountMedia={Math.abs(index - activeIndex) <= 1}
+              width={size.width}
+              height={size.height}
+              topInset={insets.top + 48}
+              bottomInset={insets.bottom}
+              currentUserId={user?.id ?? ''}
+              onLike={handleLike}
+              onSave={handleSave}
+              onOwnerMenu={handleOwnerMenu}
+              onComments={onComments}
+              onFollow={onFollow}
+              onReport={onReport}
+            />
+          )}
+          extraData={[activeIndex, focused, appActive]}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          decelerationRate="fast"
+          getItemLayout={(_, i) => ({ length: size.height, offset: size.height * i, index: i })}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          windowSize={5}
+        />
+      )}
+      {backButton}
+      {sheets}
+      {alertElement}
     </View>
   );
 }

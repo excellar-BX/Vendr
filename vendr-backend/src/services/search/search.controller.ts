@@ -26,6 +26,7 @@ export async function searchController(request: FastifyRequest, reply: FastifyRe
         totalProducts: result.totalProducts,
         totalReels: result.totalReels,
         extractedTerm: result.extractedTerm,
+        did_you_mean: result.did_you_mean ?? null,
       },
       query: input.q,
     })
@@ -111,7 +112,12 @@ export async function saveSearchHistoryController(request: FastifyRequest, reply
 export async function clearSearchHistoryController(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).user.id
-    const { query } = request.query as { query?: string }
+    // Accept the single entry to delete from the query string (preferred) or the body.
+    // Without either, the whole history is cleared.
+    const fromQuery = (request.query as { query?: string } | undefined)?.query
+    const fromBody = (request.body as { query?: string } | undefined)?.query
+    const raw = typeof fromQuery === 'string' ? fromQuery : typeof fromBody === 'string' ? fromBody : undefined
+    const query = raw?.trim() || undefined
     await SearchService.clearSearchHistory(userId, query)
 
     return reply.status(200).send({
